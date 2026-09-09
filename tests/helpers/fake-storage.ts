@@ -25,7 +25,8 @@ export class FakeStorage implements StorageProvider {
   }
   async writeBytes(path: string, data: Uint8Array): Promise<void> {
     path = normalizePath(path);
-    this.files.set(path, data);
+    // copy: real backends copy on write, the fake must not store by reference
+    this.files.set(path, data.slice());
   }
   async writeText(path: string, text: string): Promise<void> {
     await this.writeBytes(path, new TextEncoder().encode(text));

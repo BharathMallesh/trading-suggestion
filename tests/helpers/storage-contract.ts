@@ -59,6 +59,21 @@ export function storageContract(name: string, make: () => Promise<StorageProvide
       const s = await make();
       await expect(s.remove('never-existed.txt')).resolves.toBeUndefined();
     });
+    it('remove with a missing parent dir silently succeeds', async () => {
+      const s = await make();
+      await expect(s.remove('missingdir/f.txt')).resolves.toBeUndefined();
+    });
+    it('exists("") is true iff the storage root contains anything', async () => {
+      const s = await make();
+      // Shared-root backends (OPFS) may retain earlier tests' files; only
+      // assert the empty case when the root really is empty.
+      if ((await s.list('')).length === 0) {
+        expect(await s.exists('')).toBe(false);
+      }
+      await s.writeText('root-probe.tmp', 'x');
+      expect(await s.exists('')).toBe(true);
+      await s.remove('root-probe.tmp');
+    });
     it('remove on a non-empty directory throws', async () => {
       const s = await make();
       await s.writeText('d/f.txt', 'x');
