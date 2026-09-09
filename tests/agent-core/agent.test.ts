@@ -311,7 +311,8 @@ describe('Agent.chat', () => {
 
     expect(result.status).toBe('timeout');
     expect(model.received).toHaveLength(1);
-    expect(result.error).toBeUndefined();
+    // timeout results carry the same error string on every exit path
+    expect(result.error).toBe('task wall-clock timeout after 60ms');
   });
 
   it('appends escalating reminders when the identical tool call repeats', async () => {
@@ -373,6 +374,80 @@ describe('Agent.chat', () => {
           tool_call_id: 'call-missing',
           content: 'Error: Tool nope_tool not found.',
         }),
+      ]),
+    );
+  });
+
+  it('keeps running when the event sink throws mid-run', async () => {
+    model.turns = [{ content: 'safe' }];
+    const collected: AgentEvent[] = [];
+    let sinkCalls = 0;
+    const sink = (e: AgentEvent) => {
+      collected.push(e);
+      if (++sinkCalls === 2) throw new Error('UI exploded');
+    };
+
+    const agent = new Agent(model, 'test-model', {}, storage, sink);
+    const result = await agent.chat('ui bug');
+
+    expect(result.status).toBe('completed');
+    expect(result.message).toBe('safe');
+    // every event was still delivered in order — the throw on the 2nd call
+    // (token) was swallowed and run_end still fired
+    expect(collected.map((e) => e.event)).toEqual(['run_start', 'token', 'usage', 'run_end']);
+    // the run log was still written despite the dead sink
+    const raw = await storage.readText('cache/runs.jsonl');
+    expect(JSON.parse(raw.trim())).toMatchObject({ task: 'ui bug', status: 'completed' });
+  });
+
+  it('continues without output_file when the output spill fails', async () => {
+    class FailingSpillStorage extends FakeStorage {
+      override async writeText(path: string, text: string): Promise<void> {
+        if (path.startsWith('cache/outputs/')) throw new Error('disk full');
+        await super.writeText(path, text);
+      }
+    }
+    const flakyStorage = new FailingSpillStorage();
+    model.turns = [
+      { toolCalls: [{ id: 'call-huge', name: 'read_file', arguments: JSON.stringify({ path: 'big.log' }) }] },
+      { content: 'Done' },
+    ];
+    const hugeOutput = Array.from({ length: 3000 }, (_, i) => `line-${i}: ${'x'.repeat(10)}`).join('\n');
+    readFileHandler.mockResolvedValueOnce(hugeOutput);
+
+    const agent = new Agent(model, 'test-model', {}, flakyStorage, (e) => events.push(e));
+    const result = await agent.chat('read big file');
+
+    expect(result.status).toBe('completed');
+    const toolResultEvent = events.find((e) => e.event === 'tool_result');
+    expect(toolResultEvent).toMatchObject({ tool: 'read_file', truncated: true });
+    expect(toolResultEvent).not.toHaveProperty('output_file');
+    // the bounded result still went back to the model
+    const toolMessage = model.received[1].messages.find(
+      (m) => m.role === 'tool' && m.tool_call_id === 'call-huge',
+    );
+    expect(toolMessage?.content).toContain('[Truncated: showing 2000 of 3000 lines');
+    // and the run log still got written
+    expect(await flakyStorage.exists('cache/runs.jsonl')).toBe(true);
+  });
+
+  it('reconstructs tool calls fragmented across stream deltas', async () => {
+    const fragModel = new FakeChatModel({ fragmentToolCalls: true });
+    fragModel.turns = [
+      { toolCalls: [{ id: 'call-frag', name: 'read_file', arguments: JSON.stringify({ path: 'README.md' }) }] },
+      { content: 'Done' },
+    ];
+    readFileHandler.mockResolvedValueOnce('frag content');
+
+    const agent = new Agent(fragModel, 'test-model', {}, storage, (e) => events.push(e));
+    const result = await agent.chat('fragmented');
+
+    expect(result.status).toBe('completed');
+    // name and arguments were reassembled from ≤4-char deltas before parsing
+    expect(readFileHandler).toHaveBeenCalledWith({ path: 'README.md' }, {});
+    expect(fragModel.received[1].messages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ role: 'tool', tool_call_id: 'call-frag', content: 'frag content' }),
       ]),
     );
   });

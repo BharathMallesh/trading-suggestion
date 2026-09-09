@@ -8,7 +8,7 @@ import { withRetry } from './retry';
 import { truncateOutput } from './truncate';
 import { buildSkillsManifest } from './skills';
 import type { ChatModel, ChatMessage, ChatChunk } from './chat-model';
-import type { AgentEventSink } from './events';
+import type { AgentEvent, AgentEventSink } from './events';
 import type { StorageProvider } from './storage';
 
 const DEFAULT_MAX_STEPS = 25;
@@ -122,25 +122,30 @@ RULES OF ENGAGEMENT:
   // BROWSER-ADAPTED: skills ride along as one-line manifest entries; the
   // placeholder manifest is async, so it is resolved on first use and spliced
   // into the system prompt. Never break startup on a malformed skill system.
-  private skillsLoaded = false;
-  private async ensureSkillsManifest(): Promise<void> {
-    if (this.skillsLoaded) return;
-    this.skillsLoaded = true;
-    let skillsManifest: string | null = null;
-    try {
-      skillsManifest = await buildSkillsManifest(this.config);
-    } catch {
-      skillsManifest = null;
-    }
-    if (skillsManifest) {
-      const sys = this.messages[0];
-      if (typeof sys.content === 'string') {
-        sys.content = sys.content.replace('{SKILLS_BLOCK}', `\n${skillsManifest}\n`);
+  // Memoized so concurrent chat() calls await the same splice.
+  private skillsPromise?: Promise<void>;
+  private ensureSkillsManifest(): Promise<void> {
+    this.skillsPromise ??= (async () => {
+      let skillsManifest: string | null = null;
+      try {
+        skillsManifest = await buildSkillsManifest(this.config);
+      } catch {
+        skillsManifest = null;
       }
-    } else {
       const sys = this.messages[0];
-      if (typeof sys.content === 'string') sys.content = sys.content.replace('{SKILLS_BLOCK}', '');
-    }
+      if (typeof sys.content !== 'string') return;
+      if (skillsManifest) {
+        sys.content = sys.content.replace('{SKILLS_BLOCK}', `\n${skillsManifest}\n`);
+      } else {
+        sys.content = sys.content.replace('{SKILLS_BLOCK}', '');
+      }
+    })();
+    return this.skillsPromise;
+  }
+
+  // BROWSER-ADAPTED: a throwing UI sink must not kill the agent loop.
+  private safeEmit(e: AgentEvent): void {
+    try { this.emit(e); } catch { /* UI bug must not kill the run */ }
   }
 
   async chat(userInput: string): Promise<AgentRunResult> {
@@ -148,8 +153,11 @@ RULES OF ENGAGEMENT:
     this.messages.push({ role: "user", content: userInput });
 
     // BROWSER-ADAPTED: env-var overrides (AUTOCLOW_*) removed; config only.
-    const maxSteps = Number(this.config?.maxSteps || DEFAULT_MAX_STEPS);
-    const taskTimeoutMs = Number(this.config?.taskTimeoutMs || 0);
+    // Invalid values fall back to the defaults instead of NaN/negative math.
+    const parsedMaxSteps = Number(this.config?.maxSteps);
+    const maxSteps = Number.isFinite(parsedMaxSteps) && parsedMaxSteps > 0 ? parsedMaxSteps : DEFAULT_MAX_STEPS;
+    const parsedTimeoutMs = Number(this.config?.taskTimeoutMs);
+    const taskTimeoutMs = Number.isFinite(parsedTimeoutMs) && parsedTimeoutMs > 0 ? parsedTimeoutMs : 0;
     const deadline = taskTimeoutMs > 0 ? Date.now() + taskTimeoutMs : Number.POSITIVE_INFINITY;
     const abortController = new AbortController();
     const abortTimer = taskTimeoutMs > 0
@@ -169,7 +177,7 @@ RULES OF ENGAGEMENT:
     const totalUsage: AgentUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
     let sawUsage = false;
 
-    this.emit({ event: 'run_start', model: this.model, task: userInput });
+    this.safeEmit({ event: 'run_start', model: this.model, task: userInput });
 
     while (active) {
       if (step >= maxSteps) {
@@ -178,6 +186,7 @@ RULES OF ENGAGEMENT:
       }
       if (Date.now() > deadline) {
         status = 'timeout';
+        errorMessage = `task wall-clock timeout after ${taskTimeoutMs}ms`;
         break;
       }
       this.trimOldToolResults();
@@ -188,6 +197,10 @@ RULES OF ENGAGEMENT:
         // Retries cover request setup and the header phase; a failure after
         // the stream started yielding chunks is not retried, because partial
         // output may already have been emitted.
+        // NOTE: this.messages is passed BY REFERENCE and mutated in place
+        // (trimOldToolResults, tool results) between turns; ChatModel
+        // implementations must serialize eagerly — the wllama shim
+        // structuredClones before postMessage.
         stream = await withRetry(
           async () => this.llm.createChatCompletionStream({
               model: this.model,
@@ -236,7 +249,7 @@ RULES OF ENGAGEMENT:
           // Handle regular content
           if (delta?.content) {
             // BROWSER-ADAPTED: stdout writes become token events.
-            this.emit({ event: 'token', text: delta.content });
+            this.safeEmit({ event: 'token', text: delta.content });
             content += delta.content;
           }
 
@@ -295,7 +308,7 @@ RULES OF ENGAGEMENT:
           }
 
           // BROWSER-ADAPTED: console arg display becomes a tool_call event.
-          this.emit({ event: 'tool_call', step, tool: functionName, args: functionArgs });
+          this.safeEmit({ event: 'tool_call', step, tool: functionName, args: functionArgs });
 
           let toolResult: string;
           try {
@@ -327,14 +340,20 @@ RULES OF ENGAGEMENT:
           let outputFile: string | null = null;
 
           if (resultLines.length > MAX_PREVIEW_LINES || truncation.truncated) {
-            outputFile = await this.saveOutput(functionName, toolResult);
+            // Best-effort like appendRunLog: a failing spill must not lose the
+            // tool result — the bounded version still goes back to the model.
+            try {
+              outputFile = await this.saveOutput(functionName, toolResult);
+            } catch {
+              outputFile = null;
+            }
             this.lastOutputFile = outputFile;
           } else {
             this.lastOutputFile = null;
           }
 
           // BROWSER-ADAPTED: NDJSON emitEvent becomes an unconditional event.
-          this.emit({
+          this.safeEmit({
             event: 'tool_result',
             step,
             tool: functionName,
@@ -354,7 +373,7 @@ RULES OF ENGAGEMENT:
       }
 
       if (sawUsage) {
-        this.emit({ event: 'usage', step, ...totalUsage });
+        this.safeEmit({ event: 'usage', step, ...totalUsage });
       }
     }
 
@@ -368,7 +387,7 @@ RULES OF ENGAGEMENT:
       ...(sawUsage ? { usage: totalUsage } : {})
     };
     await this.appendRunLog(userInput, result, startedAt);
-    this.emit({ event: 'run_end', ...result });
+    this.safeEmit({ event: 'run_end', ...result });
     return result;
   }
 
