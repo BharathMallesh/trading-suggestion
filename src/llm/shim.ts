@@ -53,9 +53,14 @@ export class WllamaChatModel implements ChatModel {
     // load_progress / loaded / adapter_set belong to the model-load flow (Task 13/14)
   }
 
+  // idempotent: guards against a woken next() racing the abort handler
   private finish(id: number, p: Pending): void {
+    if (this.pending.get(id) !== p) return;
     this.pending.delete(id);
-    if (p.onAbort) p.onAbort();
+    if (p.onAbort) {
+      p.onAbort();
+      p.onAbort = null;
+    }
   }
 
   async createChatCompletionStream(
@@ -97,6 +102,9 @@ export class WllamaChatModel implements ChatModel {
     return {
       [Symbol.asyncIterator]() {
         return {
+          // single-consumer serial iterator per the AsyncIterable contract;
+          // p.resolve being a single slot is safe because next() is never
+          // called concurrently on one iterator instance
           async next(): Promise<IteratorResult<ChatChunk>> {
             for (;;) {
               if (p.error) {
@@ -113,6 +121,12 @@ export class WllamaChatModel implements ChatModel {
               });
               p.resolve = null;
             }
+          },
+          // consumer broke out of for-await early: release the pending entry
+          // and detach the abort listener
+          return(): Promise<IteratorResult<ChatChunk>> {
+            finish();
+            return Promise.resolve({ value: undefined, done: true });
           },
         };
       },

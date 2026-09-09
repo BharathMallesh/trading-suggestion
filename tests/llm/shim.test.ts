@@ -40,4 +40,24 @@ describe('WllamaChatModel', () => {
     await expect(it.next()).rejects.toThrow(/abort/i);
     expect(w.posted).toContainEqual({ type: 'abort', id: 0 });
   });
+  it('breaking out of for-await releases the stream (return cleanup)', async () => {
+    const w = new MockWorker();
+    const model = new WllamaChatModel(w as any, 'm');
+    const ac = new AbortController();
+    const stream = await model.createChatCompletionStream({ model: 'm', messages: [], stream: true }, { signal: ac.signal });
+    w.emit({ type: 'chunk', id: 0, chunk: { choices: [{ delta: { content: 'he' } }] } });
+    for await (const chunk of stream) {
+      expect((chunk as any).choices[0].delta.content).toBe('he');
+      break;
+    }
+    // the abort listener must be detached: aborting now posts nothing for the abandoned id
+    ac.abort();
+    expect(w.posted).not.toContainEqual({ type: 'abort', id: 0 });
+    // and the abandoned id no longer routes worker messages: a late done is dropped
+    w.emit({ type: 'done', id: 0 });
+    const it2 = (await model.createChatCompletionStream({ model: 'm', messages: [], stream: true }))[Symbol.asyncIterator]();
+    w.emit({ type: 'chunk', id: 1, chunk: { choices: [{ delta: { content: 'ok' } }] } });
+    const r = await it2.next();
+    expect((r.value as any).choices[0].delta.content).toBe('ok');
+  });
 });
