@@ -120,15 +120,16 @@ RULES OF ENGAGEMENT:
   }
 
   // BROWSER-ADAPTED: skills ride along as one-line manifest entries; the
-  // placeholder manifest is async, so it is resolved on first use and spliced
-  // into the system prompt. Never break startup on a malformed skill system.
+  // manifest is async (storage-backed discovery), so it is resolved on first
+  // use and spliced into the system prompt. Never break startup on a
+  // malformed skill system.
   // Memoized so concurrent chat() calls await the same splice.
   private skillsPromise?: Promise<void>;
   private ensureSkillsManifest(): Promise<void> {
     this.skillsPromise ??= (async () => {
       let skillsManifest: string | null = null;
       try {
-        skillsManifest = await buildSkillsManifest(this.config);
+        skillsManifest = await buildSkillsManifest(this.storage, this.config);
       } catch {
         skillsManifest = null;
       }
