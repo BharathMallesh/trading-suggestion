@@ -44,6 +44,20 @@ describe('discoverSkills over StorageProvider', () => {
     expect(skills).toEqual([]);
     expect(warnings.length).toBe(1);
   });
+  it('isolates a throwing read: warns, keeps discovering other skills', async () => {
+    class FlakyStorage extends FakeStorage {
+      override async readText(path: string): Promise<string> {
+        if (path === 'skills/broken/SKILL.md') throw new Error('simulated read failure');
+        return super.readText(path);
+      }
+    }
+    const s = new FlakyStorage();
+    await s.writeText('skills/broken/SKILL.md', SKILL); // exists, but read throws
+    await s.writeText('skills/greeter/SKILL.md', SKILL);
+    const { skills, warnings } = await discoverSkills(s, [{ dir: 'skills', source: 'user' }]);
+    expect(skills.map((k) => k.name)).toEqual(['greeter']);
+    expect(warnings).toEqual(['Skipped unreadable/invalid SKILL.md at skills/broken/SKILL.md']);
+  });
 });
 
 describe('buildSkillsManifest', () => {

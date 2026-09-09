@@ -94,10 +94,14 @@ export async function discoverSkills(storage: StorageProvider, scopes: SkillScop
       if (entry.startsWith('.')) continue;
       const skillMdPath = `${scope.dir}/${entry}/SKILL.md`;
       if (!(await storage.exists(skillMdPath))) continue;
-      const parsed = parseSkillMd(await storage.readText(skillMdPath));
-      const meta = parsed && toMeta(parsed.frontmatter, `${scope.dir}/${entry}`, scope.source);
-      if (!meta) { warnings.push(`Skipped invalid SKILL.md at ${skillMdPath}`); continue; }
-      byName.set(meta.name, { ...meta, source: scope.source, dir: `${scope.dir}/${entry}`, skillMdPath });
+      try {
+        const parsed = parseSkillMd(await storage.readText(skillMdPath));
+        const meta = parsed && toMeta(parsed.frontmatter, `${scope.dir}/${entry}`, scope.source);
+        if (!meta) { warnings.push(`Skipped invalid SKILL.md at ${skillMdPath}`); continue; }
+        byName.set(meta.name, { ...meta, source: scope.source, dir: `${scope.dir}/${entry}`, skillMdPath });
+      } catch {
+        warnings.push(`Skipped unreadable/invalid SKILL.md at ${skillMdPath}`);
+      }
     }
   }
   return { skills: [...byName.values()], warnings };
@@ -115,8 +119,14 @@ export async function buildSkillsManifest(storage: StorageProvider, config?: any
   ]);
   const active = skills.filter((s) => !s.disableModelInvocation);
   if (!active.length) return null;
-  // line format vendored from upstream buildSkillsManifest:
-  return active.map((s) =>
-    `- ${s.name} (v${s.version ?? '0.0.0'}): ${s.description.replace(/\s+/g, ' ').slice(0, 400)} [read ${s.skillMdPath}]`,
-  ).join('\n');
+  // BROWSER-ADAPTED: header vendored from upstream buildSkillsManifest;
+  // "file and shell tools" trimmed to "file tools" (no shell in the browser
+  // build — skills run through the storage-backed file tools).
+  return [
+    'INSTALLED SKILL PACKAGES (procedural capabilities bundling instructions, scripts and templates).',
+    'When a task matches a skill, first read its SKILL.md and follow it — skills run through your normal file tools, no special API:',
+    ...active.map((s) =>
+      `- ${s.name} (v${s.version ?? '0.0.0'}): ${s.description.replace(/\s+/g, ' ').slice(0, 400)} [read ${s.skillMdPath}]`,
+    ),
+  ].join('\n');
 }
