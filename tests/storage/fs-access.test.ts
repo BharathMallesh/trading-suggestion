@@ -66,6 +66,7 @@ class MockDirHandle {
     if ([...this.store.keys()].some((k) => k.startsWith(key + '/'))) {
       throw new DOMException('directory not empty', 'InvalidModificationError');
     }
+    if (!this.store.has(key)) throw new DOMException('not found', 'NotFoundError');
     this.store.delete(key);
   }
   async *keys(): AsyncIterable<string> {

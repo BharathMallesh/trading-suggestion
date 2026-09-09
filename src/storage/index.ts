@@ -3,18 +3,29 @@ import { FileSystemAccessStorage } from './fs-access';
 import { OpfsStorage } from './opfs';
 import { loadHandle, queryPermission } from './handle-store';
 
+export type RestoreResult =
+  | { status: 'ready'; storage: StorageProvider }
+  | { status: 'needs-permission'; handle: FileSystemDirectoryHandle }
+  | { status: 'no-handle' };
+
 export function fsAccessSupported(): boolean {
-  return typeof (window as any).showDirectoryPicker === 'function';
+  return typeof window !== 'undefined' && typeof (window as any).showDirectoryPicker === 'function';
 }
 
-/** Restore storage from a previously picked folder, or null if user action is needed. */
-export async function restoreStorage(): Promise<StorageProvider | null> {
+/** Restore storage from a previously picked folder, or report what the UI must do next. */
+export async function restoreStorage(): Promise<RestoreResult> {
   if (fsAccessSupported()) {
     const handle = await loadHandle();
-    if (handle && (await queryPermission(handle)) === 'granted') {
-      return FileSystemAccessStorage.fromHandle(handle);
+    if (handle) {
+      const perm = await queryPermission(handle);
+      if (perm === 'granted') {
+        return { status: 'ready', storage: FileSystemAccessStorage.fromHandle(handle) };
+      }
+      if (perm === 'prompt') {
+        return { status: 'needs-permission', handle };
+      }
     }
-    return null; // UI must show the re-grant / pick-folder flow
+    return { status: 'no-handle' }; // UI must show the pick-folder flow
   }
-  return OpfsStorage.create(); // fallback: no user action needed
+  return { status: 'ready', storage: await OpfsStorage.create() }; // fallback: no user action needed
 }
