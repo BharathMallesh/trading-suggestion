@@ -1,4 +1,4 @@
-import type { ChatChunk } from '@core/chat-model';
+import type { ChatChunk, ChatMessage } from '@core/chat-model';
 
 export interface LoadModelRequest {
   type: 'load';
@@ -11,8 +11,8 @@ export interface CompletionRequest {
   type: 'completion';
   id: number;
   params: {
-    messages: unknown[];
-    tools?: unknown[];
+    messages: ChatMessage[]; // normalized to wllama's shape in the worker
+    tools?: unknown[]; // agent-core types these as unknown[]; asserted at the worker boundary
     tool_choice?: 'auto';
     max_tokens?: number;
     temperature?: number;
@@ -31,6 +31,14 @@ export type WorkerRequest =
   | SwitchAdapterRequest
   | { type: 'abort'; id: number };
 
+// Lifecycle contract:
+// - 'load'     -> any number of load_progress, then exactly one loaded or error (terminal).
+//                 Completions are only accepted after loaded.
+// - 'completion' -> zero or more chunk, then exactly one done, or one error.
+//                 A mid-stream error is terminal: no done follows it.
+//                 An abort yields done (not error).
+// - 'abort'    -> no direct response; it turns the matching completion into done.
+// - 'set_adapter' -> exactly one adapter_set.
 export type WorkerResponse =
   | { type: 'load_progress'; loaded: number; total: number }
   | { type: 'loaded'; loraSupported: boolean }
