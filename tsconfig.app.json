@@ -4,7 +4,7 @@
     "target": "es2023",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "module": "esnext",
-    "types": ["vite/client", "vitest/globals"],
+    "types": ["vite/client"],
     "paths": { "@core/*": ["./src/agent-core/*"] },
     "allowArbitraryExtensions": true,
     "skipLibCheck": true,
@@ -23,5 +23,5 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"]
+  "include": ["src", "tests"]
 }

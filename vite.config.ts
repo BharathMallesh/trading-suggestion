@@ -24,7 +24,7 @@ export default defineConfig({
       },
     }),
   ],
-  resolve: { alias: { '@core': path.resolve(__dirname, 'src/agent-core') } },
+  resolve: { alias: { '@core': path.resolve(import.meta.dirname, 'src/agent-core') } },
   // wllama multi-threading requires cross-origin isolation
   server: { headers: { 'Cross-Origin-Embedder-Policy': 'require-corp', 'Cross-Origin-Opener-Policy': 'same-origin' } },
   preview: { headers: { 'Cross-Origin-Embedder-Policy': 'require-corp', 'Cross-Origin-Opener-Policy': 'same-origin' } },
