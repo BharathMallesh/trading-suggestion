@@ -12,7 +12,7 @@ import { resolveAssetSpecs } from './manifest';
  * The service worker precaches these (see vite.config.ts globPatterns), so
  * seeding works offline after the first page load.
  */
-const BUILTIN_SKILL_FILES: string[] = [
+export const BUILTIN_SKILL_FILES: string[] = [
   'code2media/SKILL.md',
   'code2media/references/syntax-guide.md',
   'code2media/templates/metrics-card.html',
@@ -102,6 +102,7 @@ export default function SetupWizard({ onDone }: SetupWizardProps) {
 
   async function runDownloads(storage: StorageProvider): Promise<void> {
     setError(null);
+    setBusy('Downloading assets…');
     try {
       const specs = resolveAssetSpecs();
       for (const spec of specs) {
@@ -115,6 +116,8 @@ export default function SetupWizard({ onDone }: SetupWizardProps) {
       onDone(storage);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
     }
   }
 
@@ -153,8 +156,12 @@ export default function SetupWizard({ onDone }: SetupWizardProps) {
           {error && storage && (
             <div>
               <p style={styles.error}>Download failed: {error}</p>
-              <button style={styles.button} onClick={() => void runDownloads(storage)}>
-                Retry
+              <button
+                style={busy != null ? { ...styles.button, opacity: 0.5 } : styles.button}
+                disabled={busy != null}
+                onClick={() => void runDownloads(storage)}
+              >
+                {busy != null ? busy : 'Retry'}
               </button>
             </div>
           )}

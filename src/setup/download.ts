@@ -13,13 +13,14 @@ export interface Progress {
 }
 
 function partPathFor(path: string): string {
-  return `cache/${path.split('/').pop()}.part`;
+  return `cache/${path}.part`;
 }
 
 /**
  * Download `spec.url` into `spec.path` (folder-relative), resumable via a
- * `cache/<name>.part` file: on failure the received bytes are kept there and
- * the next call resumes with a `Range: bytes=<n>-` request.
+ * `cache/<path>.part` file (mirroring the asset's folder layout): on failure
+ * the received bytes are kept there and the next call resumes with a
+ * `Range: bytes=<n>-` request.
  *
  * Limitation: received chunks are buffered fully in memory before the final
  * write (~2x the asset size at peak). Fine for the ~500MB base model on
@@ -56,6 +57,13 @@ export async function downloadAsset(
 
   const headers: Record<string, string> = resumeFrom > 0 ? { Range: `bytes=${resumeFrom}-` } : {};
   const res = await fetch(spec.url, { headers });
+  if (resumeFrom > 0 && res.status === 416) {
+    // Range not satisfiable: the .part is complete or oversized (crash
+    // between finishing the stream and the final write). Discard it and
+    // restart from scratch — retrying the same Range would loop forever.
+    await storage.remove(partPath); // idempotent
+    return downloadAsset(spec, storage, onProgress);
+  }
   if (!res.ok && res.status !== 206) throw new Error(`HTTP ${res.status} downloading ${spec.url}`);
   if (resumeFrom > 0 && res.status !== 206) {
     // server ignored the Range request: the body is the FULL file, so the
@@ -86,8 +94,30 @@ export async function downloadAsset(
   }
 
   const out = concat(prior, chunks);
+  if (spec.size != null && out.byteLength !== spec.size) {
+    // clean end-of-stream but wrong length: keep the partial in cache/ so a
+    // later call resumes, and never write a corrupt target
+    await storage.writeBytes(partPath, out);
+    throw new Error(
+      `truncated download for ${spec.url}: got ${out.byteLength} of ${spec.size} bytes`,
+    );
+  }
+  if (spec.sha256) {
+    const hex = await sha256Hex(out);
+    if (hex !== spec.sha256.toLowerCase()) {
+      await storage.writeBytes(partPath, out);
+      throw new Error(`sha256 mismatch for ${spec.url}: expected ${spec.sha256}, got ${hex}`);
+    }
+  }
   await storage.writeBytes(spec.path, out);
   if (await storage.exists(partPath)) await storage.remove(partPath);
+}
+
+async function sha256Hex(data: Uint8Array): Promise<string> {
+  const subtle = globalThis.crypto?.subtle;
+  if (!subtle) throw new Error('crypto.subtle is unavailable; cannot verify sha256');
+  const digest = await subtle.digest('SHA-256', data as Uint8Array<ArrayBuffer>);
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 function concat(prior: Uint8Array, chunks: Uint8Array[]): Uint8Array {
