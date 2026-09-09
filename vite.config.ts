@@ -13,7 +13,8 @@ export default defineConfig({
       workbox: {
         // wllama.wasm is ~8.5MB; default 2MB precache limit would drop it
         maximumFileSizeToCacheInBytes: 20 * 1024 * 1024,
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,webmanifest,wasm}'],
+        // md: setup seeds bundled skills from /skills-builtin/** offline (Task 13)
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,webmanifest,wasm,md}'],
       },
       manifest: {
         name: 'AutoClaw Offline Agents',
