@@ -10,6 +10,11 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['icons/*.png'],
+      workbox: {
+        // wllama.wasm is ~8.5MB; default 2MB precache limit would drop it
+        maximumFileSizeToCacheInBytes: 20 * 1024 * 1024,
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,webmanifest,wasm}'],
+      },
       manifest: {
         name: 'AutoClaw Offline Agents',
         short_name: 'AutoClaw',
@@ -25,6 +30,13 @@ export default defineConfig({
     }),
   ],
   resolve: { alias: { '@core': path.resolve(import.meta.dirname, 'src/agent-core') } },
+  // build the wllama worker as its own entry so bundling is verified and it precaches;
+  // once the shim imports createWllamaWorker(), Vite emits it automatically and this input can go
+  build: {
+    rollupOptions: {
+      input: { main: path.resolve(import.meta.dirname, 'index.html'), 'wllama-worker': path.resolve(import.meta.dirname, 'src/llm/wllama-worker.ts') },
+    },
+  },
   // wllama multi-threading requires cross-origin isolation
   server: { headers: { 'Cross-Origin-Embedder-Policy': 'require-corp', 'Cross-Origin-Opener-Policy': 'same-origin' } },
   preview: { headers: { 'Cross-Origin-Embedder-Policy': 'require-corp', 'Cross-Origin-Opener-Policy': 'same-origin' } },
