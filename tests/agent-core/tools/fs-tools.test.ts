@@ -31,6 +31,12 @@ describe('read_file / write_file', () => {
     const out = await handler('read_file')({ path: 'big.txt' }, config);
     expect(out).toContain('truncated');
   });
+  it('rejects a >1 MiB file with a NUL byte in the first MiB as binary', async () => {
+    const bytes = new Uint8Array(1024 * 1024 + 10).fill(0x61);
+    bytes[100] = 0;
+    await storage.writeBytes(`${WORKSPACE_ROOT}/big.bin`, bytes);
+    await expect(handler('read_file')({ path: 'big.bin' }, config)).rejects.toThrow(/binary/);
+  });
 });
 
 describe('list_dir', () => {

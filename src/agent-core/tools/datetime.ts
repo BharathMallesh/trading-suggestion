@@ -1,4 +1,4 @@
-// BROWSER-ADAPTED: vendored from upstream src/tools/core.ts:217-240. Browser-safe
+// BROWSER-ADAPTED: vendored from upstream src/tools/core.ts:205-233. Browser-safe
 // (Intl/Date only); schema and JSON output shape preserved.
 import type { ToolModule } from './interface';
 

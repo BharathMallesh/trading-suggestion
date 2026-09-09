@@ -29,12 +29,12 @@ export function makeFsTools(storage: StorageProvider): ToolModule[] {
       handler: async (args) => {
         const p = resolve(String(args.path));
         const bytes = await storage.readBytes(p);
-        if (bytes.byteLength > READ_FILE_MAX_BYTES) {
-          return new TextDecoder().decode(bytes.slice(0, READ_FILE_MAX_BYTES)) +
-            `\n... (truncated, file is ${bytes.byteLength} bytes)`;
-        }
-        if (bytes.includes(0)) throw new Error(`"${args.path}" appears to be a binary file.`);
-        return new TextDecoder().decode(bytes);
+        const view = bytes.byteLength > READ_FILE_MAX_BYTES ? bytes.slice(0, READ_FILE_MAX_BYTES) : bytes;
+        if (view.includes(0)) throw new Error(`"${args.path}" appears to be a binary file.`);
+        const text = new TextDecoder().decode(view);
+        return bytes.byteLength > READ_FILE_MAX_BYTES
+          ? text + `\n... (truncated, file is ${bytes.byteLength} bytes)`
+          : text;
       },
     },
     {
@@ -103,10 +103,16 @@ export function makeFsTools(storage: StorageProvider): ToolModule[] {
       },
       handler: async (args) => {
         const base = resolve(String(args.path ?? '.'));
-        const re = new RegExp(String(args.pattern));
+        let re: RegExp;
+        try {
+          re = new RegExp(String(args.pattern));
+        } catch (e) {
+          return `Error: invalid pattern: ${(e as Error).message}`;
+        }
         const matches: string[] = [];
         const walk = async (dir: string): Promise<void> => {
           for (const entry of await storage.list(dir)) {
+            if (matches.length >= 50) return;
             const child = `${dir}/${entry}`;
             try {
               await storage.stat(child); // file
