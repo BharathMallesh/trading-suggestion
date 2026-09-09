@@ -2,9 +2,29 @@
 // land in Task 7. Tests and app bootstrapping replace the registry contents.
 import type { ToolModule, ToolDefinition } from './interface';
 import { matchDangerousPattern, isWorkspacePath, needsConfirmation } from '../safety';
+import type { StorageProvider } from '../storage';
+import { makeFsTools } from './fs-tools';
+import { makeDateTimeTool } from './datetime';
+import { makeWebFetchTool } from './web-fetch';
+import { makeRenderHtmlTool } from './render-html';
+
+export interface ToolBuildOptions { online?: boolean; }
 
 let toolRegistry: ToolModule[] = [];
+let registryOnline = false;
 let confirmCounter = 0;
+
+export function buildToolRegistry(storage: StorageProvider, opts: ToolBuildOptions = {}): ToolModule[] {
+  registryOnline = opts.online ?? (typeof navigator !== 'undefined' ? navigator.onLine : false);
+  const tools = [
+    ...makeFsTools(storage),
+    makeDateTimeTool(),
+    makeWebFetchTool(),
+    makeRenderHtmlTool(storage),
+  ];
+  setToolRegistry(tools);
+  return tools;
+}
 
 function confirmationReason(tool: string, args: any, fullConfig: any): string | null {
   const argsStr = JSON.stringify(args ?? {});
@@ -19,15 +39,15 @@ function confirmationReason(tool: string, args: any, fullConfig: any): string | 
 export function setToolRegistry(tools: ToolModule[]): void { toolRegistry = tools; }
 
 export function getToolDefinitions(config?: any): ToolDefinition[] {
-  return toolRegistry.filter((t) => !t.isAvailable || t.isAvailable(config)).map((t) => t.definition);
+  return toolRegistry.filter((t) => !t.isAvailable || t.isAvailable({ ...config, online: registryOnline })).map((t) => t.definition);
 }
 export function listUnavailableTools(config?: any): string[] {
-  return toolRegistry.filter((t) => t.isAvailable && !t.isAvailable(config)).map((t) => t.definition.function.name);
+  return toolRegistry.filter((t) => t.isAvailable && !t.isAvailable({ ...config, online: registryOnline })).map((t) => t.definition.function.name);
 }
 export async function executeToolHandler(name: string, args: any, fullConfig: any): Promise<string> {
   const tool = toolRegistry.find((t) => t.definition.function.name === name);
   if (!tool) return `Error: Tool ${name} not found.`;
-  if (tool.isAvailable && !tool.isAvailable(fullConfig)) return `Error: Tool ${name} is not configured.`;
+  if (tool.isAvailable && !tool.isAvailable({ ...fullConfig, online: registryOnline })) return `Error: Tool ${name} is not configured.`;
   const reason = confirmationReason(name, args, fullConfig);
   if (reason) {
     const id = `confirm-${Date.now()}-${confirmCounter++}`;
