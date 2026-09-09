@@ -30,13 +30,8 @@ export default defineConfig({
     }),
   ],
   resolve: { alias: { '@core': path.resolve(import.meta.dirname, 'src/agent-core') } },
-  // build the wllama worker as its own entry so bundling is verified and it precaches;
-  // once the shim imports createWllamaWorker(), Vite emits it automatically and this input can go
-  build: {
-    rollupOptions: {
-      input: { main: path.resolve(import.meta.dirname, 'index.html'), 'wllama-worker': path.resolve(import.meta.dirname, 'src/llm/wllama-worker.ts') },
-    },
-  },
+  // the wllama worker chunk is emitted automatically: main.tsx -> llm/shim.ts
+  // -> worker-client.ts -> new Worker(new URL('./wllama-worker.ts', ...))
   // wllama multi-threading requires cross-origin isolation
   server: { headers: { 'Cross-Origin-Embedder-Policy': 'require-corp', 'Cross-Origin-Opener-Policy': 'same-origin' } },
   preview: { headers: { 'Cross-Origin-Embedder-Policy': 'require-corp', 'Cross-Origin-Opener-Policy': 'same-origin' } },
