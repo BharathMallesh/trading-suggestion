@@ -1,41 +1,54 @@
+import { normalizePath } from '@core/storage';
 import type { StorageProvider, FileStat } from '@core/storage';
 
 export class FakeStorage implements StorageProvider {
   readonly kind = 'fake' as const;
   private files = new Map<string, Uint8Array>();
 
-  async readText(path: string): Promise<string> {
-    const b = this.files.get(path);
-    if (!b) throw new Error(`ENOENT: ${path}`);
-    return new TextDecoder().decode(b);
-  }
-  async readBytes(path: string): Promise<Uint8Array> {
+  private get(path: string): Uint8Array {
     const b = this.files.get(path);
     if (!b) throw new Error(`ENOENT: ${path}`);
     return b;
   }
+
+  async readText(path: string): Promise<string> {
+    path = normalizePath(path);
+    return new TextDecoder().decode(this.get(path));
+  }
+  async readBytes(path: string): Promise<Uint8Array> {
+    path = normalizePath(path);
+    return this.get(path).slice();
+  }
+  async readFile(path: string): Promise<Blob> {
+    path = normalizePath(path);
+    return new Blob([this.get(path).slice()]);
+  }
   async writeBytes(path: string, data: Uint8Array): Promise<void> {
+    path = normalizePath(path);
     this.files.set(path, data);
   }
   async writeText(path: string, text: string): Promise<void> {
     await this.writeBytes(path, new TextEncoder().encode(text));
   }
   async appendText(path: string, text: string): Promise<void> {
+    path = normalizePath(path);
     const prev = this.files.has(path) ? await this.readText(path) : '';
     await this.writeText(path, prev + text);
   }
   async exists(path: string): Promise<boolean> {
+    path = normalizePath(path);
     if (this.files.has(path)) return true;
-    const prefix = path.endsWith('/') ? path : path + '/';
+    if (path === '') return this.files.size > 0;
+    const prefix = path + '/';
     return [...this.files.keys()].some((k) => k.startsWith(prefix));
   }
   async stat(path: string): Promise<FileStat> {
-    const b = this.files.get(path);
-    if (!b) throw new Error(`ENOENT: ${path}`);
-    return { size: b.byteLength, mtimeMs: 0 };
+    path = normalizePath(path);
+    return { size: this.get(path).byteLength, mtimeMs: 0 };
   }
   async list(dir: string): Promise<string[]> {
-    const prefix = dir === '' ? '' : dir.endsWith('/') ? dir : dir + '/';
+    dir = normalizePath(dir);
+    const prefix = dir === '' ? '' : dir + '/';
     const out = new Set<string>();
     for (const k of this.files.keys()) {
       if (!k.startsWith(prefix)) continue;
@@ -45,6 +58,12 @@ export class FakeStorage implements StorageProvider {
     return [...out].sort();
   }
   async remove(path: string): Promise<void> {
-    this.files.delete(path);
+    path = normalizePath(path);
+    if (this.files.delete(path)) return;
+    const prefix = path + '/';
+    if (path !== '' && [...this.files.keys()].some((k) => k.startsWith(prefix))) {
+      throw new Error(`ENOTEMPTY: ${path}`);
+    }
+    // missing path: silently succeed (idempotent)
   }
 }
