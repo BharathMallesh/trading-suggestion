@@ -8,8 +8,7 @@ import { requestPermission } from '../storage/handle-store';
 import { BASE_MODEL } from '../setup/manifest';
 import SetupWizard from '../setup/SetupWizard';
 import { AdapterManager } from '../adapters/manager';
-import { ChatView } from './ChatView';
-import { StatusBar } from './StatusBar';
+import { Shell } from '../app/Shell';
 import { bootWorker, createAgentHost } from './agent-host';
 import type { AgentHost } from './agent-host';
 
@@ -243,21 +242,18 @@ export default function App() {
   }
 
   return (
-    <div>
-      <StatusBar
+    <>
+      {notice && <p style={{ ...styles.error, padding: '4px 16px', margin: 0 }}>{notice}</p>}
+      <Shell
         storageKind={phase.storage.kind}
-        contexts={contexts}
-        activeContext={activeContext}
-        onSwitchContext={(ctx) => void switchContext(ctx)}
-      />
-      {notice && <p style={{ ...styles.error, padding: '0 16px' }}>{notice}</p>}
-      <ChatView
+        storage={phase.storage}
         send={async (text) => {
           await phase.host.agent.chat(text);
         }}
+        stop={() => phase.host.agent.stop()}
         registerEmitter={registerEmitter}
         resolveConfirm={phase.host.resolveConfirm}
       />
-    </div>
+    </>
   );
 }

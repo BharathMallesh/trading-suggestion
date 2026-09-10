@@ -13,6 +13,7 @@ export type SkillSource = 'builtin' | 'user' | 'project';
 export interface SkillMeta {
   name: string;
   displayName?: string;
+  displayNameEn?: string;
   description: string;
   descriptionZh?: string;
   descriptionEn?: string;
@@ -62,6 +63,7 @@ function toMeta(frontmatter: Record<string, string>, dir: string, source: SkillS
   return {
     name: frontmatter.name || dir.split('/').pop()!,
     displayName: frontmatter.display_name,
+    displayNameEn: frontmatter.display_name_en,
     description: frontmatter.description || frontmatter.description_zh || frontmatter.description_en || '',
     descriptionZh: frontmatter.description_zh,
     descriptionEn: frontmatter.description_en,
