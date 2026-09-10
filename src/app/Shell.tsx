@@ -9,6 +9,7 @@ import type { StorageProvider } from '@core/storage';
 import { theme } from './theme';
 import { createStore } from './store';
 import { useScheduler } from './scheduler';
+import { useBridge } from './bridge';
 import { PAGE_TITLE } from './nav';
 import type { Page } from './nav';
 import { Home } from './pages/Home';
@@ -21,6 +22,7 @@ import { Memory } from './pages/Memory';
 import { Library } from './pages/Library';
 import { Contacts } from './pages/Contacts';
 import { Channels } from './pages/Channels';
+import { Messages } from './pages/Messages';
 import { Placeholder } from './pages/Placeholder';
 
 export interface ShellProps {
@@ -40,6 +42,7 @@ export function Shell({ name = 'Luna', send, stop, registerEmitter, resolveConfi
   const [history, setHistory] = useState<Page[]>(['home']);
   const online = useOnline();
   const store = useMemo(() => createStore(storage), [storage]);
+  const bridge = useBridge();
   const [toast, setToast] = useState<string | null>(null);
 
   function nav(next: Page): void {
@@ -74,6 +77,8 @@ export function Shell({ name = 'Luna', send, stop, registerEmitter, resolveConfi
         return <Home nav={nav} name={name} store={store} storage={storage} />;
       case 'chat':
         return <Chat send={send} stop={stop} registerEmitter={registerEmitter} resolveConfirm={resolveConfirm} />;
+      case 'messages':
+        return <Messages bridge={bridge} />;
       case 'superpowers':
         return <Superpowers storage={storage} />;
       case 'workspace':
@@ -89,12 +94,12 @@ export function Shell({ name = 'Luna', send, stop, registerEmitter, resolveConfi
       case 'contacts':
         return <Contacts store={store} />;
       case 'channels':
-        return <Channels name={name} store={store} />;
+        return <Channels name={name} store={store} bridge={bridge} onOpenMessages={() => nav('messages')} />;
       default:
         return <Placeholder page={page} />;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, name, send, stop, registerEmitter, resolveConfirm, storage, store]);
+  }, [page, name, send, stop, registerEmitter, resolveConfirm, storage, store, bridge]);
 
   return (
     <div style={s.root}>
@@ -110,6 +115,9 @@ export function Shell({ name = 'Luna', send, stop, registerEmitter, resolveConfi
         </button>
         <button style={s.newChat} onClick={() => nav('chat')}>
           + New Chat
+        </button>
+        <button style={s.messagesBtn} onClick={() => nav('messages')}>
+          <span style={s.statusDot(bridge.connected)} /> Messages
         </button>
         <div style={s.chatsHead}>▾ Chats</div>
         <div style={s.chatList}>
@@ -230,6 +238,18 @@ const s = {
     padding: '6px 14px',
     fontSize: 13,
     fontWeight: 500,
+    cursor: 'pointer',
+  } as CSSProperties,
+  messagesBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    alignSelf: 'flex-start',
+    background: 'transparent',
+    border: 'none',
+    color: theme.color.textDim,
+    padding: '6px 6px',
+    fontSize: 13,
     cursor: 'pointer',
   } as CSSProperties,
   chatsHead: { color: theme.color.textFaint, fontSize: 12, marginTop: 8, padding: '0 4px' } as CSSProperties,

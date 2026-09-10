@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# Bridge secrets (tokens live here, never commit)
+bridge/config.json
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

@@ -6,6 +6,7 @@ import type { CSSProperties } from 'react';
 import { theme } from '../theme';
 import { usePersistentState } from '../store';
 import type { Store } from '../store';
+import type { Bridge } from '../bridge';
 
 interface Channel {
   id: string;
@@ -26,7 +27,18 @@ interface ChannelSetup {
   description: string;
 }
 
-export function Channels({ name = 'Luna', store }: { name?: string; store: Store }) {
+export function Channels({
+  name = 'Luna',
+  store,
+  bridge,
+  onOpenMessages,
+}: {
+  name?: string;
+  store: Store;
+  bridge?: Bridge;
+  onOpenMessages?: () => void;
+}) {
+  const isConnected = (id: string) => !!bridge?.channels.find((c) => c.id === id && c.connected);
   const [selected, setSelected] = useState('slack');
   const [step, setStep] = useState(0);
   const [copied, setCopied] = useState(false);
@@ -43,6 +55,13 @@ export function Channels({ name = 'Luna', store }: { name?: string; store: Store
     <div style={s.wrap}>
       <div style={s.head}>
         <h2 style={s.title}>‹ Channels</h2>
+        <div style={s.bridgeStatus}>
+          <span style={s.statusDot(!!bridge?.connected)} />
+          {bridge?.connected ? 'Bridge connected' : 'Bridge offline'}
+          {bridge?.connected && onOpenMessages && (
+            <button style={s.openMsgs} onClick={onOpenMessages}>Open Messages →</button>
+          )}
+        </div>
       </div>
       <div style={s.body}>
         <div style={s.list}>
@@ -57,7 +76,11 @@ export function Channels({ name = 'Luna', store }: { name?: string; store: Store
             >
               <span style={s.chanIcon}>{c.icon}</span>
               <span style={{ flex: 1, textAlign: 'left' }}>{c.name}</span>
-              <span style={s.notConnected}>Not connected</span>
+              {isConnected(c.id) ? (
+                <span style={s.connected}>Connected</span>
+              ) : (
+                <span style={s.notConnected}>Not connected</span>
+              )}
             </button>
           ))}
         </div>
@@ -127,10 +150,14 @@ function StepNote({ text, onNext }: { text: string; onNext?: () => void }) {
   );
 }
 
-const s: Record<string, CSSProperties> = {
+const s: Record<string, CSSProperties> & { statusDot: (c: boolean) => CSSProperties } = {
   wrap: { height: '100%', display: 'flex', flexDirection: 'column', padding: 20 },
-  head: { marginBottom: 10 },
+  head: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
   title: { fontFamily: theme.font.serif, fontWeight: 400, fontSize: 22, margin: 0, color: theme.color.text },
+  bridgeStatus: { display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: theme.color.textDim },
+  statusDot: (c: boolean): CSSProperties => ({ width: 8, height: 8, borderRadius: '50%', background: c ? theme.color.online : theme.color.offline }),
+  openMsgs: { marginLeft: 6, background: 'transparent', border: `1px solid ${theme.color.border}`, color: theme.color.textDim, borderRadius: theme.radius.sm, padding: '4px 10px', fontSize: 12, cursor: 'pointer' },
+  connected: { fontSize: 11, color: theme.color.online, background: theme.color.panel, border: `1px solid ${theme.color.borderSoft}`, borderRadius: 5, padding: '2px 7px' },
   body: { flex: 1, display: 'flex', gap: 16, minHeight: 0 },
   list: { width: 260, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 4 },
   chan: {

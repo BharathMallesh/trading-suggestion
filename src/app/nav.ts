@@ -3,6 +3,7 @@
 export type Page =
   | 'home'
   | 'chat'
+  | 'messages'
   | 'personality'
   | 'schedules'
   | 'superpowers'
@@ -15,6 +16,7 @@ export type Page =
 export const PAGE_TITLE: Record<Page, string> = {
   home: 'Home',
   chat: 'New Chat',
+  messages: 'Messages',
   personality: 'Shape my personality',
   schedules: 'Schedules',
   superpowers: 'My Superpowers',
