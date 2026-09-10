@@ -6,6 +6,35 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 export const BRIDGE_URL = 'ws://localhost:8787';
 
+// Conversations are cached locally so they survive a page refresh even when the
+// bridge's in-memory replay buffer is empty (e.g. after a bridge restart).
+const CACHE_KEY = 'luna-bridge-convos';
+const MAX_CONVOS = 50;
+const MAX_MSGS = 200;
+
+function loadConvos(): Map<string, Conversation> {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (!raw) return new Map();
+    const list = JSON.parse(raw) as Conversation[];
+    return new Map(list.map((c) => [c.key, c]));
+  } catch {
+    return new Map();
+  }
+}
+
+function saveConvos(convos: Map<string, Conversation>): void {
+  try {
+    const list = [...convos.values()]
+      .sort((a, b) => b.lastTs - a.lastTs)
+      .slice(0, MAX_CONVOS)
+      .map((c) => (c.messages.length > MAX_MSGS ? { ...c, messages: c.messages.slice(-MAX_MSGS) } : c));
+    localStorage.setItem(CACHE_KEY, JSON.stringify(list));
+  } catch {
+    /* over quota / unavailable — cache is best-effort */
+  }
+}
+
 export interface ChannelStatus {
   id: string;
   connected: boolean;
@@ -37,14 +66,22 @@ export interface Bridge {
 export function useBridge(url: string = BRIDGE_URL): Bridge {
   const [connected, setConnected] = useState(false);
   const [channels, setChannels] = useState<ChannelStatus[]>([]);
-  const [convos, setConvos] = useState<Map<string, Conversation>>(new Map());
+  const [convos, setConvos] = useState<Map<string, Conversation>>(() => loadConvos());
   const wsRef = useRef<WebSocket | null>(null);
+
+  // Persist whenever conversations change, so a refresh restores them.
+  useEffect(() => {
+    saveConvos(convos);
+  }, [convos]);
 
   const upsert = useCallback((channel: string, chatId: string, msg: BridgeMessage) => {
     const key = `${channel}:${chatId}`;
     setConvos((prev) => {
+      const existing = prev.get(key);
+      // Dedupe: a replayed history message we already have is a no-op (keeps the
+      // same state reference so React skips a re-render).
+      if (existing && existing.messages.some((m) => m.id === msg.id)) return prev;
       const next = new Map(prev);
-      const existing = next.get(key);
       const conv: Conversation = existing
         ? { ...existing, messages: [...existing.messages, msg], lastTs: msg.ts, from: msg.dir === 'in' ? msg.from : existing.from }
         : { key, channel, chatId, from: msg.dir === 'in' ? msg.from : 'You', messages: [msg], lastTs: msg.ts };
