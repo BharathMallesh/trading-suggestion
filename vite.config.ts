@@ -38,7 +38,15 @@ export default defineConfig({
   // the wllama worker chunk is emitted automatically: main.tsx -> llm/shim.ts
   // -> worker-client.ts -> new Worker(new URL('./wllama-worker.ts', ...))
   // wllama multi-threading requires cross-origin isolation
-  server: { headers: { 'Cross-Origin-Embedder-Policy': 'require-corp', 'Cross-Origin-Opener-Policy': 'same-origin' } },
-  preview: { headers: { 'Cross-Origin-Embedder-Policy': 'require-corp', 'Cross-Origin-Opener-Policy': 'same-origin' } },
+  server: { headers: { // 'credentialless' keeps cross-origin isolation (wllama multi-threading /
+// SharedArrayBuffer) while still allowing third-party resources like the
+// Clerk auth widget to load without CORP headers. (Chrome/Edge/Firefox; on
+// Safari, isolation degrades gracefully to single-threaded inference.)
+'Cross-Origin-Embedder-Policy': 'credentialless', 'Cross-Origin-Opener-Policy': 'same-origin' } },
+  preview: { headers: { // 'credentialless' keeps cross-origin isolation (wllama multi-threading /
+// SharedArrayBuffer) while still allowing third-party resources like the
+// Clerk auth widget to load without CORP headers. (Chrome/Edge/Firefox; on
+// Safari, isolation degrades gracefully to single-threaded inference.)
+'Cross-Origin-Embedder-Policy': 'credentialless', 'Cross-Origin-Opener-Policy': 'same-origin' } },
   test: { environment: 'jsdom', include: ['tests/**/*.test.ts', 'tests/**/*.test.tsx'] },
 });

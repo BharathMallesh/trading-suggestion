@@ -12,6 +12,11 @@ dist
 dist-ssr
 *.local
 
+# Local env (keep .env.example tracked)
+.env
+.env.*
+!.env.example
+
 # Bridge secrets (tokens live here, never commit)
 bridge/config.json
 
