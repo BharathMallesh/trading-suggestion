@@ -254,6 +254,7 @@ export default function App() {
           await phase.host.agent.chat(text);
         }}
         stop={() => phase.host.agent.stop()}
+        draft={(instruction) => phase.host.agent.draftText(instruction)}
         registerEmitter={registerEmitter}
         resolveConfirm={phase.host.resolveConfirm}
       />

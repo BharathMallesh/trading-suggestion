@@ -10,10 +10,11 @@ const CHANNEL_ICON: Record<string, string> = {
   mock: '🧪', telegram: '➤', slack: '#', discord: '🎮', email: '✉', teams: '👥',
 };
 
-export function Messages({ bridge }: { bridge: Bridge }) {
+export function Messages({ bridge, draft: aiDraft }: { bridge: Bridge; draft?: (instruction: string) => Promise<string> }) {
   const [selected, setSelected] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [composing, setComposing] = useState(false);
+  const [drafting, setDrafting] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   const convos = bridge.conversations;
@@ -34,6 +35,27 @@ export function Messages({ bridge }: { bridge: Bridge }) {
     bridge.send(channel, to, text);
     setSelected(`${channel}:${to}`); // the 'sent' echo will create/fill this conversation
     setComposing(false);
+  }
+
+  async function aiDraftReply(): Promise<void> {
+    if (!aiDraft || !active || drafting) return;
+    setDrafting(true);
+    try {
+      const recent = active.messages
+        .slice(-6)
+        .map((m) => `${m.dir === 'in' ? active.from : 'Me'}: ${m.text}`)
+        .join('\n');
+      const instruction =
+        `You are drafting my reply on the ${active.channel} channel to ${active.from}. ` +
+        `Write a short, natural reply to their latest message. Output ONLY the reply text — no preamble, no quotes.\n\n` +
+        `Conversation so far:\n${recent}`;
+      const text = await aiDraft(instruction);
+      if (text) setDraft(text);
+    } catch {
+      /* leave the composer as-is on failure */
+    } finally {
+      setDrafting(false);
+    }
   }
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>): void {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -90,9 +112,19 @@ export function Messages({ bridge }: { bridge: Bridge }) {
                     value={draft}
                     onChange={(e) => setDraft(e.target.value)}
                     onKeyDown={onKeyDown}
-                    placeholder={`Reply to ${active.from}…`}
+                    placeholder={drafting ? 'Drafting…' : `Reply to ${active.from}…`}
                     rows={1}
                   />
+                  {aiDraft && (
+                    <button
+                      style={{ ...s.aiBtn, opacity: drafting ? 0.6 : 1 }}
+                      disabled={drafting}
+                      onClick={() => void aiDraftReply()}
+                      title="Let Luna draft a reply"
+                    >
+                      {drafting ? '…' : '✨ Draft'}
+                    </button>
+                  )}
                   <button
                     style={{ ...s.send, opacity: draft.trim() ? 1 : 0.5 }}
                     disabled={!draft.trim()}
@@ -240,6 +272,7 @@ const s: Record<string, CSSProperties> & { dot: (c: boolean) => CSSProperties } 
     padding: '9px 12px', color: theme.color.text, fontSize: 14, outline: 'none', resize: 'none', fontFamily: theme.font.sans,
   },
   send: { background: theme.color.text, color: theme.color.bg, border: 'none', borderRadius: theme.radius.sm, padding: '0 16px', fontSize: 14, fontWeight: 600, cursor: 'pointer' },
+  aiBtn: { background: theme.color.accentSoft, color: theme.color.accent, border: 'none', borderRadius: theme.radius.sm, padding: '0 12px', fontSize: 13, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' },
   empty: { margin: 'auto', color: theme.color.textFaint, fontSize: 14 },
   help: { margin: 'auto', maxWidth: 460, textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 },
   helpIcon: { fontSize: 30 },

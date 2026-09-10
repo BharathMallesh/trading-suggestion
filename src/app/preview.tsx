@@ -30,6 +30,11 @@ async function send(text: string): Promise<void> {
 function stop(): void {
   aborted = true;
 }
+async function draft(instruction: string): Promise<string> {
+  await new Promise((r) => setTimeout(r, 600));
+  const to = instruction.match(/to ([^.]+)\./)?.[1] ?? 'there';
+  return `Hi ${to}! Thanks for reaching out — happy to help. (This is a stubbed AI draft; the real one comes from the on-device model.)`;
+}
 function registerEmitter(fn: (e: AgentEvent) => void): () => void {
   emitters.push(fn);
   return () => {
@@ -146,6 +151,7 @@ createRoot(document.getElementById('root')!).render(
     <Shell
       send={send}
       stop={stop}
+      draft={draft}
       registerEmitter={registerEmitter}
       resolveConfirm={() => {}}
       storageKind="fake"

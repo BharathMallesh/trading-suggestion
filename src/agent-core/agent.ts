@@ -182,6 +182,33 @@ RULES OF ENGAGEMENT:
     this.currentAbort?.abort(new Error('stopped by user'));
   }
 
+  /**
+   * One-shot text generation for things like drafting a channel reply: runs a
+   * single streaming completion with the persona-aware system prompt, no tool
+   * loop, and WITHOUT touching the persistent chat history. Returns the text.
+   */
+  async draftText(instruction: string): Promise<string> {
+    await this.ensureSkillsManifest();
+    await this.refreshPersona();
+    const messages: ChatMessage[] = [this.messages[0], { role: 'user', content: instruction }];
+    const stream = await this.llm.createChatCompletionStream({
+      model: this.model,
+      messages,
+      stream: true,
+      temperature: this.config?.temperature,
+      top_p: this.config?.top_p,
+      top_k: this.config?.top_k,
+      repetition_penalty: this.config?.repetition_penalty,
+      max_tokens: 500,
+    });
+    let out = '';
+    for await (const chunk of stream) {
+      const delta = chunk.choices?.[0]?.delta?.content;
+      if (delta) out += delta;
+    }
+    return out.trim();
+  }
+
   async chat(userInput: string): Promise<AgentRunResult> {
     await this.ensureSkillsManifest();
     await this.refreshPersona();

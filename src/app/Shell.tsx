@@ -29,6 +29,7 @@ export interface ShellProps {
   name?: string;
   send: (text: string) => Promise<void>;
   stop?: () => void;
+  draft?: (instruction: string) => Promise<string>;
   registerEmitter: (fn: (e: AgentEvent) => void) => () => void;
   resolveConfirm: (id: string, ok: boolean) => void;
   storageKind: 'fs-access' | 'opfs' | 'fake';
@@ -37,7 +38,7 @@ export interface ShellProps {
 
 const RECENT_CHATS = ['Flagging Inbox Replies', 'Mixed Scope Discussion'];
 
-export function Shell({ name = 'Luna', send, stop, registerEmitter, resolveConfirm, storageKind, storage }: ShellProps) {
+export function Shell({ name = 'Luna', send, stop, draft, registerEmitter, resolveConfirm, storageKind, storage }: ShellProps) {
   const [page, setPage] = useState<Page>('home');
   const [history, setHistory] = useState<Page[]>(['home']);
   const online = useOnline();
@@ -78,7 +79,7 @@ export function Shell({ name = 'Luna', send, stop, registerEmitter, resolveConfi
       case 'chat':
         return <Chat send={send} stop={stop} registerEmitter={registerEmitter} resolveConfirm={resolveConfirm} />;
       case 'messages':
-        return <Messages bridge={bridge} />;
+        return <Messages bridge={bridge} draft={draft} />;
       case 'superpowers':
         return <Superpowers storage={storage} />;
       case 'workspace':
@@ -99,7 +100,7 @@ export function Shell({ name = 'Luna', send, stop, registerEmitter, resolveConfi
         return <Placeholder page={page} />;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, name, send, stop, registerEmitter, resolveConfirm, storage, store, bridge]);
+  }, [page, name, send, stop, draft, registerEmitter, resolveConfirm, storage, store, bridge]);
 
   return (
     <div style={s.root}>
