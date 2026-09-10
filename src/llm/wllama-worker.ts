@@ -57,13 +57,17 @@ self.onmessage = async (e: MessageEvent<WorkerRequest>) => {
       if (loaded || loading) throw new Error('model already loaded or loading');
       loading = true;
       try {
-        await wllama.loadModelFromUrl(msg.modelUrl, {
+        // Blob, not a URL: wllama's loadModelFromUrl rejects blob: URLs (they
+        // don't end in ".gguf"), so the bytes cross the boundary as a Blob and
+        // go straight into loadModel(). That path has no download-progress
+        // callback (the bytes are already local); emit a single tick so the
+        // loading screen shows real numbers instead of an indeterminate bar.
+        post({ type: 'load_progress', loaded: msg.model.size, total: msg.model.size });
+        await wllama.loadModel([msg.model], {
           n_ctx: msg.nCtx ?? 4096,
           // SPIKE verdict (docs/lora-spike.md): load-time lora_adapters exists in
           // LoadModelParams but no FS delivery path for the adapter file; runtime
           // switching has no API. adapterUrl is accepted in the protocol but ignored.
-          progressCallback: ({ loaded: bytesLoaded, total }) =>
-            post({ type: 'load_progress', loaded: bytesLoaded, total }),
         });
         loaded = true;
         post({ type: 'loaded', loraSupported: false });

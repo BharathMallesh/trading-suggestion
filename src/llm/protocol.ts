@@ -2,7 +2,13 @@ import type { ChatChunk, ChatMessage } from '@core/chat-model';
 
 export interface LoadModelRequest {
   type: 'load';
-  modelUrl: string; // served URL or blob URL for the base GGUF
+  /**
+   * Bytes of the base GGUF. Transported as a Blob because wllama's
+   * loadModelFromUrl validates that URLs end in ".gguf" and so rejects the
+   * blob: URLs the app would otherwise have to use; the worker passes the
+   * Blob straight to wllama's loadModel() instead.
+   */
+  model: Blob;
   adapterUrl?: string; // LoRA adapter GGUF, if supported (see docs/lora-spike.md)
   nCtx?: number;
 }

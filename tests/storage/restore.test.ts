@@ -36,4 +36,19 @@ describe('restoreStorage', () => {
     (window as any).showDirectoryPicker = vi.fn();
     await expect(restoreStorage()).resolves.toEqual({ status: 'no-handle' });
   });
+
+  it('restores OPFS directly when a previous session chose it, picker or not', async () => {
+    (window as any).showDirectoryPicker = vi.fn(); // would win if consulted
+    mocks.store.set('autoclaw.storageKind', 'opfs');
+    vi.spyOn(OpfsStorage, 'create').mockResolvedValue({ kind: 'opfs' } as unknown as OpfsStorage);
+    const result = await restoreStorage();
+    expect(result.status).toBe('ready');
+    if (result.status === 'ready') expect(result.storage.kind).toBe('opfs');
+  });
+
+  it('ignores an unknown persisted storage kind', async () => {
+    (window as any).showDirectoryPicker = vi.fn();
+    mocks.store.set('autoclaw.storageKind', 'bogus');
+    await expect(restoreStorage()).resolves.toEqual({ status: 'no-handle' });
+  });
 });

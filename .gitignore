@@ -26,3 +26,6 @@ dist-ssr
 # Playwright
 test-results/
 playwright-report/
+
+# e2e fixture model (~252MB, fetched by e2e/global-setup.ts)
+public/fixtures/*.gguf

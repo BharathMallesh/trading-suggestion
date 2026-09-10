@@ -1,7 +1,7 @@
 import type { StorageProvider } from '@core/storage';
 import { FileSystemAccessStorage } from './fs-access';
 import { OpfsStorage } from './opfs';
-import { loadHandle, queryPermission } from './handle-store';
+import { loadHandle, loadStorageKind, queryPermission } from './handle-store';
 
 export type RestoreResult =
   | { status: 'ready'; storage: StorageProvider }
@@ -14,6 +14,12 @@ export function fsAccessSupported(): boolean {
 
 /** Restore storage from a previously picked folder, or report what the UI must do next. */
 export async function restoreStorage(): Promise<RestoreResult> {
+  // A previous session chose OPFS: restore it directly, even in browsers that
+  // also support the folder picker (otherwise an OPFS user reloads into the
+  // setup screen and, offline, could never re-download).
+  if ((await loadStorageKind()) === 'opfs') {
+    return { status: 'ready', storage: await OpfsStorage.create() };
+  }
   if (fsAccessSupported()) {
     const handle = await loadHandle();
     if (handle) {

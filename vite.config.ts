@@ -15,6 +15,10 @@ export default defineConfig({
         maximumFileSizeToCacheInBytes: 20 * 1024 * 1024,
         // md: setup seeds bundled skills from /skills-builtin/** offline (Task 13)
         globPatterns: ['**/*.{js,css,html,ico,png,svg,webmanifest,wasm,md}'],
+        // SPA fallback so an offline reload of any route serves the precached shell.
+        // Deliberately no 'gguf' in globPatterns: models live in user storage (OPFS),
+        // not the precache — the e2e fixture under public/fixtures stays network-only.
+        navigateFallback: 'index.html',
       },
       manifest: {
         name: 'AutoClaw Offline Agents',

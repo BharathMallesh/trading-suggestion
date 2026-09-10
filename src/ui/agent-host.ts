@@ -49,7 +49,7 @@ export function createAgentHost(
  */
 export function loadWorkerModel(
   worker: Worker,
-  modelUrl: string,
+  model: Blob,
   onProgress?: (loaded: number, total: number) => void,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -63,7 +63,7 @@ export function loadWorkerModel(
         reject(new Error(msg.message));
       }
     };
-    worker.postMessage({ type: 'load', modelUrl } satisfies WorkerRequest);
+    worker.postMessage({ type: 'load', model } satisfies WorkerRequest);
   });
 }
 
@@ -76,12 +76,7 @@ export async function bootWorker(
   const worker = createWllamaWorker();
   try {
     const bytes = await storage.readBytes(modelPath);
-    const modelUrl = URL.createObjectURL(new Blob([bytes as Uint8Array<ArrayBuffer>]));
-    try {
-      await loadWorkerModel(worker, modelUrl, onProgress);
-    } finally {
-      URL.revokeObjectURL(modelUrl);
-    }
+    await loadWorkerModel(worker, new Blob([bytes as Uint8Array<ArrayBuffer>]), onProgress);
     return worker;
   } catch (err) {
     worker.terminate();

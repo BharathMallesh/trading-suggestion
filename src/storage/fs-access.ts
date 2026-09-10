@@ -1,5 +1,5 @@
 import { HandleStorage } from './handle-storage';
-import { saveHandle } from './handle-store';
+import { saveHandle, saveStorageKind } from './handle-store';
 
 export class FileSystemAccessStorage extends HandleStorage {
   readonly kind = 'fs-access' as const;
@@ -15,6 +15,7 @@ export class FileSystemAccessStorage extends HandleStorage {
   static async pickAndCreate(): Promise<FileSystemAccessStorage> {
     const handle = await (window as any).showDirectoryPicker({ mode: 'readwrite' });
     await saveHandle(handle); // pick + persist atomically so callers can't forget
+    await saveStorageKind('fs-access');
     return new FileSystemAccessStorage(handle);
   }
 }

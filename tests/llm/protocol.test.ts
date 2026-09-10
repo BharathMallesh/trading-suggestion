@@ -10,17 +10,25 @@ import type {
 const clone = <T>(value: T): T => structuredClone(value);
 
 describe('worker protocol', () => {
-  it('load request round-trips through structuredClone', () => {
+  it('load request round-trips through a worker-style channel', async () => {
     const req: LoadModelRequest = {
       type: 'load',
-      modelUrl: 'https://example.com/model.gguf',
+      model: new Blob([new Uint8Array([0x47, 0x47, 0x55, 0x46])]), // "GGUF"
       adapterUrl: 'https://example.com/adapter.gguf',
       nCtx: 8192,
     };
-    const rt = clone<WorkerRequest>(req);
+    // Round-trip through a real MessageChannel — the same serialization a web
+    // Worker postMessage performs. jsdom's Blob is not V8-serializable (it
+    // arrives as a plain object here), so the Blob payload itself is only
+    // round-trip-proven in the browser e2e; assert the serializable fields.
+    const rt = await new Promise<WorkerRequest>((resolve) => {
+      const { port1, port2 } = new MessageChannel();
+      port2.onmessage = (e: MessageEvent<WorkerRequest>) => resolve(e.data);
+      port1.postMessage(req);
+    });
     expect(rt.type).toBe('load');
     if (rt.type === 'load') {
-      expect(rt.modelUrl).toBe(req.modelUrl);
+      expect(req.model.size).toBe(4);
       expect(rt.adapterUrl).toBe(req.adapterUrl);
       expect(rt.nCtx).toBe(8192);
     }
