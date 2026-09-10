@@ -28,8 +28,28 @@ const toWllamaMessages = (messages: ChatMessage[]): ChatCompletionMessage[] =>
     return { role: 'assistant', content: m.content ?? null, tool_calls: m.tool_calls };
   });
 
-// v3.6.1 ships a single wasm with pthread support; 'default' is the only key read at runtime
-const wllama = new Wllama({ default: '/wllama-wasm/wllama.wasm' }, { logger: LoggerWithoutDebug });
+// Custom logger: extends LoggerWithoutDebug (already silences debug spam) and
+// additionally suppresses two categories of expected-but-noisy warnings:
+//   1. "No available adapters" / "requestAdapter returned null" — wllama probes
+//      WebGPU on every load and emits this on browsers without GPU. The WASM
+//      fallback kicks in automatically; the message is pure noise.
+//   2. "model has unused tensor blk.N.nextn.*" — Qwen3.5's Multi-Token
+//      Prediction (MTP) heads are not supported by wllama; they are safely
+//      ignored and inference is unaffected.
+const SUPPRESS = [
+  /no available adapters/i,
+  /requestAdapter returned null/i,
+  /webgpu not available/i,
+  /model has unused tensor.*nextn\./i,
+  /model has unused tensor blk\.\d+\.(attn|ffn|post_attention|attn_norm|attn_q|attn_k|attn_v|attn_output|attn_q_norm|attn_k_norm)/i,
+];
+const wllama = new Wllama({ default: '/wllama-wasm/wllama.wasm' }, {
+  logger: {
+    ...LoggerWithoutDebug,
+    warn:  (...args: unknown[]) => { const s = args.join(' '); if (!SUPPRESS.some(r => r.test(s))) LoggerWithoutDebug.warn(...args);  },
+    error: (...args: unknown[]) => { const s = args.join(' '); if (!SUPPRESS.some(r => r.test(s))) LoggerWithoutDebug.error(...args); },
+  },
+});
 
 const controllers = new Map<number, AbortController>();
 let loaded = false;
