@@ -77,4 +77,48 @@ describe('AdapterManager', () => {
     await s.writeText('adapters/active.json', '[ oops');
     await expect(new AdapterManager(s).activeContext()).rejects.toThrow(/adapters\/active\.json/);
   });
+
+  it('treats valid-JSON non-object registry.json as empty', async () => {
+    const s = new FakeStorage();
+    await s.writeText('adapters/registry.json', 'null');
+    const m = new AdapterManager(s);
+    expect(await m.listContexts()).toEqual([]);
+    await expect(m.activate('support')).rejects.toThrow(/unknown/i);
+  });
+
+  it('treats valid-JSON non-object active.json as no active context', async () => {
+    const s = new FakeStorage();
+    await s.writeText('adapters/active.json', '42');
+    const m = new AdapterManager(s);
+    expect(await m.activeContext()).toBeNull();
+    expect(await m.activeArtifact()).toBeNull();
+  });
+
+  it('ignores registry contexts whose path is not a string', async () => {
+    const s = new FakeStorage();
+    await s.writeText(
+      'adapters/registry.json',
+      JSON.stringify({ contexts: { bad: 5, good: 'adapters/good/adapter.gguf' } }),
+    );
+    await s.writeText('adapters/good/adapter.gguf', 'gguf-bytes');
+    const m = new AdapterManager(s);
+    expect(await m.listContexts()).toEqual(['good']);
+    expect(await m.adapterPath('bad')).toBeNull();
+    await expect(m.activate('bad')).rejects.toThrow(/unknown/i);
+    await m.activate('good');
+    expect(await m.activeContext()).toBe('good');
+  });
+
+  it('activeArtifact returns the persisted {context, path} pair', async () => {
+    const s = new FakeStorage();
+    await s.writeText(
+      'adapters/registry.json',
+      JSON.stringify({ contexts: { legal: 'models/legal-merged.gguf' } }),
+    );
+    await s.writeText('models/legal-merged.gguf', 'gguf-bytes');
+    const m = new AdapterManager(s);
+    expect(await m.activeArtifact()).toBeNull();
+    await m.activate('legal');
+    expect(await m.activeArtifact()).toEqual({ context: 'legal', path: 'models/legal-merged.gguf' });
+  });
 });

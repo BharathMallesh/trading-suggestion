@@ -30,8 +30,11 @@ export class AdapterManager {
   private async readRegistry(): Promise<Registry> {
     if (!(await this.storage.exists('adapters/registry.json'))) return { contexts: {} };
     const parsed = parseJsonFile(await this.storage.readText('adapters/registry.json'), 'adapters/registry.json');
-    const contexts = (parsed as Registry).contexts;
-    if (!contexts || typeof contexts !== 'object') return { contexts: {} };
+    if (!parsed || typeof parsed !== 'object') return { contexts: {} };
+    const contexts: Record<string, string> = {};
+    for (const [context, path] of Object.entries((parsed as Registry).contexts ?? {})) {
+      if (typeof path === 'string') contexts[context] = path;
+    }
     return { contexts };
   }
 
@@ -44,10 +47,23 @@ export class AdapterManager {
   }
 
   async activeContext(): Promise<string | null> {
+    return (await this.activeArtifact())?.context ?? null;
+  }
+
+  /**
+   * The persisted selection as written by activate(): both the context name
+   * and the artifact path, read straight from active.json. Task 15 UI glue
+   * uses this to reload the worker with the persisted artifact without
+   * re-reading the registry (avoids a race with registry rewrites).
+   * Null when missing or not the expected {context, path} shape.
+   */
+  async activeArtifact(): Promise<{ context: string; path: string } | null> {
     if (!(await this.storage.exists('adapters/active.json'))) return null;
     const parsed = parseJsonFile(await this.storage.readText('adapters/active.json'), 'adapters/active.json');
-    const context = (parsed as { context?: unknown }).context;
-    return typeof context === 'string' ? context : null;
+    if (!parsed || typeof parsed !== 'object') return null;
+    const { context, path } = parsed as { context?: unknown; path?: unknown };
+    if (typeof context !== 'string' || typeof path !== 'string') return null;
+    return { context, path };
   }
 
   /** Persist selection; the caller then reloads the worker with the
