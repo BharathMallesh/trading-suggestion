@@ -21,13 +21,41 @@ green dot when the bridge is up.
 
 ## Channels
 
-- **mock** — no credentials. Sends a fake incoming message and echoes your
-  replies. On by default so you can test the whole loop immediately.
-- **telegram** — put a bot token from [@BotFather](https://t.me/BotFather) in
-  `config.json` as `{ "telegram": { "token": "..." } }`. Message your bot; it
-  appears in Luna. Replies you send go back through the bot.
+A channel turns on only when it's configured, so an empty config still gives you
+the working mock demo. `config.json` is git-ignored — tokens never get committed.
 
-`config.json` is git-ignored — your tokens never get committed.
+### mock
+No credentials. Sends a fake incoming message and echoes your replies. On by
+default. `{ "mock": { "enabled": true } }`
+
+### telegram
+Get a bot token from [@BotFather](https://t.me/BotFather). Message your bot; it
+appears in Luna, and your replies go back through it.
+```json
+{ "telegram": { "token": "123456:ABC-..." } }
+```
+
+### slack (Socket Mode)
+Create a Slack app, enable **Socket Mode**, add an **app-level token** (`xapp-…`,
+scope `connections:write`) and a **bot token** (`xoxb-…`, scope `chat:write`),
+and subscribe to the `message.channels` / `message.im` events. No public URL
+needed. Invite the bot to a channel or DM it.
+```json
+{ "slack": { "appToken": "xapp-...", "botToken": "xoxb-..." } }
+```
+
+### email (IMAP + SMTP)
+Use an **app password** (Gmail/Outlook require one — not your login password).
+Incoming mail is polled every 30s; replies are sent over SMTP as `Re: …`.
+```json
+{ "email": {
+    "imap": { "host": "imap.gmail.com", "port": 993, "secure": true,
+              "user": "you@gmail.com", "pass": "app-password" },
+    "smtp": { "host": "smtp.gmail.com", "port": 465, "secure": true,
+              "user": "you@gmail.com", "pass": "app-password" },
+    "from": "You <you@gmail.com>"
+} }
+```
 
 ## Protocol (JSON over WebSocket)
 

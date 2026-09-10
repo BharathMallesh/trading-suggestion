@@ -16,6 +16,8 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { createMock } from './channels/mock.mjs';
 import { createTelegram } from './channels/telegram.mjs';
+import { createSlack } from './channels/slack.mjs';
+import { createEmail } from './channels/email.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.BRIDGE_PORT) || 8787;
@@ -52,6 +54,8 @@ const hooks = {
 // on only when configured, so an empty config still gives a working demo.
 if (config.mock?.enabled !== false) channels.mock = createMock(hooks);
 if (config.telegram?.token) channels.telegram = createTelegram(config.telegram, hooks);
+if (config.slack?.appToken && config.slack?.botToken) channels.slack = createSlack(config.slack, hooks);
+if (config.email?.imap && config.email?.smtp) channels.email = createEmail(config.email, hooks);
 
 function statusMsg() {
   return {

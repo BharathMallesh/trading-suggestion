@@ -8,6 +8,9 @@
     "start": "node server.mjs"
   },
   "dependencies": {
+    "imapflow": "^1.0.164",
+    "mailparser": "^3.7.1",
+    "nodemailer": "^10.0.3",
     "ws": "^8.18.0"
   }
 }
