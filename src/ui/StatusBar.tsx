@@ -26,14 +26,6 @@ const styles: Record<string, CSSProperties> = {
     borderRadius: 6,
     padding: '2px 6px',
   },
-  button: {
-    padding: '4px 10px',
-    borderRadius: 6,
-    border: '1px solid #475569',
-    background: 'transparent',
-    color: '#e2e8f0',
-    cursor: 'pointer',
-  },
 };
 
 export interface StatusBarProps {
@@ -42,8 +34,6 @@ export interface StatusBarProps {
   contexts: string[];
   activeContext: string | null;
   onSwitchContext: (context: string) => void;
-  /** present when a saved folder handle needs its permission re-granted */
-  onRegrant: (() => void) | null;
 }
 
 function useOnline(): boolean {
@@ -69,7 +59,6 @@ export function StatusBar({
   contexts,
   activeContext,
   onSwitchContext,
-  onRegrant,
 }: StatusBarProps) {
   const online = useOnline();
   return (
@@ -93,11 +82,6 @@ export function StatusBar({
             ))}
           </select>
         </label>
-      )}
-      {onRegrant && (
-        <button style={styles.button} onClick={onRegrant}>
-          Re-grant folder access
-        </button>
       )}
     </div>
   );

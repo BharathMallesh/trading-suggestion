@@ -56,7 +56,8 @@ const styles: Record<string, CSSProperties> = {
 
 export interface ChatViewProps {
   send: (text: string) => Promise<void>;
-  registerEmitter: (fn: (e: AgentEvent) => void) => void;
+  /** Subscribe to agent events; must return a cleanup that unregisters fn. */
+  registerEmitter: (fn: (e: AgentEvent) => void) => () => void;
   resolveConfirm: (id: string, ok: boolean) => void;
 }
 
@@ -70,6 +71,12 @@ export function ChatView({ send, registerEmitter, resolveConfirm }: ChatViewProp
   const [streamText, setStreamText] = useState('');
   const [trace, setTrace] = useState<ToolTraceEntry[]>([]);
   const [confirm, setConfirm] = useState<ConfirmRequest | null>(null);
+  // Concurrent confirm_requests queue: the agent awaits each _confirm promise,
+  // so dropping one would hang the run. Served FIFO one dialog at a time.
+  // confirmOpenRef mirrors the state so event handling never side-effects
+  // inside state updaters (React may re-run updaters in StrictMode).
+  const confirmQueueRef = useRef<ConfirmRequest[]>([]);
+  const confirmOpenRef = useRef(false);
   const [status, setStatus] = useState<string | null>(null);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
@@ -106,9 +113,16 @@ export function ChatView({ send, registerEmitter, resolveConfirm }: ChatViewProp
           return next;
         });
         break;
-      case 'confirm_request':
-        setConfirm({ id: e.id, tool: e.tool, args: e.args, reason: e.reason });
+      case 'confirm_request': {
+        const req = { id: e.id, tool: e.tool, args: e.args, reason: e.reason };
+        if (confirmOpenRef.current) {
+          confirmQueueRef.current.push(req);
+        } else {
+          confirmOpenRef.current = true;
+          setConfirm(req);
+        }
         break;
+      }
       case 'run_end': {
         if (streamRef.current) {
           const text = streamRef.current;
@@ -125,7 +139,7 @@ export function ChatView({ send, registerEmitter, resolveConfirm }: ChatViewProp
   });
 
   useEffect(() => {
-    registerEmitter(handlerRef.current);
+    return registerEmitter(handlerRef.current);
   }, [registerEmitter]);
 
   async function onSend(): Promise<void> {
@@ -193,7 +207,13 @@ export function ChatView({ send, registerEmitter, resolveConfirm }: ChatViewProp
           request={confirm}
           onResolve={(ok) => {
             resolveConfirm(confirm.id, ok);
-            setConfirm(null);
+            const next = confirmQueueRef.current.shift();
+            if (next) {
+              setConfirm(next);
+            } else {
+              confirmOpenRef.current = false;
+              setConfirm(null);
+            }
           }}
         />
       )}

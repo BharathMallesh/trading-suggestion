@@ -74,4 +74,11 @@ export class AdapterManager {
     if (!(await this.storage.exists(path))) throw new Error(`Adapter file missing: ${path}`);
     await this.storage.writeText('adapters/active.json', JSON.stringify({ context, path }));
   }
+
+  /** Remove the persisted selection so the next boot falls back to the base
+      model. Used to roll back after a context switch whose artifact failed
+      to load. Idempotent: remove on a missing path silently succeeds. */
+  async clearActive(): Promise<void> {
+    await this.storage.remove('adapters/active.json');
+  }
 }

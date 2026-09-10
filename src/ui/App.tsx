@@ -46,7 +46,7 @@ type Phase =
   | { name: 'needs-permission'; handle: FileSystemDirectoryHandle }
   | { name: 'loading'; path: string; loaded: number; total: number }
   | { name: 'ready'; host: AgentHost; storage: StorageProvider; modelPath: string }
-  | { name: 'error'; message: string };
+  | { name: 'error'; message: string; storage: StorageProvider | null };
 
 export default function App() {
   const [phase, setPhase] = useState<Phase>({ name: 'restoring' });
@@ -57,17 +57,27 @@ export default function App() {
   const emittersRef = useRef<Array<(e: AgentEvent) => void>>([]);
   const registerEmitter = useCallback((fn: (e: AgentEvent) => void) => {
     emittersRef.current.push(fn);
+    return () => {
+      const i = emittersRef.current.indexOf(fn);
+      if (i >= 0) emittersRef.current.splice(i, 1);
+    };
   }, []);
   const workerRef = useRef<Worker | null>(null);
+  // Bumped on unmount and at every boot start: a boot whose generation is
+  // stale by the time it resolves must terminate its worker (unmounted or
+  // superseded) instead of leaking it.
+  const bootGenRef = useRef(0);
 
-  const startWithStorage = useCallback(async (storage: StorageProvider) => {
+  /** Boot a session; true when a phase was entered, false on boot failure. */
+  const startWithStorage = useCallback(async (storage: StorageProvider): Promise<boolean> => {
+    const gen = ++bootGenRef.current;
     const manager = new AdapterManager(storage);
     const artifact = await manager.activeArtifact();
     const modelPath = artifact?.path ?? BASE_MODEL.path;
     setActiveContext(artifact?.context ?? null);
     if (!(await storage.exists(modelPath))) {
       setPhase({ name: 'setup' });
-      return;
+      return true;
     }
     setPhase({ name: 'loading', path: modelPath, loaded: 0, total: 0 });
     try {
@@ -76,15 +86,27 @@ export default function App() {
       const worker = await bootWorker(storage, modelPath, (loaded, total) =>
         setPhase({ name: 'loading', path: modelPath, loaded, total }),
       );
+      if (gen !== bootGenRef.current) {
+        // superseded by a newer boot or unmounted: drop the worker
+        worker.terminate();
+        return true;
+      }
       workerRef.current = worker;
       const host = createAgentHost(storage, worker, modelPath, (e) => {
         for (const fn of emittersRef.current) fn(e);
       });
       setContexts(await manager.listContexts());
       setPhase({ name: 'ready', host, storage, modelPath });
+      return true;
     } catch (err) {
+      if (gen !== bootGenRef.current) return true; // unmounted/superseded: silent
       workerRef.current = null;
-      setPhase({ name: 'error', message: err instanceof Error ? err.message : String(err) });
+      setPhase({
+        name: 'error',
+        message: err instanceof Error ? err.message : String(err),
+        storage,
+      });
+      return false;
     }
   }, []);
 
@@ -103,6 +125,7 @@ export default function App() {
     })();
     return () => {
       cancelled = true;
+      bootGenRef.current++; // invalidate any in-flight boot
       workerRef.current?.terminate();
       workerRef.current = null;
     };
@@ -116,13 +139,36 @@ export default function App() {
 
   async function switchContext(context: string): Promise<void> {
     if (phase.name !== 'ready') return;
+    const storage = phase.storage;
+    const manager = new AdapterManager(storage);
     try {
-      const manager = new AdapterManager(phase.storage);
       await manager.activate(context);
-      await startWithStorage(phase.storage);
     } catch (err) {
       setNotice(err instanceof Error ? err.message : String(err));
+      return;
     }
+    const ok = await startWithStorage(storage);
+    if (ok) return;
+    // Boot failed with the new artifact selected: clear the selection so a
+    // reload boots the base model instead of re-failing, then try to recover
+    // in place straight away.
+    setNotice(null);
+    try {
+      await manager.clearActive();
+    } catch {
+      // rollback is best-effort; the error screen offers the same escape hatch
+    }
+    const recovered = await startWithStorage(storage);
+    if (!recovered) setNotice('Falling back to the base model failed too — see below.');
+  }
+
+  async function switchToBaseModel(storage: StorageProvider): Promise<void> {
+    try {
+      await new AdapterManager(storage).clearActive();
+    } catch {
+      // ignore: removing a missing selection is a no-op anyway
+    }
+    await startWithStorage(storage);
   }
 
   if (phase.name === 'restoring') {
@@ -177,11 +223,17 @@ export default function App() {
   }
 
   if (phase.name === 'error') {
+    const storage = phase.storage;
     return (
       <div style={styles.page}>
         <div style={styles.card}>
           <h1 style={styles.title}>Something went wrong</h1>
           <p style={styles.error}>{phase.message}</p>
+          {storage && (
+            <button style={styles.button} onClick={() => void switchToBaseModel(storage)}>
+              Switch to base model
+            </button>
+          )}
           <button style={styles.button} onClick={() => location.reload()}>
             Reload
           </button>
@@ -197,7 +249,6 @@ export default function App() {
         contexts={contexts}
         activeContext={activeContext}
         onSwitchContext={(ctx) => void switchContext(ctx)}
-        onRegrant={null}
       />
       {notice && <p style={{ ...styles.error, padding: '0 16px' }}>{notice}</p>}
       <ChatView

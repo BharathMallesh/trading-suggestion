@@ -121,4 +121,20 @@ describe('AdapterManager', () => {
     await m.activate('legal');
     expect(await m.activeArtifact()).toEqual({ context: 'legal', path: 'models/legal-merged.gguf' });
   });
+
+  it('clearActive removes the persisted selection (idempotent)', async () => {
+    const s = new FakeStorage();
+    await s.writeText(
+      'adapters/registry.json',
+      JSON.stringify({ contexts: { legal: 'models/legal-merged.gguf' } }),
+    );
+    await s.writeText('models/legal-merged.gguf', 'gguf-bytes');
+    const m = new AdapterManager(s);
+    await m.clearActive(); // nothing persisted yet: must not throw
+    await m.activate('legal');
+    await m.clearActive();
+    expect(await m.activeContext()).toBeNull();
+    expect(await m.activeArtifact()).toBeNull();
+    expect(await s.exists('adapters/active.json')).toBe(false);
+  });
 });
