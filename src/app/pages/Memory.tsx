@@ -19,7 +19,7 @@ interface MemNode {
 const SEED: MemNode[] = [
   { id: '1', text: 'Prefers concise, bulleted summaries', status: 'settled', x: 50, y: 24, r: 26 },
   { id: '2', text: 'Timezone: Asia/Calcutta', status: 'settled', x: 68, y: 58, r: 22 },
-  { id: '3', text: 'Building the Luna UI on AutoClaw', status: 'pending', x: 33, y: 66, r: 30 },
+  { id: '3', text: 'Building the Buddy UI on AutoClaw', status: 'pending', x: 33, y: 66, r: 30 },
 ];
 
 export function Memory({ store }: { store: Store }) {

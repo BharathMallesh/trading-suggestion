@@ -1,4 +1,4 @@
-// Dev-only design harness: renders the Luna Shell with a stubbed agent and an
+// Dev-only design harness: renders the Buddy Shell with a stubbed agent and an
 // in-memory fake StorageProvider (seeded with skills + a workspace tree) so the
 // screens exercise their REAL code paths without downloading a model.
 // Served at /preview.html. Not part of the production boot path (main.tsx).
@@ -64,11 +64,11 @@ const SEED: Record<string, string> = Object.fromEntries([
   // Bilingual builtin (mirrors the real code2media): Chinese display_name +
   // English display_name_en, to verify the UI prefers English.
   ['skills-builtin/code2media/SKILL.md', '---\nname: code2media\ndisplay_name: 代码转多媒体\ndisplay_name_en: Code to Media\ndescription: 通用多媒体渲染 — universal media renderer.\ndescription_en: The universal media renderer — no fixed templates, any layout, rendered as precise images, SVG, paged PDFs and animations. Offline.\ncategory: Content\nversion: 1.2.2\n---\n# code2media\n'],
-  ['config.json', JSON.stringify({ name: 'Luna', model: 'qwen2.5-3b-instruct', skillsEnabled: true }, null, 2)],
-  ['IDENTITY.md', '# Identity\n\nName: Luna\nRole: offline personal assistant.\n'],
+  ['config.json', JSON.stringify({ name: 'Buddy', model: 'qwen2.5-3b-instruct', skillsEnabled: true }, null, 2)],
+  ['IDENTITY.md', '# Identity\n\nName: Buddy\nRole: offline personal assistant.\n'],
   ['SOUL.md', '# Soul\n\nTone dials, values, and long-lived preferences live here.\n'],
   ['HEARTBEAT.md', '# Heartbeat\n\nLast active: just now.\n'],
-  ['NOW.md', '# Now\n\nCurrent focus: building the Luna UI on AutoClaw.\n'],
+  ['NOW.md', '# Now\n\nCurrent focus: building the Buddy UI on AutoClaw.\n'],
   ['memory/notes.md', '- prefers concise, bulleted summaries\n- timezone: Asia/Calcutta\n'],
   ['conversations/flagging-inbox-replies.md', '# Flagging Inbox Replies\n\n(transcript)\n'],
   ['logs/app.log', '[info] booted\n[info] model loaded\n'],

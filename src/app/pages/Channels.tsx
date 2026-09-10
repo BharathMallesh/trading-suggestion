@@ -29,7 +29,7 @@ interface ChannelSetup {
 }
 
 export function Channels({
-  name = 'Luna',
+  name = 'Buddy',
   store,
   bridge,
   onOpenMessages,

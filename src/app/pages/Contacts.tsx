@@ -20,7 +20,7 @@ interface Contact {
 
 const SEED: Contact[] = [
   { id: 'you', name: '', handle: 'you', role: 'Guardian', notes: '', interactions: 0 },
-  { id: 'luna', name: 'Luna', handle: 'assistant', role: 'Assistant', notes: '', interactions: 0 },
+  { id: 'luna', name: 'Buddy', handle: 'assistant', role: 'Assistant', notes: '', interactions: 0 },
 ];
 
 const VERIFY_CHANNELS = [

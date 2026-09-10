@@ -64,7 +64,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
     ) : (
       <Notice
         title="Sign-in needed"
-        body="Connect to the internet once to sign in. After that, Luna opens offline for 30 days."
+        body="Connect to the internet once to sign in. After that, Buddy opens offline for 30 days."
       />
     );
   }
@@ -79,7 +79,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
         <ClearAuth />
         <div style={s.page}>
           <div style={s.head}>
-            <h1 style={s.title}>Welcome to Luna</h1>
+            <h1 style={s.title}>Welcome to Buddy</h1>
             <p style={s.sub}>Sign in to continue. Your data stays on this device.</p>
           </div>
           <SignIn routing="hash" />

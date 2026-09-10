@@ -115,7 +115,7 @@ export function Messages({ bridge, draft: aiDraft }: { bridge: Bridge; draft?: (
             style={{ ...s.aiBtn, opacity: drafting ? 0.6 : 1 }}
             disabled={drafting}
             onClick={() => void aiDraftReply()}
-            title="Let Luna draft a reply"
+            title="Let Buddy draft a reply"
           >
             {drafting ? '…' : '✨ Draft'}
           </button>
@@ -260,7 +260,7 @@ function BridgeHelp() {
       <div style={s.helpIcon}>📡</div>
       <h3 style={s.helpTitle}>Start the bridge to connect channels</h3>
       <p style={s.helpSub}>
-        The bridge is a small local server that connects Luna to Telegram, Slack, email and more.
+        The bridge is a small local server that connects Buddy to Telegram, Slack, email and more.
         The AI stays on your device — the bridge only does channel I/O.
       </p>
       <pre style={s.code}>cd bridge{'\n'}npm install{'\n'}cp config.example.json config.json{'\n'}npm start</pre>

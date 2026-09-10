@@ -1,5 +1,5 @@
-// Design tokens for the Luna assistant UI. Dark, near-black surfaces with a
-// warm yellow accent for the active assistant, matching the reference screens.
+// Design tokens for the Buddy assistant UI. Dark, near-black surfaces with a
+// warm, friendly coral accent for the active assistant.
 export const theme = {
   color: {
     bg: '#0d0d0f',
@@ -11,9 +11,9 @@ export const theme = {
     text: '#ededed',
     textDim: '#a0a0a6',
     textFaint: '#6d6d73',
-    accent: '#e4c013',
-    accentSoft: '#3a340e',
-    accentText: '#151206',
+    accent: '#ff7a59',
+    accentSoft: '#3a221b',
+    accentText: '#2a0d05',
     danger: '#e5533c',
     online: '#4ade80',
     offline: '#f87171',

@@ -69,7 +69,7 @@ const CARDS: { page: Page; label: string; icon: string }[] = [
 
 export function Home({
   nav,
-  name = 'Luna',
+  name = 'Buddy',
   store,
   storage,
   onEditName,

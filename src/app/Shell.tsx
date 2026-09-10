@@ -46,7 +46,7 @@ interface ChatSession {
   updatedAt: number;
 }
 
-export function Shell({ name = 'Luna', send, stop, draft, registerEmitter, resolveConfirm, storageKind, storage }: ShellProps) {
+export function Shell({ name = 'Buddy', send, stop, draft, registerEmitter, resolveConfirm, storageKind, storage }: ShellProps) {
   const [page, setPage] = useState<Page>('home');
   const [history, setHistory] = useState<Page[]>(['home']);
   const online = useOnline();
@@ -252,7 +252,7 @@ export function Shell({ name = 'Luna', send, stop, draft, registerEmitter, resol
               <input
                 style={s.prefsInput}
                 value={assistantName}
-                onChange={(e) => setAssistantName(e.target.value || 'Luna')}
+                onChange={(e) => setAssistantName(e.target.value || 'Buddy')}
                 onKeyDown={(e) => e.key === 'Enter' && setPrefsOpen(false)}
                 autoFocus
               />

@@ -1,24 +1,51 @@
-// Luna mascot: a spiky yellow burst with two angular eyes. Pure SVG so it
-// scales crisply and needs no assets (stays offline-friendly).
+// Buddy mascot: a friendly rounded sun-burst with happy round eyes and a smile.
+// Pure SVG so it scales crisply and needs no assets (stays offline-friendly).
 import { theme } from './theme';
 
 export function Mascot({ size = 320, expression = 'default' }: { size?: number; expression?: 'default' | 'calm' }) {
-  const eyeTilt = expression === 'calm' ? 4 : 14;
+  const c = theme.color.accent;
+  const ink = theme.color.accentText;
+  const rays = Array.from({ length: 12 });
   return (
-    <svg width={size} height={size} viewBox="0 0 200 200" role="img" aria-label="Luna">
+    <svg width={size} height={size} viewBox="0 0 200 200" role="img" aria-label="Buddy">
+      {/* soft rounded rays */}
+      {rays.map((_, i) => {
+        const a = (i / rays.length) * Math.PI * 2;
+        return (
+          <line
+            key={i}
+            x1={100 + Math.cos(a) * 58}
+            y1={100 + Math.sin(a) * 58}
+            x2={100 + Math.cos(a) * 88}
+            y2={100 + Math.sin(a) * 88}
+            stroke={c}
+            strokeWidth={13}
+            strokeLinecap="round"
+          />
+        );
+      })}
+      {/* round body */}
+      <circle cx={100} cy={100} r={62} fill={c} />
+      {/* happy eyes with highlights */}
+      <g>
+        <circle cx={82} cy={94} r={12} fill="#fafafa" />
+        <circle cx={84} cy={96} r={6} fill="#1a1512" />
+        <circle cx={80} cy={91} r={2.4} fill="#fafafa" />
+        <circle cx={118} cy={94} r={12} fill="#fafafa" />
+        <circle cx={120} cy={96} r={6} fill="#1a1512" />
+        <circle cx={116} cy={91} r={2.4} fill="#fafafa" />
+      </g>
+      {/* friendly smile */}
       <path
-        fill={theme.color.accent}
-        d="M100 4l16 46 40-30-14 48 50-6-40 30 44 24-50 4 24 44-42-26-6 50-22-44-40 30 14-48-50 6 40-30L4 100l50-4-24-44 42 26 6-50 22 44 40-30-14 48z"
+        d={expression === 'calm' ? 'M80 120 Q100 132 120 120' : 'M78 118 Q100 142 122 118'}
+        stroke={ink}
+        strokeWidth={5}
+        strokeLinecap="round"
+        fill="none"
       />
-      {/* eyes: angular almond shapes tilted inward */}
-      <g transform="translate(72 96)">
-        <polygon points="0,8 34,-2 30,16" fill="#fafafa" transform={`rotate(${eyeTilt} 17 7)`} />
-        <circle cx="20" cy="10" r="7" fill="#111" />
-      </g>
-      <g transform="translate(96 96)">
-        <polygon points="34,8 0,-2 4,16" fill="#fafafa" transform={`rotate(${-eyeTilt} 17 7)`} />
-        <circle cx="14" cy="10" r="7" fill="#111" />
-      </g>
+      {/* little cheeks */}
+      <circle cx={70} cy={114} r={5} fill={ink} opacity={0.18} />
+      <circle cx={130} cy={114} r={5} fill={ink} opacity={0.18} />
     </svg>
   );
 }
