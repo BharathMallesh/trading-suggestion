@@ -22,6 +22,9 @@ export interface CompletionRequest {
     tool_choice?: 'auto';
     max_tokens?: number;
     temperature?: number;
+    top_p?: number;
+    top_k?: number;
+    repetition_penalty?: number;
     stream: true;
   };
 }

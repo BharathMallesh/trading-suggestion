@@ -93,6 +93,11 @@ export class WllamaChatModel implements ChatModel {
         messages: params.messages,
         tools: params.tools,
         tool_choice: params.tool_choice,
+        temperature: params.temperature,
+        top_p: params.top_p,
+        top_k: params.top_k,
+        repetition_penalty: params.repetition_penalty,
+        max_tokens: params.max_tokens,
         stream: true,
       },
     };

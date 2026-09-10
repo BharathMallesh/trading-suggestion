@@ -36,6 +36,11 @@ export interface ChatCompletionParams {
   tools?: unknown[];
   tool_choice?: 'auto';
   stream: true;
+  temperature?: number;
+  top_p?: number;
+  top_k?: number;
+  repetition_penalty?: number;
+  max_tokens?: number;
 }
 
 export interface ChatModel {

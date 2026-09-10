@@ -88,6 +88,10 @@ export class Agent {
       '- Utility: get_current_datetime — accurate current date/time for temporal reasoning',
     ].filter((line): line is string => line !== null).join('\n');
 
+    const thinkingInstruction = this.config?.isThinkingMode 
+      ? "\n6. THINKING MODE: You are a reasoning model. Always think step-by-step and wrap your internal reasoning in <think>...</think> tags before executing tools or answering."
+      : "\n6. If a tool call fails, diagnose and try one alternative approach. Do not retry the same call unchanged.";
+
     // BROWSER-ADAPTED: the skills manifest placeholder is async, so it is
     // loaded on the first chat() call (see ensureSkillsManifest).
     this.messages = [
@@ -107,7 +111,7 @@ RULES OF ENGAGEMENT:
 2. Use the right tool: read_file/write_file for text content, grep to search, render_html to produce images or formatted output.
 3. Always use workspace-relative paths (e.g. "report.md", "images/chart.svg"). Never use "/workspace/" or absolute paths.
 4. Read before write: when modifying an existing file, read it first.
-5. If a tool call fails, diagnose and try one alternative approach. Do not retry the same call unchanged.
+5. Do not hallucinate files that don't exist in the directory.${thinkingInstruction}
 `
       }
     ];
@@ -202,6 +206,10 @@ RULES OF ENGAGEMENT:
               messages: this.messages,
               tools: getToolDefinitions(this.config),
               tool_choice: "auto",
+              temperature: this.config?.temperature,
+              top_p: this.config?.top_p,
+              top_k: this.config?.top_k,
+              repetition_penalty: this.config?.repetition_penalty,
               stream: true,
           }, { signal: abortController.signal }),
           {

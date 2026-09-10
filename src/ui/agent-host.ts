@@ -22,7 +22,11 @@ export function createAgentHost(
 ): AgentHost {
   buildToolRegistry(storage, { online: typeof navigator !== 'undefined' ? navigator.onLine : false });
   const confirmResolvers = new Map<string, (ok: boolean) => void>();
-  const config = {
+  // Dynamic configuration based on the model type
+  const isThinkingModel = model.toLowerCase().includes('r1') || model.toLowerCase().includes('reasoning') || model.toLowerCase().includes('think');
+  
+  // Base configuration
+  const config: any = {
     maxSteps: 25,
     autoConfirm: false,
     _emit: onEvent,
@@ -31,6 +35,35 @@ export function createAgentHost(
         confirmResolvers.set(id, ok);
       }),
   };
+
+  // Assign model-specific sampling parameters
+  if (isThinkingModel) {
+    // Thinking mode defaults (e.g., DeepSeek-R1 recommends temp=0.6, top_p=0.95)
+    config.temperature = 0.6;
+    config.top_p = 0.95;
+    config.top_k = 50;
+    config.repetition_penalty = 1.0; // Reasoning models usually shouldn't have high repetition penalties
+    config.isThinkingMode = true;
+  } else if (model.toLowerCase().includes('qwen')) {
+    // Qwen specific defaults
+    config.temperature = 0.7;
+    config.top_p = 0.8;
+    config.top_k = 40;
+    config.repetition_penalty = 1.05;
+  } else if (model.toLowerCase().includes('llama')) {
+    // Llama specific defaults
+    config.temperature = 0.8;
+    config.top_p = 0.9;
+    config.top_k = 40;
+    config.repetition_penalty = 1.1;
+  } else {
+    // Generic fallback defaults
+    config.temperature = 0.7;
+    config.top_p = 0.9;
+    config.top_k = 40;
+    config.repetition_penalty = 1.1;
+  }
+
   const agent = new Agent(new WllamaChatModel(worker, model), model, config, storage, onEvent);
   return {
     agent,

@@ -106,6 +106,9 @@ self.onmessage = async (e: MessageEvent<WorkerRequest>) => {
           tool_choice: msg.params.tool_choice,
           max_tokens: msg.params.max_tokens,
           temperature: msg.params.temperature,
+          top_p: msg.params.top_p,
+          top_k: msg.params.top_k,
+          penalty_repeat: msg.params.repetition_penalty,
           stream: true,
           abortSignal: controller.signal,
         });
