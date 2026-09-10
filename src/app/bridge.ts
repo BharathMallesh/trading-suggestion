@@ -60,6 +60,7 @@ export interface Bridge {
   connected: boolean; // WS to the bridge is open
   channels: ChannelStatus[];
   conversations: Conversation[];
+  sendError: string | null; // last send failure, auto-clears
   send: (channel: string, chatId: string, text: string, subject?: string) => void;
 }
 
@@ -67,6 +68,7 @@ export function useBridge(url: string = BRIDGE_URL): Bridge {
   const [connected, setConnected] = useState(false);
   const [channels, setChannels] = useState<ChannelStatus[]>([]);
   const [convos, setConvos] = useState<Map<string, Conversation>>(() => loadConvos());
+  const [sendError, setSendError] = useState<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
   // Persist whenever conversations change, so a refresh restores them.
@@ -84,7 +86,7 @@ export function useBridge(url: string = BRIDGE_URL): Bridge {
       const next = new Map(prev);
       const conv: Conversation = existing
         ? { ...existing, messages: [...existing.messages, msg], lastTs: msg.ts, from: msg.dir === 'in' ? msg.from : existing.from }
-        : { key, channel, chatId, from: msg.dir === 'in' ? msg.from : 'You', messages: [msg], lastTs: msg.ts };
+        : { key, channel, chatId, from: msg.dir === 'in' ? msg.from : chatId, messages: [msg], lastTs: msg.ts };
       next.set(key, conv);
       return next;
     });
@@ -122,8 +124,13 @@ export function useBridge(url: string = BRIDGE_URL): Bridge {
           setChannels(msg.channels ?? []);
         } else if (msg.type === 'incoming') {
           upsert(msg.channel, msg.chatId, { id: msg.id, dir: 'in', from: msg.from, text: msg.text, subject: msg.subject, ts: msg.ts });
-        } else if (msg.type === 'sent' && msg.ok) {
-          upsert(msg.channel, msg.chatId, { id: 'out-' + msg.ts, dir: 'out', from: 'You', text: msg.text, ts: msg.ts });
+        } else if (msg.type === 'sent') {
+          if (msg.ok) {
+            upsert(msg.channel, msg.chatId, { id: 'out-' + msg.ts, dir: 'out', from: 'You', text: msg.text, ts: msg.ts });
+          } else {
+            setSendError(`Couldn’t send on ${msg.channel}: ${msg.error || 'unknown error'}`);
+            setTimeout(() => setSendError(null), 6000);
+          }
         }
       };
     }
@@ -144,5 +151,5 @@ export function useBridge(url: string = BRIDGE_URL): Bridge {
   }, []);
 
   const conversations = [...convos.values()].sort((a, b) => b.lastTs - a.lastTs);
-  return { connected, channels, conversations, send };
+  return { connected, channels, conversations, sendError, send };
 }

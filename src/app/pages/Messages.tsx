@@ -4,6 +4,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties, KeyboardEvent } from 'react';
 import { theme } from '../theme';
+import { useNarrow } from '../useNarrow';
 import type { Bridge, Conversation } from '../bridge';
 
 const CHANNEL_ICON: Record<string, string> = {
@@ -17,17 +18,21 @@ export function Messages({ bridge, draft: aiDraft }: { bridge: Bridge; draft?: (
   const [drafting, setDrafting] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
+  const narrow = useNarrow(760);
   const convos = bridge.conversations;
-  const active = convos.find((c) => c.key === selected) ?? convos[0] ?? null;
+  const selectedConv = convos.find((c) => c.key === selected) ?? null;
+  // Narrow: a thread shows only when explicitly selected. Wide: auto-open the
+  // most recent conversation so the panel isn't empty.
+  const current = narrow ? selectedConv : selectedConv ?? convos[0] ?? null;
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [active?.messages.length]);
+  }, [current?.messages.length, current?.key]);
 
   function sendReply(): void {
     const text = draft.trim();
-    if (!text || !active) return;
-    bridge.send(active.channel, active.chatId, text);
+    if (!text || !current) return;
+    bridge.send(current.channel, current.chatId, text);
     setDraft('');
   }
 
@@ -38,15 +43,15 @@ export function Messages({ bridge, draft: aiDraft }: { bridge: Bridge; draft?: (
   }
 
   async function aiDraftReply(): Promise<void> {
-    if (!aiDraft || !active || drafting) return;
+    if (!aiDraft || !current || drafting) return;
     setDrafting(true);
     try {
-      const recent = active.messages
+      const recent = current.messages
         .slice(-6)
-        .map((m) => `${m.dir === 'in' ? active.from : 'Me'}: ${m.text}`)
+        .map((m) => `${m.dir === 'in' ? current.from : 'Me'}: ${m.text}`)
         .join('\n');
       const instruction =
-        `You are drafting my reply on the ${active.channel} channel to ${active.from}. ` +
+        `You are drafting my reply on the ${current.channel} channel to ${current.from}. ` +
         `Write a short, natural reply to their latest message. Output ONLY the reply text — no preamble, no quotes.\n\n` +
         `Conversation so far:\n${recent}`;
       const text = await aiDraft(instruction);
@@ -64,6 +69,64 @@ export function Messages({ bridge, draft: aiDraft }: { bridge: Bridge; draft?: (
     }
   }
 
+  const listPane = (
+    <div style={narrow ? s.listFull : s.list}>
+      <button style={s.newBtn} onClick={() => setComposing(true)}>＋ New message</button>
+      {convos.length === 0 && <div style={s.empty}>No conversations yet.</div>}
+      {convos.map((c) => (
+        <ConvoRow key={c.key} c={c} active={current?.key === c.key} onClick={() => setSelected(c.key)} />
+      ))}
+    </div>
+  );
+
+  const threadPane = current && (
+    <div style={s.thread}>
+      <div style={s.threadHead}>
+        {narrow && (
+          <button style={s.backBtn} onClick={() => setSelected(null)} aria-label="Back to list">‹</button>
+        )}
+        <span style={s.badge}>{CHANNEL_ICON[current.channel] ?? '•'} {current.channel}</span>
+        <span style={s.threadName}>{current.from}</span>
+        <span style={s.threadId}>· {current.chatId}</span>
+      </div>
+      <div ref={scrollRef} style={s.msgs}>
+        {[...current.messages]
+          .sort((a, b) => a.ts - b.ts)
+          .map((m) => (
+            <div key={m.id} style={{ ...s.row, justifyContent: m.dir === 'out' ? 'flex-end' : 'flex-start' }}>
+              <div style={{ ...s.bubble, ...(m.dir === 'out' ? s.out : s.in) }}>
+                {m.subject && <div style={s.subjectLine}>{m.subject}</div>}
+                {m.text}
+              </div>
+            </div>
+          ))}
+      </div>
+      <div style={s.composer}>
+        <textarea
+          style={s.input}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={onKeyDown}
+          placeholder={drafting ? 'Drafting…' : `Reply to ${current.from}…`}
+          rows={1}
+        />
+        {aiDraft && (
+          <button
+            style={{ ...s.aiBtn, opacity: drafting ? 0.6 : 1 }}
+            disabled={drafting}
+            onClick={() => void aiDraftReply()}
+            title="Let Luna draft a reply"
+          >
+            {drafting ? '…' : '✨ Draft'}
+          </button>
+        )}
+        <button style={{ ...s.send, opacity: draft.trim() ? 1 : 0.5 }} disabled={!draft.trim()} onClick={sendReply}>
+          Send ↑
+        </button>
+      </div>
+    </div>
+  );
+
   return (
     <div style={s.wrap}>
       <div style={s.head}>
@@ -78,67 +141,20 @@ export function Messages({ bridge, draft: aiDraft }: { bridge: Bridge; draft?: (
         </div>
       </div>
 
+      {bridge.sendError && <div style={s.errorBanner}>⚠ {bridge.sendError}</div>}
+
       {!bridge.connected && convos.length === 0 ? (
         <BridgeHelp />
+      ) : narrow ? (
+        current ? threadPane : listPane
       ) : (
         <div style={s.body}>
-          <div style={s.list}>
-            <button style={s.newBtn} onClick={() => setComposing(true)}>＋ New message</button>
-            {convos.length === 0 && <div style={s.empty}>No conversations yet.</div>}
-            {convos.map((c) => (
-              <ConvoRow key={c.key} c={c} active={active?.key === c.key} onClick={() => setSelected(c.key)} />
-            ))}
-          </div>
-          <div style={s.thread}>
-            {!active ? (
+          {listPane}
+          {threadPane || (
+            <div style={s.thread}>
               <div style={s.empty}>Select a conversation</div>
-            ) : (
-              <>
-                <div style={s.threadHead}>
-                  <span style={s.badge}>{CHANNEL_ICON[active.channel] ?? '•'} {active.channel}</span>
-                  <span style={s.threadName}>{active.from}</span>
-                  <span style={s.threadId}>· {active.chatId}</span>
-                </div>
-                <div ref={scrollRef} style={s.msgs}>
-                  {active.messages.map((m) => (
-                    <div key={m.id} style={{ ...s.row, justifyContent: m.dir === 'out' ? 'flex-end' : 'flex-start' }}>
-                      <div style={{ ...s.bubble, ...(m.dir === 'out' ? s.out : s.in) }}>
-                        {m.subject && <div style={s.subjectLine}>{m.subject}</div>}
-                        {m.text}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <div style={s.composer}>
-                  <textarea
-                    style={s.input}
-                    value={draft}
-                    onChange={(e) => setDraft(e.target.value)}
-                    onKeyDown={onKeyDown}
-                    placeholder={drafting ? 'Drafting…' : `Reply to ${active.from}…`}
-                    rows={1}
-                  />
-                  {aiDraft && (
-                    <button
-                      style={{ ...s.aiBtn, opacity: drafting ? 0.6 : 1 }}
-                      disabled={drafting}
-                      onClick={() => void aiDraftReply()}
-                      title="Let Luna draft a reply"
-                    >
-                      {drafting ? '…' : '✨ Draft'}
-                    </button>
-                  )}
-                  <button
-                    style={{ ...s.send, opacity: draft.trim() ? 1 : 0.5 }}
-                    disabled={!draft.trim()}
-                    onClick={sendReply}
-                  >
-                    Send ↑
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       )}
       {composing && (
@@ -151,6 +167,7 @@ export function Messages({ bridge, draft: aiDraft }: { bridge: Bridge; draft?: (
     </div>
   );
 }
+
 
 function ComposeModal({
   channels,
@@ -254,6 +271,8 @@ const s: Record<string, CSSProperties> & { dot: (c: boolean) => CSSProperties } 
   dot: (c: boolean) => ({ width: 8, height: 8, borderRadius: '50%', background: c ? theme.color.online : theme.color.offline }),
   body: { flex: 1, display: 'flex', gap: 12, minHeight: 0 },
   list: { width: 260, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 4, overflowY: 'auto' },
+  listFull: { flex: 1, display: 'flex', flexDirection: 'column', gap: 4, overflowY: 'auto', minHeight: 0 },
+  backBtn: { background: 'transparent', border: 'none', color: theme.color.textDim, fontSize: 20, lineHeight: 1, cursor: 'pointer', padding: 0, marginRight: 2 },
   convo: {
     textAlign: 'left', background: theme.color.card, border: `1px solid ${theme.color.borderSoft}`,
     borderRadius: theme.radius.md, padding: '10px 12px', cursor: 'pointer', color: theme.color.text,
@@ -275,6 +294,7 @@ const s: Record<string, CSSProperties> & { dot: (c: boolean) => CSSProperties } 
   row: { display: 'flex' },
   bubble: { maxWidth: '75%', padding: '8px 12px', borderRadius: 12, fontSize: 14, whiteSpace: 'pre-wrap', lineHeight: 1.4 },
   subjectLine: { fontWeight: 700, marginBottom: 6, fontSize: 13, opacity: 0.85 },
+  errorBanner: { background: 'rgba(229,83,60,0.15)', border: `1px solid ${theme.color.danger}`, color: theme.color.danger, borderRadius: theme.radius.sm, padding: '8px 12px', fontSize: 13, marginBottom: 10 },
   in: { background: theme.color.panel, color: theme.color.text },
   out: { background: theme.color.accent, color: theme.color.accentText },
   composer: { display: 'flex', gap: 8, padding: 12, borderTop: `1px solid ${theme.color.borderSoft}` },

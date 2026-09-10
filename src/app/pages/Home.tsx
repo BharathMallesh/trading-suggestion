@@ -7,6 +7,7 @@ import type { StorageProvider } from '@core/storage';
 import { discoverSkills } from '@core/skills';
 import { theme } from '../theme';
 import { Mascot } from '../Mascot';
+import { useNarrow } from '../useNarrow';
 import type { Page } from '../nav';
 import type { Store } from '../store';
 
@@ -77,6 +78,7 @@ export function Home({
   store: Store;
   storage?: StorageProvider;
 }) {
+  const narrow = useNarrow();
   const [values, setValues] = useState<number[]>(DIAL_DEFAULTS);
   const [counts, setCounts] = useState<Counts | null>(null);
 
@@ -135,8 +137,8 @@ export function Home({
 
   const dials = DIALS.map((d, i) => ({ ...d, value: values[i] }));
   return (
-    <div style={s.page}>
-      <div style={s.grid}>
+    <div style={narrow ? { ...s.page, overflowY: 'auto' } : s.page}>
+      <div style={narrow ? { ...s.grid, gridTemplateColumns: '1fr', flex: 'none' } : s.grid}>
         {/* Personality */}
         <button style={{ ...s.card, ...s.personality }} onClick={() => nav('personality')}>
           <div style={s.cardHead}>
@@ -204,7 +206,7 @@ export function Home({
       </div>
 
       {/* Destination cards */}
-      <div style={s.dock}>
+      <div style={narrow ? { ...s.dock, gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' } : s.dock}>
         {CARDS.map((c) => (
           <button key={c.page} style={s.navCard} onClick={() => nav(c.page)}>
             <span style={s.navIcon}>{c.icon}</span>
