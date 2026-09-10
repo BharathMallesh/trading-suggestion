@@ -207,6 +207,12 @@ function ComposeModal({
             <label style={s.field}>To
               <input style={s.modalInput} value={to} onChange={(e) => setTo(e.target.value)} placeholder={placeholder} />
             </label>
+            {channel === 'telegram' && (
+              <p style={s.composeHint}>Telegram bots can’t start chats. The person must message your bot first — then use their numeric chat id here.</p>
+            )}
+            {channel === 'slack' && (
+              <p style={s.composeHint}>Use a channel id (e.g. C0123…) the bot has joined, or a user id for a DM.</p>
+            )}
             {isEmail && (
               <label style={s.field}>Subject
                 <input style={s.modalInput} value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Subject line" />
@@ -295,6 +301,7 @@ const s: Record<string, CSSProperties> & { dot: (c: boolean) => CSSProperties } 
   bubble: { maxWidth: '75%', padding: '8px 12px', borderRadius: 12, fontSize: 14, whiteSpace: 'pre-wrap', lineHeight: 1.4 },
   subjectLine: { fontWeight: 700, marginBottom: 6, fontSize: 13, opacity: 0.85 },
   errorBanner: { background: 'rgba(229,83,60,0.15)', border: `1px solid ${theme.color.danger}`, color: theme.color.danger, borderRadius: theme.radius.sm, padding: '8px 12px', fontSize: 13, marginBottom: 10 },
+  composeHint: { fontSize: 12, color: theme.color.textFaint, margin: '-4px 0 0', lineHeight: 1.4 },
   in: { background: theme.color.panel, color: theme.color.text },
   out: { background: theme.color.accent, color: theme.color.accentText },
   composer: { display: 'flex', gap: 8, padding: 12, borderTop: `1px solid ${theme.color.borderSoft}` },

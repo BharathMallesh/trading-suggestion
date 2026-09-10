@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import type { CSSProperties } from 'react';
 import type { StorageProvider } from '@core/storage';
 import { theme } from '../theme';
+import { useNarrow } from '../useNarrow';
 
 interface OpenFile {
   path: string;
@@ -84,6 +85,7 @@ function TreeDir({
 
 export function Workspace({ storage }: { storage?: StorageProvider }) {
   const [file, setFile] = useState<OpenFile | null>(null);
+  const narrow = useNarrow();
 
   async function openFile(path: string): Promise<void> {
     if (!storage) return;
@@ -102,8 +104,8 @@ export function Workspace({ storage }: { storage?: StorageProvider }) {
   }
 
   return (
-    <div style={s.wrap}>
-      <div style={s.panel}>
+    <div style={narrow ? { ...s.wrap, flexDirection: 'column' } : s.wrap}>
+      <div style={narrow ? { ...s.panel, width: '100%', maxHeight: '38vh' } : s.panel}>
         <div style={s.panelHead}>Files</div>
         <div style={s.tree}>
           {storage ? (

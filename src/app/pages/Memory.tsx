@@ -82,9 +82,20 @@ export function Memory({ store }: { store: Store }) {
       </svg>
 
       {activeNode && (
-        <div style={s.tooltip} onClick={() => setActive(null)}>
+        <div style={s.tooltip}>
           <span style={{ color: activeNode.status === 'pending' ? theme.color.accent : theme.color.textDim, marginRight: 6 }}>●</span>
-          {activeNode.text}
+          <span style={{ flex: 1 }}>{activeNode.text}</span>
+          <button
+            style={s.tooltipDelete}
+            title="Forget this memory"
+            onClick={() => {
+              setNodes((prev) => prev.filter((n) => n.id !== activeNode.id));
+              setActive(null);
+            }}
+          >
+            ✕
+          </button>
+          <button style={s.tooltipClose} title="Close" onClick={() => setActive(null)}>Close</button>
         </div>
       )}
 
@@ -141,8 +152,11 @@ const s: Record<string, CSSProperties> = {
   tooltip: {
     position: 'absolute', bottom: 60, left: '50%', transform: 'translateX(-50%)', zIndex: 3,
     background: theme.color.panel, border: `1px solid ${theme.color.border}`, borderRadius: theme.radius.sm,
-    padding: '8px 14px', fontSize: 13, color: theme.color.text, maxWidth: 420, cursor: 'pointer',
+    padding: '8px 14px', fontSize: 13, color: theme.color.text, maxWidth: 460, width: 'max-content',
+    display: 'flex', alignItems: 'center', gap: 10,
   },
+  tooltipDelete: { background: 'transparent', border: 'none', color: theme.color.danger, fontSize: 13, cursor: 'pointer' },
+  tooltipClose: { background: 'transparent', border: `1px solid ${theme.color.border}`, color: theme.color.textDim, borderRadius: 6, padding: '3px 10px', fontSize: 12, cursor: 'pointer' },
   legend: { position: 'absolute', bottom: 16, left: 16, display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: theme.color.textFaint },
   legendDot: { width: 8, height: 8, borderRadius: '50%', background: theme.color.accent, display: 'inline-block' },
   hint: { position: 'absolute', bottom: 16, right: 16, fontSize: 12, color: theme.color.textFaint },

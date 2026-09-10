@@ -39,6 +39,13 @@ export function Schedules({ store }: { store: Store }) {
         <div style={s.list}>
           {items.map((it) => (
             <div key={it.id} style={s.card}>
+              <button
+                style={s.deleteBtn}
+                title="Delete schedule"
+                onClick={() => setItems((prev) => prev.filter((x) => x.id !== it.id))}
+              >
+                ✕
+              </button>
               <div style={s.cardName}>{it.name}</div>
               <div style={s.cardWhen}>{describe(it)}</div>
               {it.message && <div style={s.cardMsg}>{it.message}</div>}
@@ -155,7 +162,8 @@ const s: Record<string, CSSProperties> = {
   emptyTitle: { fontFamily: theme.font.serif, fontWeight: 400, margin: 0, color: theme.color.text },
   emptySub: { color: theme.color.textFaint, fontSize: 14, margin: '0 0 12px' },
   list: { display: 'flex', flexDirection: 'column', gap: 10, overflowY: 'auto' },
-  card: { background: theme.color.card, border: `1px solid ${theme.color.borderSoft}`, borderRadius: theme.radius.md, padding: 16 },
+  card: { position: 'relative', background: theme.color.card, border: `1px solid ${theme.color.borderSoft}`, borderRadius: theme.radius.md, padding: 16 },
+  deleteBtn: { position: 'absolute', top: 10, right: 12, background: 'transparent', border: 'none', color: theme.color.textFaint, fontSize: 14, cursor: 'pointer' },
   cardName: { fontSize: 15, color: theme.color.text },
   cardWhen: { fontSize: 13, color: theme.color.textFaint, marginTop: 2 },
   cardMsg: { fontSize: 13, color: theme.color.textDim, marginTop: 8 },

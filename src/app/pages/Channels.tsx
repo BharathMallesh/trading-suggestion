@@ -7,6 +7,7 @@ import { theme } from '../theme';
 import { usePersistentState } from '../store';
 import type { Store } from '../store';
 import type { Bridge } from '../bridge';
+import { useNarrow } from '../useNarrow';
 
 interface Channel {
   id: string;
@@ -39,6 +40,7 @@ export function Channels({
   onOpenMessages?: () => void;
 }) {
   const isConnected = (id: string) => !!bridge?.channels.find((c) => c.id === id && c.connected);
+  const narrow = useNarrow();
   const [selected, setSelected] = useState('slack');
   const [step, setStep] = useState(0);
   const [copied, setCopied] = useState(false);
@@ -63,8 +65,8 @@ export function Channels({
           )}
         </div>
       </div>
-      <div style={s.body}>
-        <div style={s.list}>
+      <div style={narrow ? { ...s.body, flexDirection: 'column', overflowY: 'auto' } : s.body}>
+        <div style={narrow ? { ...s.list, width: '100%', flexShrink: 0 } : s.list}>
           {CHANNELS.map((c) => (
             <button
               key={c.id}

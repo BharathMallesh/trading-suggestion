@@ -10,6 +10,7 @@ import { theme } from './theme';
 import { createStore } from './store';
 import { useScheduler } from './scheduler';
 import { useBridge } from './bridge';
+import { useNarrow } from './useNarrow';
 import { PAGE_TITLE } from './nav';
 import type { Page } from './nav';
 import { Home } from './pages/Home';
@@ -45,10 +46,18 @@ export function Shell({ name = 'Luna', send, stop, draft, registerEmitter, resol
   const store = useMemo(() => createStore(storage), [storage]);
   const bridge = useBridge();
   const [toast, setToast] = useState<string | null>(null);
+  const narrow = useNarrow();
+  const [sidebarOpen, setSidebarOpen] = useState(!narrow);
+  // Collapse the sidebar into an overlay drawer when the viewport gets narrow,
+  // and expand it back when there's room.
+  useEffect(() => {
+    setSidebarOpen(!narrow);
+  }, [narrow]);
 
   function nav(next: Page): void {
     setPage(next);
     setHistory((h) => [...h, next]);
+    if (narrow) setSidebarOpen(false); // close the drawer after navigating
   }
 
   // Fire due schedules: surface a toast, jump to chat, and replay the message
@@ -105,8 +114,16 @@ export function Shell({ name = 'Luna', send, stop, draft, registerEmitter, resol
   return (
     <div style={s.root}>
       {toast && <div style={s.toast}>{toast}</div>}
-      {/* Sidebar */}
-      <aside style={s.sidebar}>
+      {/* Backdrop behind the drawer on narrow screens */}
+      {narrow && sidebarOpen && <div style={s.backdrop} onClick={() => setSidebarOpen(false)} />}
+      {/* Sidebar (static on wide, overlay drawer on narrow) */}
+      <aside
+        style={{
+          ...s.sidebar,
+          ...(narrow ? s.sidebarDrawer : {}),
+          ...(sidebarOpen ? {} : narrow ? s.sidebarHidden : s.sidebarCollapsed),
+        }}
+      >
         <button
           style={s.assistantPill}
           onClick={() => nav('home')}
@@ -136,7 +153,7 @@ export function Shell({ name = 'Luna', send, stop, draft, registerEmitter, resol
       <div style={s.main}>
         <header style={s.topbar}>
           <div style={s.topLeft}>
-            <IconBtn label="Toggle sidebar">▥</IconBtn>
+            <IconBtn label="Toggle sidebar" onClick={() => setSidebarOpen((o) => !o)}>▥</IconBtn>
             <IconBtn label="Search">⌕</IconBtn>
             <IconBtn label="Back" onClick={back} disabled={history.length < 2}>
               ‹
@@ -215,6 +232,17 @@ const s = {
     padding: 14,
     gap: 10,
   } as CSSProperties,
+  sidebarDrawer: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    bottom: 0,
+    zIndex: 50,
+    boxShadow: '2px 0 24px rgba(0,0,0,0.5)',
+  } as CSSProperties,
+  sidebarHidden: { display: 'none' } as CSSProperties,
+  sidebarCollapsed: { display: 'none' } as CSSProperties,
+  backdrop: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 45 } as CSSProperties,
   assistantPill: {
     alignSelf: 'flex-start',
     background: theme.color.accent,

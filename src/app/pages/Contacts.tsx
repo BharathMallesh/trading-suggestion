@@ -6,6 +6,7 @@ import type { CSSProperties } from 'react';
 import { theme } from '../theme';
 import { usePersistentState } from '../store';
 import type { Store } from '../store';
+import { useNarrow } from '../useNarrow';
 
 type Role = 'Guardian' | 'Assistant' | 'Contact';
 interface Contact {
@@ -39,6 +40,7 @@ export function Contacts({ store }: { store: Store }) {
   const [contacts, setContacts] = usePersistentState<Contact[]>(store, 'contacts', SEED);
   const [selectedId, setSelectedId] = useState('you');
   const selected = contacts.find((c) => c.id === selectedId) ?? contacts[0];
+  const narrow = useNarrow();
 
   function update(patch: Partial<Contact>): void {
     setContacts((prev) => prev.map((c) => (c.id === selectedId ? { ...c, ...patch } : c)));
@@ -54,26 +56,42 @@ export function Contacts({ store }: { store: Store }) {
       <div style={s.head}>
         <h2 style={s.title}>‹ Contacts</h2>
       </div>
-      <div style={s.body}>
+      <div style={narrow ? { ...s.body, flexDirection: 'column', overflowY: 'auto' } : s.body}>
         {/* Entries */}
-        <div style={s.entries}>
+        <div style={narrow ? { ...s.entries, width: '100%', flexShrink: 0 } : s.entries}>
           <div style={s.entriesHead}>
             <span>Entries</span>
             <button style={s.addSmall} onClick={add}>＋</button>
           </div>
-          {contacts.map((c) => (
-            <button
-              key={c.id}
-              style={{ ...s.entry, ...(selectedId === c.id ? s.entryActive : {}) }}
-              onClick={() => setSelectedId(c.id)}
-            >
-              <div>
-                <div style={s.entryName}>{c.id === 'you' ? 'You' : c.name || 'Unnamed'}</div>
-                <div style={s.entryHandle}>{c.handle}</div>
+          {contacts.map((c) => {
+            const fixed = c.id === 'you' || c.id === 'luna';
+            return (
+              <div
+                key={c.id}
+                style={{ ...s.entry, ...(selectedId === c.id ? s.entryActive : {}), cursor: 'pointer' }}
+                onClick={() => setSelectedId(c.id)}
+              >
+                <div>
+                  <div style={s.entryName}>{c.id === 'you' ? 'You' : c.name || 'Unnamed'}</div>
+                  <div style={s.entryHandle}>{c.handle}</div>
+                </div>
+                <span style={{ ...s.badge, background: roleColor[c.role] }}>{c.role}</span>
+                {!fixed && (
+                  <button
+                    style={s.entryDelete}
+                    title="Delete contact"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setContacts((prev) => prev.filter((x) => x.id !== c.id));
+                      if (selectedId === c.id) setSelectedId('you');
+                    }}
+                  >
+                    ✕
+                  </button>
+                )}
               </div>
-              <span style={{ ...s.badge, background: roleColor[c.role] }}>{c.role}</span>
-            </button>
-          ))}
+            );
+          })}
           <button style={s.addContact} onClick={add}>👥 Add Contact</button>
         </div>
 
@@ -141,6 +159,7 @@ const s: Record<string, CSSProperties> = {
   entryName: { fontSize: 14 },
   entryHandle: { fontSize: 12, color: theme.color.textFaint, marginTop: 1 },
   badge: { fontSize: 11, color: theme.color.text, borderRadius: 5, padding: '2px 8px' },
+  entryDelete: { background: 'transparent', border: 'none', color: theme.color.textFaint, fontSize: 12, cursor: 'pointer', padding: '0 2px' },
   addContact: {
     marginTop: 6, background: 'transparent', border: `1px solid ${theme.color.borderSoft}`, color: theme.color.textDim,
     borderRadius: theme.radius.sm, padding: '8px 10px', fontSize: 13, cursor: 'pointer',

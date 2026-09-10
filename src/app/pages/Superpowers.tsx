@@ -7,6 +7,7 @@ import type { StorageProvider } from '@core/storage';
 import { discoverSkills } from '@core/skills';
 import type { SkillMeta } from '@core/skills';
 import { theme } from '../theme';
+import { useNarrow } from '../useNarrow';
 
 const ICONS: Record<string, string> = {
   Browsing: '🌐', Calendar: '🗓', Commerce: '🛒', Content: '📄', Development: '⟨⟩',
@@ -32,6 +33,7 @@ export function Superpowers({ storage }: { storage?: StorageProvider }) {
   const [err, setErr] = useState<string | null>(null);
   const [active, setActive] = useState('All');
   const [query, setQuery] = useState('');
+  const narrow = useNarrow();
 
   useEffect(() => {
     let cancelled = false;
@@ -88,8 +90,8 @@ export function Superpowers({ storage }: { storage?: StorageProvider }) {
         value={query}
         onChange={(e) => setQuery(e.target.value)}
       />
-      <div style={s.body}>
-        <div style={s.catCol}>
+      <div style={narrow ? { ...s.body, flexDirection: 'column' } : s.body}>
+        <div style={narrow ? { ...s.catCol, width: '100%', flexShrink: 0, maxHeight: '26vh' } : s.catCol}>
           <CatRow label="All" count={skills?.length ?? 0} icon="▦" active={active === 'All'} onClick={() => setActive('All')} />
           {categories.map(([cat, n]) => (
             <CatRow key={cat} label={cat} count={n} icon={ICONS[cat] ?? '•'} active={active === cat} onClick={() => setActive(cat)} />
