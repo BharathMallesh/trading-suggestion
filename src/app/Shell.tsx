@@ -2,8 +2,8 @@
 // preferences) + top bar (nav arrows, search, status, notifications) + the
 // active page. Routing is local state — no router dep, so it stays offline and
 // the PWA shell serves every "route" from one precached document.
-import { useEffect, useMemo, useState } from 'react';
-import type { CSSProperties } from 'react';
+import { Component, useEffect, useMemo, useRef, useState } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import type { AgentEvent } from '@core/events';
 import type { StorageProvider } from '@core/storage';
 import { theme } from './theme';
@@ -11,6 +11,8 @@ import { createStore, usePersistentState } from './store';
 import { useScheduler } from './scheduler';
 import { useBridge } from './bridge';
 import { useNarrow } from './useNarrow';
+import { AUTH_ENABLED } from '../auth/AuthGate';
+import { AccountMenu } from '../auth/AccountMenu';
 import { PAGE_TITLE } from './nav';
 import type { Page } from './nav';
 import { Home } from './pages/Home';
@@ -88,11 +90,40 @@ export function Shell({ name = 'Luna', send, stop, draft, registerEmitter, resol
   const [assistantName, setAssistantName] = usePersistentState<string>(store, 'assistant-name', name);
   const [prefsOpen, setPrefsOpen] = useState(false);
 
+  // Top-bar popovers + a lightweight notifications feed.
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [notifsOpen, setNotifsOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [notifications, setNotifications] = useState<{ id: string; text: string; ts: number }[]>([]);
+  const [unread, setUnread] = useState(0);
+  function notify(text: string): void {
+    setNotifications((prev) => [{ id: crypto.randomUUID(), text, ts: Date.now() }, ...prev].slice(0, 40));
+    setUnread((n) => n + 1);
+  }
+  // Notify on newly-arrived incoming messages (baseline the first pass so we
+  // don't announce the whole cached backlog).
+  const seenRef = useRef<Set<string>>(new Set());
+  const seenInitRef = useRef(false);
+  useEffect(() => {
+    const firstPass = !seenInitRef.current;
+    for (const c of bridge.conversations) {
+      const last = c.messages[c.messages.length - 1];
+      if (!last || last.dir !== 'in') continue;
+      if (!seenRef.current.has(last.id)) {
+        seenRef.current.add(last.id);
+        if (!firstPass) notify(`New ${c.channel} message from ${c.from}`);
+      }
+    }
+    seenInitRef.current = true;
+  }, [bridge.conversations]);
+
   // Fire due schedules: surface a toast, jump to chat, and replay the message
   // through the agent so the run streams where the user can see it.
   useScheduler(store, async (sc) => {
     setToast(`⏰ Running schedule “${sc.name}”…`);
     setTimeout(() => setToast(null), 6000);
+    notify(`Schedule “${sc.name}” ran`);
     // Open a fresh chat seeded with the schedule's message as the user turn, so
     // the run reads like a normal conversation (bubble + streamed reply).
     const id = crypto.randomUUID();
@@ -117,10 +148,26 @@ export function Shell({ name = 'Luna', send, stop, draft, registerEmitter, resol
     });
   }
 
+  const q = query.trim().toLowerCase();
+  const chatsMatching = (
+    q ? chats.filter((c) => (c.title + ' ' + c.messages.map((m) => m.text).join(' ')).toLowerCase().includes(q)) : chats
+  ).slice(0, 12);
+
   const body = useMemo(() => {
     switch (page) {
       case 'home':
-        return <Home nav={nav} name={assistantName} store={store} storage={storage} />;
+        return (
+          <Home
+            nav={nav}
+            name={assistantName}
+            store={store}
+            storage={storage}
+            onEditName={() => {
+              setSidebarOpen(true);
+              setPrefsOpen(true);
+            }}
+          />
+        );
       case 'chat':
         return (
           <Chat
@@ -226,7 +273,7 @@ export function Shell({ name = 'Luna', send, stop, draft, registerEmitter, resol
         <header style={s.topbar}>
           <div style={s.topLeft}>
             <IconBtn label="Toggle sidebar" onClick={() => setSidebarOpen((o) => !o)}>▥</IconBtn>
-            <IconBtn label="Search">⌕</IconBtn>
+            <IconBtn label="Search" onClick={() => setSearchOpen((o) => !o)}>⌕</IconBtn>
             <IconBtn label="Back" onClick={back} disabled={history.length < 2}>
               ‹
             </IconBtn>
@@ -238,13 +285,108 @@ export function Shell({ name = 'Luna', send, stop, draft, registerEmitter, resol
           <div style={s.topRight}>
             <span style={s.statusDot(online)} title={online ? 'online' : 'offline'} />
             <span style={s.statusText}>{storageKind}</span>
-            <IconBtn label="Notifications">◔</IconBtn>
+            <div style={{ position: 'relative' }}>
+              <IconBtn label="Notifications" onClick={() => { setNotifsOpen((o) => !o); setUnread(0); }}>◔</IconBtn>
+              {unread > 0 && <span style={s.badge}>{unread > 9 ? '9+' : unread}</span>}
+            </div>
+            <IconBtn label="Account" onClick={() => setAccountOpen((o) => !o)}>◍</IconBtn>
           </div>
+
+          {searchOpen && (
+            <Popover onClose={() => setSearchOpen(false)} style={{ left: 52, right: 'auto', width: 300 }}>
+              <input style={s.searchInput} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search chats…" autoFocus />
+              <div style={s.popList}>
+                {chatsMatching.length === 0 && <div style={s.popEmpty}>No matching chats</div>}
+                {chatsMatching.map((c) => (
+                  <button key={c.id} style={s.popItem} onClick={() => { openChat(c.id); setSearchOpen(false); setQuery(''); }}>
+                    {c.title}
+                  </button>
+                ))}
+              </div>
+            </Popover>
+          )}
+          {notifsOpen && (
+            <Popover onClose={() => setNotifsOpen(false)} style={{ right: 46, left: 'auto', width: 280 }}>
+              <div style={s.popTitle}>Notifications</div>
+              <div style={s.popList}>
+                {notifications.length === 0 && <div style={s.popEmpty}>Nothing new</div>}
+                {notifications.map((n) => (
+                  <div key={n.id} style={s.notifItem}>
+                    <div>{n.text}</div>
+                    <div style={s.notifTime}>{relTime(n.ts)}</div>
+                  </div>
+                ))}
+              </div>
+            </Popover>
+          )}
+          {accountOpen && (
+            <Popover onClose={() => setAccountOpen(false)} style={{ right: 8, left: 'auto', width: 220 }}>
+              {AUTH_ENABLED ? (
+                <SafeBoundary
+                  fallback={
+                    <div style={{ fontSize: 13, color: theme.color.textDim, lineHeight: 1.5 }}>
+                      Signed in. (Account controls load in the full app.)
+                    </div>
+                  }
+                >
+                  <AccountMenu />
+                </SafeBoundary>
+              ) : (
+                <div style={{ fontSize: 13, color: theme.color.textDim, lineHeight: 1.5 }}>
+                  Sign-in isn’t configured. Your data is stored locally on this device.
+                </div>
+              )}
+            </Popover>
+          )}
         </header>
         <main style={s.content}>{body}</main>
       </div>
     </div>
   );
+}
+
+// A top-bar popover with a click-away backdrop.
+function Popover({ children, onClose, style }: { children: React.ReactNode; onClose: () => void; style?: CSSProperties }) {
+  return (
+    <>
+      <div style={{ position: 'fixed', inset: 0, zIndex: 59 }} onClick={onClose} />
+      <div style={{ ...popoverBase, ...style }}>{children}</div>
+    </>
+  );
+}
+
+const popoverBase: CSSProperties = {
+  position: 'absolute',
+  top: 46,
+  zIndex: 60,
+  background: theme.color.panel,
+  border: `1px solid ${theme.color.border}`,
+  borderRadius: theme.radius.md,
+  padding: 10,
+  boxShadow: '0 8px 24px rgba(0,0,0,0.45)',
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 8,
+};
+
+// Catches the case where AccountMenu's Clerk hooks run without a provider
+// (e.g. the dev preview harness), showing a fallback instead of crashing.
+class SafeBoundary extends Component<{ fallback: ReactNode; children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  render() {
+    return this.state.failed ? this.props.fallback : this.props.children;
+  }
+}
+
+function relTime(ts: number): string {
+  const secs = Math.round((Date.now() - ts) / 1000);
+  if (secs < 60) return 'just now';
+  if (secs < 3600) return `${Math.floor(secs / 60)}m ago`;
+  if (secs < 86400) return `${Math.floor(secs / 3600)}h ago`;
+  return `${Math.floor(secs / 86400)}d ago`;
 }
 
 function IconBtn({
@@ -419,6 +561,7 @@ const s = {
   } as CSSProperties,
   main: { flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 } as CSSProperties,
   topbar: {
+    position: 'relative',
     height: 46,
     flexShrink: 0,
     display: 'flex',
@@ -427,6 +570,50 @@ const s = {
     gap: 12,
     borderBottom: `1px solid ${theme.color.borderSoft}`,
   } as CSSProperties,
+  badge: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    minWidth: 15,
+    height: 15,
+    padding: '0 3px',
+    borderRadius: 8,
+    background: theme.color.accent,
+    color: theme.color.accentText,
+    fontSize: 10,
+    fontWeight: 700,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    pointerEvents: 'none',
+  } as CSSProperties,
+  searchInput: {
+    background: theme.color.card,
+    border: `1px solid ${theme.color.border}`,
+    borderRadius: theme.radius.sm,
+    padding: '8px 10px',
+    color: theme.color.text,
+    fontSize: 14,
+    outline: 'none',
+  } as CSSProperties,
+  popList: { display: 'flex', flexDirection: 'column', gap: 2, maxHeight: 320, overflowY: 'auto' } as CSSProperties,
+  popEmpty: { fontSize: 13, color: theme.color.textFaint, padding: '8px 6px' } as CSSProperties,
+  popItem: {
+    background: 'transparent',
+    border: 'none',
+    color: theme.color.textDim,
+    textAlign: 'left',
+    padding: '8px 8px',
+    fontSize: 13,
+    borderRadius: 6,
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+  } as CSSProperties,
+  popTitle: { fontSize: 12, color: theme.color.textFaint, padding: '0 4px' } as CSSProperties,
+  notifItem: { padding: '8px 6px', fontSize: 13, color: theme.color.text, borderTop: `1px solid ${theme.color.borderSoft}` } as CSSProperties,
+  notifTime: { fontSize: 11, color: theme.color.textFaint, marginTop: 2 } as CSSProperties,
   topLeft: { display: 'flex', alignItems: 'center', gap: 4 } as CSSProperties,
   topTitle: { flex: 1, textAlign: 'center', fontSize: 14, color: theme.color.textDim } as CSSProperties,
   topRight: { display: 'flex', alignItems: 'center', gap: 10 } as CSSProperties,

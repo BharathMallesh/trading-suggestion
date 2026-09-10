@@ -9,6 +9,8 @@ import type { CSSProperties, ReactNode } from 'react';
 import { ClerkProvider, SignedIn, SignedOut, SignIn, useUser } from '@clerk/clerk-react';
 
 const KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string | undefined;
+/** True when a Clerk key is configured, so callers can safely use Clerk hooks. */
+export const AUTH_ENABLED = !!KEY;
 const CACHE = 'luna-auth';
 const MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30-day offline grace after a sign-in
 

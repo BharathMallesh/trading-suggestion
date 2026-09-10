@@ -72,11 +72,13 @@ export function Home({
   name = 'Luna',
   store,
   storage,
+  onEditName,
 }: {
   nav: (p: Page) => void;
   name?: string;
   store: Store;
   storage?: StorageProvider;
+  onEditName?: () => void;
 }) {
   const narrow = useNarrow();
   const [values, setValues] = useState<number[]>(DIAL_DEFAULTS);
@@ -179,7 +181,12 @@ export function Home({
 
         {/* Greeting + mascot (spans center) */}
         <div style={s.center}>
-          <h1 style={s.greeting}>Hi, I’m {name}</h1>
+          <h1 style={s.greeting}>
+            Hi, I’m {name}
+            {onEditName && (
+              <button style={s.editName} onClick={onEditName} title="Rename assistant" aria-label="Rename assistant">✎</button>
+            )}
+          </h1>
           <div style={s.mascotWrap}>
             <Mascot size={300} />
           </div>
@@ -255,6 +262,7 @@ const s: Record<string, CSSProperties> = {
   bar: { width: 8, borderRadius: 6, background: theme.color.accent },
   center: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', minHeight: 0 },
   greeting: { fontFamily: theme.font.serif, fontWeight: 400, fontSize: 34, margin: '24px 0 0', color: theme.color.text },
+  editName: { marginLeft: 10, background: 'transparent', border: 'none', color: theme.color.textFaint, fontSize: 18, cursor: 'pointer', verticalAlign: 'middle' },
   mascotWrap: { flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 0 },
   schedRow: { marginBottom: 14 },
   schedName: { fontSize: 14, color: theme.color.text },
