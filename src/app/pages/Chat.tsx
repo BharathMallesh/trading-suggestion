@@ -15,6 +15,8 @@ export interface ChatProps {
   stop?: () => void;
   registerEmitter: (fn: (e: AgentEvent) => void) => () => void;
   resolveConfirm: (id: string, ok: boolean) => void;
+  initialMessages?: ChatMessage[];
+  onPersist?: (messages: ChatMessage[]) => void;
 }
 
 interface ChatMessage {
@@ -29,8 +31,8 @@ const SUGGESTIONS = [
   'Set a midweek reset reminder',
 ];
 
-export function Chat({ send, stop, registerEmitter, resolveConfirm }: ChatProps) {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+export function Chat({ send, stop, registerEmitter, resolveConfirm, initialMessages, onPersist }: ChatProps) {
+  const [messages, setMessages] = useState<ChatMessage[]>(initialMessages ?? []);
   const [streamText, setStreamText] = useState('');
   const [trace, setTrace] = useState<ToolTraceEntry[]>([]);
   const [confirm, setConfirm] = useState<ConfirmRequest | null>(null);
@@ -96,6 +98,19 @@ export function Chat({ send, stop, registerEmitter, resolveConfirm }: ChatProps)
   });
 
   useEffect(() => registerEmitter(handlerRef.current), [registerEmitter]);
+
+  // Persist the transcript on discrete changes (user send / run_end). Streaming
+  // tokens live in streamText, so this doesn't fire per token. Skip the initial
+  // hydration so opening a chat doesn't reorder history.
+  const persistedRef = useRef(false);
+  useEffect(() => {
+    if (!persistedRef.current) {
+      persistedRef.current = true;
+      return;
+    }
+    onPersist?.(messages);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages]);
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [messages, streamText, status]);

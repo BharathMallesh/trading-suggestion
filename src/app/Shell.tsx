@@ -7,7 +7,7 @@ import type { CSSProperties } from 'react';
 import type { AgentEvent } from '@core/events';
 import type { StorageProvider } from '@core/storage';
 import { theme } from './theme';
-import { createStore } from './store';
+import { createStore, usePersistentState } from './store';
 import { useScheduler } from './scheduler';
 import { useBridge } from './bridge';
 import { useNarrow } from './useNarrow';
@@ -37,7 +37,12 @@ export interface ShellProps {
   storage?: StorageProvider;
 }
 
-const RECENT_CHATS = ['Flagging Inbox Replies', 'Mixed Scope Discussion'];
+interface ChatSession {
+  id: string;
+  title: string;
+  messages: { role: 'user' | 'assistant'; text: string }[];
+  updatedAt: number;
+}
 
 export function Shell({ name = 'Luna', send, stop, draft, registerEmitter, resolveConfirm, storageKind, storage }: ShellProps) {
   const [page, setPage] = useState<Page>('home');
@@ -59,6 +64,27 @@ export function Shell({ name = 'Luna', send, stop, draft, registerEmitter, resol
     setHistory((h) => [...h, next]);
     if (narrow) setSidebarOpen(false); // close the drawer after navigating
   }
+
+  // Persisted chat sessions for the sidebar history.
+  const [chats, setChats] = usePersistentState<ChatSession[]>(store, 'chats', []);
+  const [currentChatId, setCurrentChatId] = useState(() => crypto.randomUUID());
+  function newChat(): void {
+    setCurrentChatId(crypto.randomUUID());
+    nav('chat');
+  }
+  function openChat(id: string): void {
+    setCurrentChatId(id);
+    nav('chat');
+  }
+  function persistChat(messages: { role: 'user' | 'assistant'; text: string }[]): void {
+    if (!messages.length) return;
+    setChats((prev) => {
+      const title = messages.find((m) => m.role === 'user')?.text.slice(0, 42) || 'New chat';
+      const others = prev.filter((c) => c.id !== currentChatId);
+      return [{ id: currentChatId, title, messages, updatedAt: Date.now() }, ...others].slice(0, 30);
+    });
+  }
+  const currentMessages = chats.find((c) => c.id === currentChatId)?.messages ?? [];
 
   // Fire due schedules: surface a toast, jump to chat, and replay the message
   // through the agent so the run streams where the user can see it.
@@ -86,7 +112,17 @@ export function Shell({ name = 'Luna', send, stop, draft, registerEmitter, resol
       case 'home':
         return <Home nav={nav} name={name} store={store} storage={storage} />;
       case 'chat':
-        return <Chat send={send} stop={stop} registerEmitter={registerEmitter} resolveConfirm={resolveConfirm} />;
+        return (
+          <Chat
+            key={currentChatId}
+            send={send}
+            stop={stop}
+            registerEmitter={registerEmitter}
+            resolveConfirm={resolveConfirm}
+            initialMessages={currentMessages}
+            onPersist={persistChat}
+          />
+        );
       case 'messages':
         return <Messages bridge={bridge} draft={draft} />;
       case 'superpowers':
@@ -109,7 +145,7 @@ export function Shell({ name = 'Luna', send, stop, draft, registerEmitter, resol
         return <Placeholder page={page} />;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, name, send, stop, draft, registerEmitter, resolveConfirm, storage, store, bridge]);
+  }, [page, name, send, stop, draft, registerEmitter, resolveConfirm, storage, store, bridge, currentChatId, currentMessages]);
 
   return (
     <div style={s.root}>
@@ -131,7 +167,7 @@ export function Shell({ name = 'Luna', send, stop, draft, registerEmitter, resol
         >
           <span style={s.pillDot}>●●</span> {name}
         </button>
-        <button style={s.newChat} onClick={() => nav('chat')}>
+        <button style={s.newChat} onClick={newChat}>
           + New Chat
         </button>
         <button style={s.messagesBtn} onClick={() => nav('messages')}>
@@ -139,9 +175,15 @@ export function Shell({ name = 'Luna', send, stop, draft, registerEmitter, resol
         </button>
         <div style={s.chatsHead}>▾ Chats</div>
         <div style={s.chatList}>
-          {RECENT_CHATS.map((c) => (
-            <button key={c} style={s.chatItem} onClick={() => nav('chat')}>
-              {c}
+          {chats.length === 0 && <div style={s.chatEmpty}>No chats yet</div>}
+          {chats.map((c) => (
+            <button
+              key={c.id}
+              style={{ ...s.chatItem, ...(page === 'chat' && c.id === currentChatId ? s.chatItemActive : {}) }}
+              onClick={() => openChat(c.id)}
+              title={c.title}
+            >
+              {c.title}
             </button>
           ))}
         </div>
@@ -292,7 +334,12 @@ const s = {
     fontSize: 13,
     borderRadius: 6,
     cursor: 'pointer',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
   } as CSSProperties,
+  chatItemActive: { background: theme.color.panel, color: theme.color.text } as CSSProperties,
+  chatEmpty: { color: theme.color.textFaint, fontSize: 12, padding: '4px 6px' } as CSSProperties,
   prefs: {
     background: 'transparent',
     border: `1px solid ${theme.color.borderSoft}`,
