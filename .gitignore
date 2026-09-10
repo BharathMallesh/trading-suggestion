@@ -17,8 +17,9 @@ dist-ssr
 .env.*
 !.env.example
 
-# Bridge secrets (tokens live here, never commit)
+# Bridge secrets (tokens live here, never commit) + per-machine runtime state
 bridge/config.json
+bridge/.email-state.json
 
 # Editor directories and files
 .vscode/*
