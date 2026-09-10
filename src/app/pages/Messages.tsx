@@ -13,6 +13,7 @@ const CHANNEL_ICON: Record<string, string> = {
 export function Messages({ bridge }: { bridge: Bridge }) {
   const [selected, setSelected] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
+  const [composing, setComposing] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   const convos = bridge.conversations;
@@ -27,6 +28,12 @@ export function Messages({ bridge }: { bridge: Bridge }) {
     if (!text || !active) return;
     bridge.send(active.channel, active.chatId, text);
     setDraft('');
+  }
+
+  function startNew(channel: string, to: string, text: string): void {
+    bridge.send(channel, to, text);
+    setSelected(`${channel}:${to}`); // the 'sent' echo will create/fill this conversation
+    setComposing(false);
   }
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>): void {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -54,7 +61,8 @@ export function Messages({ bridge }: { bridge: Bridge }) {
       ) : (
         <div style={s.body}>
           <div style={s.list}>
-            {convos.length === 0 && <div style={s.empty}>Waiting for messages…</div>}
+            <button style={s.newBtn} onClick={() => setComposing(true)}>＋ New message</button>
+            {convos.length === 0 && <div style={s.empty}>No conversations yet.</div>}
             {convos.map((c) => (
               <ConvoRow key={c.key} c={c} active={active?.key === c.key} onClick={() => setSelected(c.key)} />
             ))}
@@ -98,6 +106,69 @@ export function Messages({ bridge }: { bridge: Bridge }) {
           </div>
         </div>
       )}
+      {composing && (
+        <ComposeModal
+          channels={bridge.channels.filter((c) => c.connected).map((c) => c.id)}
+          onClose={() => setComposing(false)}
+          onSend={startNew}
+        />
+      )}
+    </div>
+  );
+}
+
+function ComposeModal({
+  channels,
+  onClose,
+  onSend,
+}: {
+  channels: string[];
+  onClose: () => void;
+  onSend: (channel: string, to: string, text: string) => void;
+}) {
+  const [channel, setChannel] = useState(channels[0] ?? '');
+  const [to, setTo] = useState('');
+  const [text, setText] = useState('');
+  const placeholder =
+    channel === 'email' ? 'name@example.com' : channel === 'telegram' ? 'chat id (numeric)' : channel === 'slack' ? 'channel or user id' : 'recipient id';
+
+  return (
+    <div style={s.backdrop} onClick={onClose}>
+      <div style={s.modal} onClick={(e) => e.stopPropagation()}>
+        <div style={s.modalHead}>
+          <h3 style={s.modalTitle}>New message</h3>
+          <button style={s.close} onClick={onClose}>✕</button>
+        </div>
+        {channels.length === 0 ? (
+          <p style={s.helpSub}>No channels are connected. Start the bridge and configure a channel first.</p>
+        ) : (
+          <>
+            <label style={s.field}>Channel
+              <select style={s.select} value={channel} onChange={(e) => setChannel(e.target.value)}>
+                {channels.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </label>
+            <label style={s.field}>To
+              <input style={s.modalInput} value={to} onChange={(e) => setTo(e.target.value)} placeholder={placeholder} />
+            </label>
+            <label style={s.field}>Message
+              <textarea style={{ ...s.modalInput, minHeight: 70, resize: 'vertical' }} value={text} onChange={(e) => setText(e.target.value)} placeholder="Say hi…" />
+            </label>
+            <div style={s.modalFoot}>
+              <button style={s.ghost} onClick={onClose}>Cancel</button>
+              <button
+                style={{ ...s.primary, opacity: to.trim() && text.trim() ? 1 : 0.5 }}
+                disabled={!to.trim() || !text.trim()}
+                onClick={() => onSend(channel, to.trim(), text.trim())}
+              >
+                Send
+              </button>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }
@@ -178,4 +249,25 @@ const s: Record<string, CSSProperties> & { dot: (c: boolean) => CSSProperties } 
     textAlign: 'left', background: theme.color.bg, border: `1px solid ${theme.color.border}`, borderRadius: theme.radius.sm,
     padding: '12px 14px', fontSize: 13, color: theme.color.textDim, fontFamily: 'ui-monospace, monospace', width: '100%', boxSizing: 'border-box',
   },
+  newBtn: {
+    background: theme.color.panel, border: `1px solid ${theme.color.border}`, color: theme.color.text,
+    borderRadius: theme.radius.sm, padding: '9px 12px', fontSize: 13, cursor: 'pointer', marginBottom: 4,
+  },
+  backdrop: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 },
+  modal: {
+    width: 420, background: theme.color.panel, border: `1px solid ${theme.color.border}`, borderRadius: theme.radius.lg,
+    padding: 20, display: 'flex', flexDirection: 'column', gap: 12, fontFamily: theme.font.sans,
+  },
+  modalHead: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
+  modalTitle: { margin: 0, fontSize: 18, color: theme.color.text },
+  close: { background: 'transparent', border: 'none', color: theme.color.textDim, fontSize: 16, cursor: 'pointer' },
+  field: { display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13, color: theme.color.textDim },
+  select: { background: theme.color.card, border: `1px solid ${theme.color.border}`, color: theme.color.text, borderRadius: theme.radius.sm, padding: '9px 11px', fontSize: 14 },
+  modalInput: {
+    background: theme.color.card, border: `1px solid ${theme.color.border}`, borderRadius: theme.radius.sm,
+    padding: '9px 11px', color: theme.color.text, fontSize: 14, outline: 'none', fontFamily: theme.font.sans,
+  },
+  modalFoot: { display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 4 },
+  ghost: { background: 'transparent', border: `1px solid ${theme.color.border}`, color: theme.color.textDim, borderRadius: theme.radius.sm, padding: '9px 16px', fontSize: 14, cursor: 'pointer' },
+  primary: { background: theme.color.text, color: theme.color.bg, border: 'none', borderRadius: theme.radius.sm, padding: '9px 16px', fontSize: 14, fontWeight: 600, cursor: 'pointer' },
 };
