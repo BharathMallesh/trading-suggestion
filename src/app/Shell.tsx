@@ -85,13 +85,23 @@ export function Shell({ name = 'Luna', send, stop, draft, registerEmitter, resol
     });
   }
   const currentMessages = chats.find((c) => c.id === currentChatId)?.messages ?? [];
+  const [assistantName, setAssistantName] = usePersistentState<string>(store, 'assistant-name', name);
+  const [prefsOpen, setPrefsOpen] = useState(false);
 
   // Fire due schedules: surface a toast, jump to chat, and replay the message
   // through the agent so the run streams where the user can see it.
   useScheduler(store, async (sc) => {
     setToast(`⏰ Running schedule “${sc.name}”…`);
     setTimeout(() => setToast(null), 6000);
+    // Open a fresh chat seeded with the schedule's message as the user turn, so
+    // the run reads like a normal conversation (bubble + streamed reply).
+    const id = crypto.randomUUID();
+    setCurrentChatId(id);
+    setChats((prev) =>
+      [{ id, title: sc.name, messages: [{ role: 'user' as const, text: sc.message }], updatedAt: Date.now() }, ...prev].slice(0, 30),
+    );
     setPage('chat');
+    if (narrow) setSidebarOpen(false);
     try {
       await send(sc.message);
     } catch {
@@ -110,7 +120,7 @@ export function Shell({ name = 'Luna', send, stop, draft, registerEmitter, resol
   const body = useMemo(() => {
     switch (page) {
       case 'home':
-        return <Home nav={nav} name={name} store={store} storage={storage} />;
+        return <Home nav={nav} name={assistantName} store={store} storage={storage} />;
       case 'chat':
         return (
           <Chat
@@ -140,12 +150,12 @@ export function Shell({ name = 'Luna', send, stop, draft, registerEmitter, resol
       case 'contacts':
         return <Contacts store={store} />;
       case 'channels':
-        return <Channels name={name} store={store} bridge={bridge} onOpenMessages={() => nav('messages')} />;
+        return <Channels name={assistantName} store={store} bridge={bridge} onOpenMessages={() => nav('messages')} />;
       default:
         return <Placeholder page={page} />;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, name, send, stop, draft, registerEmitter, resolveConfirm, storage, store, bridge, currentChatId, currentMessages]);
+  }, [page, assistantName, send, stop, draft, registerEmitter, resolveConfirm, storage, store, bridge, currentChatId, currentMessages]);
 
   return (
     <div style={s.root}>
@@ -165,7 +175,7 @@ export function Shell({ name = 'Luna', send, stop, draft, registerEmitter, resol
           onClick={() => nav('home')}
           title="Home"
         >
-          <span style={s.pillDot}>●●</span> {name}
+          <span style={s.pillDot}>●●</span> {assistantName}
         </button>
         <button style={s.newChat} onClick={newChat}>
           + New Chat
@@ -188,7 +198,27 @@ export function Shell({ name = 'Luna', send, stop, draft, registerEmitter, resol
           ))}
         </div>
         <div style={{ flex: 1 }} />
-        <button style={s.prefs}>⚙ Preferences ▴</button>
+        <div style={{ position: 'relative' }}>
+          {prefsOpen && (
+            <div style={s.prefsPopover}>
+              <div style={s.prefsTitle}>Assistant name</div>
+              <input
+                style={s.prefsInput}
+                value={assistantName}
+                onChange={(e) => setAssistantName(e.target.value || 'Luna')}
+                onKeyDown={(e) => e.key === 'Enter' && setPrefsOpen(false)}
+                autoFocus
+              />
+              <div style={s.prefsRow}>
+                <span style={s.statusDot(online)} /> {online ? 'Online' : 'Offline'} · {storageKind}
+              </div>
+              <button style={s.prefsAction} onClick={() => { nav('personality'); setPrefsOpen(false); }}>
+                Adjust personality →
+              </button>
+            </div>
+          )}
+          <button style={s.prefs} onClick={() => setPrefsOpen((o) => !o)}>⚙ Preferences ▴</button>
+        </div>
       </aside>
 
       {/* Main column */}
@@ -341,11 +371,48 @@ const s = {
   chatItemActive: { background: theme.color.panel, color: theme.color.text } as CSSProperties,
   chatEmpty: { color: theme.color.textFaint, fontSize: 12, padding: '4px 6px' } as CSSProperties,
   prefs: {
+    width: '100%',
     background: 'transparent',
     border: `1px solid ${theme.color.borderSoft}`,
     color: theme.color.textDim,
     borderRadius: theme.radius.pill,
     padding: '7px 12px',
+    fontSize: 13,
+    cursor: 'pointer',
+    textAlign: 'left',
+  } as CSSProperties,
+  prefsPopover: {
+    position: 'absolute',
+    bottom: 'calc(100% + 8px)',
+    left: 0,
+    right: 0,
+    background: theme.color.panel,
+    border: `1px solid ${theme.color.border}`,
+    borderRadius: theme.radius.md,
+    padding: 12,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 8,
+    boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+    zIndex: 60,
+  } as CSSProperties,
+  prefsTitle: { fontSize: 12, color: theme.color.textFaint } as CSSProperties,
+  prefsInput: {
+    background: theme.color.card,
+    border: `1px solid ${theme.color.border}`,
+    borderRadius: theme.radius.sm,
+    padding: '8px 10px',
+    color: theme.color.text,
+    fontSize: 14,
+    outline: 'none',
+  } as CSSProperties,
+  prefsRow: { display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: theme.color.textFaint } as CSSProperties,
+  prefsAction: {
+    background: 'transparent',
+    border: `1px solid ${theme.color.borderSoft}`,
+    color: theme.color.textDim,
+    borderRadius: theme.radius.sm,
+    padding: '7px 10px',
     fontSize: 13,
     cursor: 'pointer',
     textAlign: 'left',
