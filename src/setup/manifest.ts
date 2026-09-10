@@ -10,8 +10,8 @@ export interface AssetSpec {
 }
 
 export const BASE_MODEL: AssetSpec = {
-  url: 'https://huggingface.co/<USER>/Qwen3.5-0.8B-Q5_K_M/resolve/main/Qwen3.5-0.8B-Q5_K_M.gguf',
-  path: 'models/Qwen3.5-0.8B-Q5_K_M.gguf',
+  url: 'https://huggingface.co/bartowski/Qwen_Qwen3.5-0.8B-GGUF/resolve/main/Qwen_Qwen3.5-0.8B-Q5_K_M.gguf',
+  path: 'models/Qwen_Qwen3.5-0.8B-Q5_K_M.gguf',
 };
 
 export const ADAPTERS: AssetSpec[] = [
