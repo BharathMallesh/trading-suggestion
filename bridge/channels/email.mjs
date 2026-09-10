@@ -92,12 +92,17 @@ export function createEmail({ imap, smtp, from }, { onIncoming, setConnected }) 
           const addr = parsed.from?.value?.[0]?.address || 'unknown@unknown';
           const name = parsed.from?.value?.[0]?.name || addr;
           const subject = parsed.subject || '(no subject)';
-          const body = (parsed.text || parsed.html?.replace(/<[^>]+>/g, ' ') || '').trim();
+          const body = (parsed.text || (parsed.html ? parsed.html.replace(/<[^>]+>/g, ' ') : '') || '')
+            .replace(/\r/g, '')
+            .replace(/[ \t]+/g, ' ')
+            .replace(/\n{3,}/g, '\n\n')
+            .trim();
           subjects.set(addr, subject);
           onIncoming('email', {
             chatId: addr,
             from: name,
-            text: `Subject: ${subject}\n\n${body}`,
+            subject, // sent separately so the UI can render it as a header
+            text: body,
             id: String(msg.uid),
             ts: parsed.date?.getTime?.() || Date.now(),
           });
@@ -131,10 +136,14 @@ export function createEmail({ imap, smtp, from }, { onIncoming, setConnected }) 
       clearInterval(iv);
       client?.logout().catch(() => {});
     },
-    async send(chatId, text) {
-      const last = subjects.get(chatId);
-      const subject = last ? (/^re:/i.test(last) ? last : `Re: ${last}`) : 'Message from Luna';
-      await transport.sendMail({ from: from || smtp.user, to: chatId, subject, text });
+    async send(chatId, text, subject) {
+      // Explicit subject (from compose) wins; a reply falls back to Re: <last>.
+      let subj = subject && String(subject).trim();
+      if (!subj) {
+        const last = subjects.get(chatId);
+        subj = last ? (/^re:/i.test(last) ? last : `Re: ${last}`) : 'Message from Luna';
+      }
+      await transport.sendMail({ from: from || smtp.user, to: chatId, subject: subj, text });
     },
   };
 }

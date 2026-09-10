@@ -83,7 +83,7 @@ wss.on('connection', (ws) => {
         return;
       }
       try {
-        await ch.send(msg.chatId, msg.text);
+        await ch.send(msg.chatId, msg.text, msg.subject); // subject ignored by channels that don't use it
         broadcast({ type: 'sent', channel: msg.channel, chatId: msg.chatId, ok: true, text: msg.text, ts: Date.now() });
       } catch (e) {
         ws.send(JSON.stringify({ type: 'sent', channel: msg.channel, chatId: msg.chatId, ok: false, error: String(e?.message || e) }));

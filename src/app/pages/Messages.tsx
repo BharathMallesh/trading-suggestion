@@ -31,8 +31,8 @@ export function Messages({ bridge, draft: aiDraft }: { bridge: Bridge; draft?: (
     setDraft('');
   }
 
-  function startNew(channel: string, to: string, text: string): void {
-    bridge.send(channel, to, text);
+  function startNew(channel: string, to: string, text: string, subject?: string): void {
+    bridge.send(channel, to, text, subject);
     setSelected(`${channel}:${to}`); // the 'sent' echo will create/fill this conversation
     setComposing(false);
   }
@@ -102,7 +102,10 @@ export function Messages({ bridge, draft: aiDraft }: { bridge: Bridge; draft?: (
                 <div ref={scrollRef} style={s.msgs}>
                   {active.messages.map((m) => (
                     <div key={m.id} style={{ ...s.row, justifyContent: m.dir === 'out' ? 'flex-end' : 'flex-start' }}>
-                      <div style={{ ...s.bubble, ...(m.dir === 'out' ? s.out : s.in) }}>{m.text}</div>
+                      <div style={{ ...s.bubble, ...(m.dir === 'out' ? s.out : s.in) }}>
+                        {m.subject && <div style={s.subjectLine}>{m.subject}</div>}
+                        {m.text}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -156,11 +159,13 @@ function ComposeModal({
 }: {
   channels: string[];
   onClose: () => void;
-  onSend: (channel: string, to: string, text: string) => void;
+  onSend: (channel: string, to: string, text: string, subject?: string) => void;
 }) {
   const [channel, setChannel] = useState(channels[0] ?? '');
   const [to, setTo] = useState('');
+  const [subject, setSubject] = useState('');
   const [text, setText] = useState('');
+  const isEmail = channel === 'email';
   const placeholder =
     channel === 'email' ? 'name@example.com' : channel === 'telegram' ? 'chat id (numeric)' : channel === 'slack' ? 'channel or user id' : 'recipient id';
 
@@ -185,6 +190,11 @@ function ComposeModal({
             <label style={s.field}>To
               <input style={s.modalInput} value={to} onChange={(e) => setTo(e.target.value)} placeholder={placeholder} />
             </label>
+            {isEmail && (
+              <label style={s.field}>Subject
+                <input style={s.modalInput} value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Subject line" />
+              </label>
+            )}
             <label style={s.field}>Message
               <textarea style={{ ...s.modalInput, minHeight: 70, resize: 'vertical' }} value={text} onChange={(e) => setText(e.target.value)} placeholder="Say hi…" />
             </label>
@@ -193,7 +203,7 @@ function ComposeModal({
               <button
                 style={{ ...s.primary, opacity: to.trim() && text.trim() ? 1 : 0.5 }}
                 disabled={!to.trim() || !text.trim()}
-                onClick={() => onSend(channel, to.trim(), text.trim())}
+                onClick={() => onSend(channel, to.trim(), text.trim(), isEmail ? subject.trim() || undefined : undefined)}
               >
                 Send
               </button>
@@ -264,6 +274,7 @@ const s: Record<string, CSSProperties> & { dot: (c: boolean) => CSSProperties } 
   msgs: { flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 8, minHeight: 0 },
   row: { display: 'flex' },
   bubble: { maxWidth: '75%', padding: '8px 12px', borderRadius: 12, fontSize: 14, whiteSpace: 'pre-wrap', lineHeight: 1.4 },
+  subjectLine: { fontWeight: 700, marginBottom: 6, fontSize: 13, opacity: 0.85 },
   in: { background: theme.color.panel, color: theme.color.text },
   out: { background: theme.color.accent, color: theme.color.accentText },
   composer: { display: 'flex', gap: 8, padding: 12, borderTop: `1px solid ${theme.color.borderSoft}` },

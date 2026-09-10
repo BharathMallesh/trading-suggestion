@@ -15,6 +15,7 @@ export interface BridgeMessage {
   dir: 'in' | 'out';
   from: string;
   text: string;
+  subject?: string; // email only
   ts: number;
 }
 export interface Conversation {
@@ -30,7 +31,7 @@ export interface Bridge {
   connected: boolean; // WS to the bridge is open
   channels: ChannelStatus[];
   conversations: Conversation[];
-  send: (channel: string, chatId: string, text: string) => void;
+  send: (channel: string, chatId: string, text: string, subject?: string) => void;
 }
 
 export function useBridge(url: string = BRIDGE_URL): Bridge {
@@ -83,7 +84,7 @@ export function useBridge(url: string = BRIDGE_URL): Bridge {
         if (msg.type === 'status') {
           setChannels(msg.channels ?? []);
         } else if (msg.type === 'incoming') {
-          upsert(msg.channel, msg.chatId, { id: msg.id, dir: 'in', from: msg.from, text: msg.text, ts: msg.ts });
+          upsert(msg.channel, msg.chatId, { id: msg.id, dir: 'in', from: msg.from, text: msg.text, subject: msg.subject, ts: msg.ts });
         } else if (msg.type === 'sent' && msg.ok) {
           upsert(msg.channel, msg.chatId, { id: 'out-' + msg.ts, dir: 'out', from: 'You', text: msg.text, ts: msg.ts });
         }
@@ -98,10 +99,10 @@ export function useBridge(url: string = BRIDGE_URL): Bridge {
     };
   }, [url, upsert]);
 
-  const send = useCallback((channel: string, chatId: string, text: string) => {
+  const send = useCallback((channel: string, chatId: string, text: string, subject?: string) => {
     const ws = wsRef.current;
     if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: 'send', channel, chatId, text }));
+      ws.send(JSON.stringify({ type: 'send', channel, chatId, text, subject }));
     }
   }, []);
 
