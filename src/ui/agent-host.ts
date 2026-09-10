@@ -75,8 +75,10 @@ export async function bootWorker(
 ): Promise<Worker> {
   const worker = createWllamaWorker();
   try {
-    const bytes = await storage.readBytes(modelPath);
-    await loadWorkerModel(worker, new Blob([bytes as Uint8Array<ArrayBuffer>]), onProgress);
+    // readFile() returns the raw Blob without an extra Uint8Array copy; the
+    // model GGUF may be hundreds of MiB so avoiding redundant in-memory copies matters.
+    const blob = await storage.readFile(modelPath);
+    await loadWorkerModel(worker, blob, onProgress);
     return worker;
   } catch (err) {
     worker.terminate();

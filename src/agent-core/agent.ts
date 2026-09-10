@@ -77,19 +77,15 @@ export class Agent {
     // Every turn resends every tool definition, so unconfigured capabilities
     // are dropped from both the tool array and this capability list.
     const unavailable = listUnavailableTools(config);
+    // BROWSER-ADAPTED: only browser-available tools appear in the capabilities
+    // block. All Node/shell tools (execute_shell_command, web_search, etc.)
+    // are absent from the registry; has() filters them from any dynamic list.
     const has = (tool: string) => !unavailable.includes(tool);
     const capabilities = [
-      '- Shell: execute_shell_command — run scripts, install packages, manage processes, interact with the OS',
-      '- Files: read_file / write_file — inspect logs, generate configs, produce reports',
-      has('web_search') ? '- Web: web_search — real-time information lookup' : null,
-      has('read_website') ? '- Web: read_website — extract article content from a URL' : null,
-      has('take_screenshot') ? '- Web: take_screenshot — capture page visuals' : null,
-      has('start_background_process') ? '- Processes: start_background_process / check_background_process / stop_background_process — run long-lived commands (servers, watchers) in the background and poll their output' : null,
-      has('send_email') ? '- Communication: send_email — SMTP email delivery' : null,
-      has('send_notification') ? '- Communication: send_notification — push to Feishu/DingTalk/WeCom' : null,
-      has('generate_image') ? '- Creation: generate_image — AI image generation (DALL-E compatible)' : null,
-      has('optimize_prompt') ? '- Creation: optimize_prompt — refine raw prompts for creative/complex tasks (recommended before creative work)' : null,
-      '- Utility: get_current_datetime — accurate system time for temporal reasoning'
+      '- Files: read_file / write_file / list_dir / grep — read, write, list, and search files in your workspace',
+      has('render_html') ? '- Render: render_html — convert an HTML/CSS snippet into an SVG or PNG image saved to the workspace' : null,
+      has('web_fetch') ? '- Web: web_fetch — fetch a web page and return its text content (online only)' : null,
+      '- Utility: get_current_datetime — accurate current date/time for temporal reasoning',
     ].filter((line): line is string => line !== null).join('\n');
 
     // BROWSER-ADAPTED: the skills manifest placeholder is async, so it is
@@ -97,9 +93,9 @@ export class Agent {
     this.messages = [
       {
         role: "system",
-        content: `You are AutoClaw, a lightweight AI agent that operates directly in the terminal. You accomplish tasks by executing shell commands, reading and writing files, and using integrated tools — no GUI, no guesswork, deterministic results.
+        content: `You are AutoClaw, an AI agent running inside a browser PWA. You accomplish tasks by reading and writing files in the user's local workspace and using integrated tools — no shell commands, fully offline-capable.
 
-You may be running on a developer workstation, a headless server, inside a Docker container, or in a CI/CD pipeline. Adapt accordingly.
+All file access goes through a virtual workspace. Paths must be workspace-relative (e.g. "notes/todo.md") — never use absolute paths or a "workspace/" prefix; the tools handle that automatically.
 
 ${sysInfo}
 
@@ -107,13 +103,11 @@ WHAT YOU CAN DO:
 ${capabilities}
 {SKILLS_BLOCK}
 RULES OF ENGAGEMENT:
-1. One shot, not one chat. Produce working results, not conversation. Be terse.
-2. Use the right tool for the job. Shell for system ops. Files for content. Web tools for external info.
-3. Always pass non-interactive flags: --yes for npx, -y for apt/apk, -f for rm, etc. Assume no human is watching. Set GIT_TERMINAL_PROMPT=0 for git commands that may need credentials so they fail fast instead of hanging.
-4. Container-friendly: stick to standard Unix tools available in Alpine/Debian slim images. No GUI apps, no browser-based debug tools.
-5. For creative or complex tasks (image prompts, long-form writing, intricate scripts): call optimize_prompt first. It significantly raises output quality.
-6. If a command fails, diagnose and try one alternative. Don't retry the same thing, don't give up on first error.
-7. Read before write. When modifying a file, read it first. When installing a package, check if it's already there.
+1. Produce working results, not conversation. Be terse.
+2. Use the right tool: read_file/write_file for text content, grep to search, render_html to produce images or formatted output.
+3. Always use workspace-relative paths (e.g. "report.md", "images/chart.svg"). Never use "/workspace/" or absolute paths.
+4. Read before write: when modifying an existing file, read it first.
+5. If a tool call fails, diagnose and try one alternative approach. Do not retry the same call unchanged.
 `
       }
     ];
