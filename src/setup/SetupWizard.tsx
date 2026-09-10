@@ -30,6 +30,7 @@ export const BUILTIN_SKILL_FILES: string[] = [
   'poster-maker/templates/og-card.html',
   'poster-maker/templates/cover.html',
   'poster-maker/templates/social-post.html',
+  'email-assistant/SKILL.md',
 ];
 
 async function seedBuiltinSkills(storage: StorageProvider): Promise<void> {
@@ -37,6 +38,26 @@ async function seedBuiltinSkills(storage: StorageProvider): Promise<void> {
     const res = await fetch(`/skills-builtin/${rel}`);
     if (!res.ok) throw new Error(`HTTP ${res.status} fetching /skills-builtin/${rel}`);
     await storage.writeText(`skills-builtin/${rel}`, await res.text());
+  }
+}
+
+/**
+ * Back-fill builtin skills added after a user's initial setup: on boot, write
+ * any bundled skill file that isn't already in storage. Best-effort and
+ * idempotent — never overwrites, so it won't clobber anything, and a failed
+ * fetch (offline, file not yet cached) is skipped rather than thrown.
+ */
+export async function syncMissingBuiltinSkills(storage: StorageProvider): Promise<void> {
+  for (const rel of BUILTIN_SKILL_FILES) {
+    const path = `skills-builtin/${rel}`;
+    try {
+      if (await storage.exists(path)) continue;
+      const res = await fetch(`/skills-builtin/${rel}`);
+      if (!res.ok) continue;
+      await storage.writeText(path, await res.text());
+    } catch {
+      /* offline / uncached — skip; it will seed on a later load */
+    }
   }
   // Note: models/, adapters/, skills/, workspace/, cache/ are not created
   // here — StorageProvider has no mkdir; directories materialize lazily

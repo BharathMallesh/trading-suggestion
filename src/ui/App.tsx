@@ -6,7 +6,7 @@ import { restoreStorage } from '../storage';
 import { FileSystemAccessStorage } from '../storage/fs-access';
 import { requestPermission } from '../storage/handle-store';
 import { BASE_MODEL } from '../setup/manifest';
-import SetupWizard from '../setup/SetupWizard';
+import SetupWizard, { syncMissingBuiltinSkills } from '../setup/SetupWizard';
 import { AdapterManager } from '../adapters/manager';
 import { Shell } from '../app/Shell';
 import { bootWorker, createAgentHost } from './agent-host';
@@ -70,6 +70,9 @@ export default function App() {
   /** Boot a session; true when a phase was entered, false on boot failure. */
   const startWithStorage = useCallback(async (storage: StorageProvider): Promise<boolean> => {
     const gen = ++bootGenRef.current;
+    // Back-fill any builtin skills added since this user's setup (e.g. the
+    // email assistant), so discovery/superpowers see them without a re-setup.
+    await syncMissingBuiltinSkills(storage);
     const manager = new AdapterManager(storage);
     const artifact = await manager.activeArtifact();
     const modelPath = artifact?.path ?? BASE_MODEL.path;
