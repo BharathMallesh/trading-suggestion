@@ -1,0 +1,16 @@
+{
+  "name": "luna-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Local connectivity bridge for Luna: connects out to messaging channels and relays them to the offline PWA over a localhost WebSocket. The AI stays on-device; this only does channel I/O.",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "imapflow": "^1.0.164",
+    "mailparser": "^3.7.1",
+    "nodemailer": "^10.0.3",
+    "ws": "^8.18.0"
+  }
+}

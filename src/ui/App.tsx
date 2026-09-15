@@ -6,10 +6,9 @@ import { restoreStorage } from '../storage';
 import { FileSystemAccessStorage } from '../storage/fs-access';
 import { requestPermission } from '../storage/handle-store';
 import { BASE_MODEL } from '../setup/manifest';
-import SetupWizard from '../setup/SetupWizard';
+import SetupWizard, { syncMissingBuiltinSkills } from '../setup/SetupWizard';
 import { AdapterManager } from '../adapters/manager';
-import { ChatView } from './ChatView';
-import { StatusBar } from './StatusBar';
+import { Shell } from '../app/Shell';
 import { bootWorker, createAgentHost } from './agent-host';
 import type { AgentHost } from './agent-host';
 
@@ -71,6 +70,9 @@ export default function App() {
   /** Boot a session; true when a phase was entered, false on boot failure. */
   const startWithStorage = useCallback(async (storage: StorageProvider): Promise<boolean> => {
     const gen = ++bootGenRef.current;
+    // Back-fill any builtin skills added since this user's setup (e.g. the
+    // email assistant), so discovery/superpowers see them without a re-setup.
+    await syncMissingBuiltinSkills(storage);
     const manager = new AdapterManager(storage);
     const artifact = await manager.activeArtifact();
     const modelPath = artifact?.path ?? BASE_MODEL.path;
@@ -243,21 +245,19 @@ export default function App() {
   }
 
   return (
-    <div>
-      <StatusBar
+    <>
+      {notice && <p style={{ ...styles.error, padding: '4px 16px', margin: 0 }}>{notice}</p>}
+      <Shell
         storageKind={phase.storage.kind}
-        contexts={contexts}
-        activeContext={activeContext}
-        onSwitchContext={(ctx) => void switchContext(ctx)}
-      />
-      {notice && <p style={{ ...styles.error, padding: '0 16px' }}>{notice}</p>}
-      <ChatView
+        storage={phase.storage}
         send={async (text) => {
           await phase.host.agent.chat(text);
         }}
+        stop={() => phase.host.agent.stop()}
+        draft={(instruction) => phase.host.agent.draftText(instruction)}
         registerEmitter={registerEmitter}
         resolveConfirm={phase.host.resolveConfirm}
       />
-    </div>
+    </>
   );
 }

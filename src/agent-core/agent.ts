@@ -7,6 +7,7 @@ import { getToolDefinitions, executeToolHandler, listUnavailableTools } from './
 import { withRetry } from './retry';
 import { truncateOutput } from './truncate';
 import { buildSkillsManifest } from './skills';
+import { loadPersonaBlock } from './persona';
 import type { ChatModel, ChatMessage, ChatChunk } from './chat-model';
 import type { AgentEvent, AgentEventSink } from './events';
 import type { StorageProvider } from './storage';
@@ -51,6 +52,13 @@ export class Agent {
   private storage: StorageProvider;
   private emit: AgentEventSink;
   public lastOutputFile: string | null = null;
+  // System prompt is a template with {SKILLS_BLOCK} (resolved once) and
+  // {PERSONA_BLOCK} (refreshed each turn); applySystemPrompt() combines them.
+  private systemTemplate = '';
+  private skillsBlock = '';
+  private personaBlock = '';
+  // The in-flight run's controller, exposed via stop() so the UI can cancel.
+  private currentAbort: AbortController | null = null;
 
   constructor(
     llm: ChatModel,
@@ -92,12 +100,10 @@ export class Agent {
       ? "\n6. THINKING MODE: You are a reasoning model. Always think step-by-step and wrap your internal reasoning in <think>...</think> tags before executing tools or answering."
       : "\n6. If a tool call fails, diagnose and try one alternative approach. Do not retry the same call unchanged.";
 
-    // BROWSER-ADAPTED: the skills manifest placeholder is async, so it is
-    // loaded on the first chat() call (see ensureSkillsManifest).
-    this.messages = [
-      {
-        role: "system",
-        content: `You are AutoClaw, an AI agent running inside a browser PWA. You accomplish tasks by reading and writing files in the user's local workspace and using integrated tools — no shell commands, fully offline-capable.
+    // BROWSER-ADAPTED: the skills manifest and persona placeholders are async
+    // (storage-backed). {SKILLS_BLOCK} resolves once (memoized); {PERSONA_BLOCK}
+    // refreshes every chat() so personality-dial changes take effect next turn.
+    this.systemTemplate = `You are AutoClaw, an AI agent running inside a browser PWA. You accomplish tasks by reading and writing files in the user's local workspace and using integrated tools — no shell commands, fully offline-capable.
 
 All file access goes through a virtual workspace. Paths must be workspace-relative (e.g. "notes/todo.md") — never use absolute paths or a "workspace/" prefix; the tools handle that automatically.
 
@@ -105,16 +111,15 @@ ${sysInfo}
 
 WHAT YOU CAN DO:
 ${capabilities}
-{SKILLS_BLOCK}
+{SKILLS_BLOCK}{PERSONA_BLOCK}
 RULES OF ENGAGEMENT:
 1. Produce working results, not conversation. Be terse.
 2. Use the right tool: read_file/write_file for text content, grep to search, render_html to produce images or formatted output.
 3. Always use workspace-relative paths (e.g. "report.md", "images/chart.svg"). Never use "/workspace/" or absolute paths.
 4. Read before write: when modifying an existing file, read it first.
 5. Do not hallucinate files that don't exist in the directory.${thinkingInstruction}
-`
-      }
-    ];
+`;
+    this.messages = [{ role: "system", content: this.systemTemplate }];
   }
 
   // BROWSER-ADAPTED: skills ride along as one-line manifest entries; the
@@ -131,15 +136,40 @@ RULES OF ENGAGEMENT:
       } catch {
         skillsManifest = null;
       }
-      const sys = this.messages[0];
-      if (typeof sys.content !== 'string') return;
-      if (skillsManifest) {
-        sys.content = sys.content.replace('{SKILLS_BLOCK}', `\n${skillsManifest}\n`);
-      } else {
-        sys.content = sys.content.replace('{SKILLS_BLOCK}', '');
-      }
+      this.skillsBlock = skillsManifest ? `\n${skillsManifest}\n` : '';
+      this.applySystemPrompt();
     })();
     return this.skillsPromise;
+  }
+
+  // BROWSER-ADAPTED (Luna): reload the persona from the persisted personality
+  // dials + user notes each turn so dial changes take effect on the next
+  // message without recreating the agent. Never break the run on a read error.
+  private async refreshPersona(): Promise<void> {
+    try {
+      let name = this.config?.assistantName ?? 'the assistant';
+      try {
+        if (await this.storage.exists('config.json')) {
+          const cfg = JSON.parse(await this.storage.readText('config.json'));
+          if (typeof cfg?.name === 'string' && cfg.name.trim()) name = cfg.name.trim();
+        }
+      } catch {
+        /* config.json optional/malformed → keep default name */
+      }
+      this.personaBlock = await loadPersonaBlock(this.storage, name);
+    } catch {
+      this.personaBlock = '';
+    }
+    this.applySystemPrompt();
+  }
+
+  // Combine template + resolved blocks into the system message in place.
+  private applySystemPrompt(): void {
+    const sys = this.messages[0];
+    if (!sys || typeof sys.content !== 'string') return;
+    sys.content = this.systemTemplate
+      .replace('{SKILLS_BLOCK}', this.skillsBlock)
+      .replace('{PERSONA_BLOCK}', this.personaBlock ? `\n${this.personaBlock}\n` : '');
   }
 
   // BROWSER-ADAPTED: a throwing UI sink must not kill the agent loop.
@@ -147,8 +177,41 @@ RULES OF ENGAGEMENT:
     try { this.emit(e); } catch { /* UI bug must not kill the run */ }
   }
 
+  /** Cancel the in-flight run (aborts generation and ends the loop). No-op if idle. */
+  stop(): void {
+    this.currentAbort?.abort(new Error('stopped by user'));
+  }
+
+  /**
+   * One-shot text generation for things like drafting a channel reply: runs a
+   * single streaming completion with the persona-aware system prompt, no tool
+   * loop, and WITHOUT touching the persistent chat history. Returns the text.
+   */
+  async draftText(instruction: string): Promise<string> {
+    await this.ensureSkillsManifest();
+    await this.refreshPersona();
+    const messages: ChatMessage[] = [this.messages[0], { role: 'user', content: instruction }];
+    const stream = await this.llm.createChatCompletionStream({
+      model: this.model,
+      messages,
+      stream: true,
+      temperature: this.config?.temperature,
+      top_p: this.config?.top_p,
+      top_k: this.config?.top_k,
+      repetition_penalty: this.config?.repetition_penalty,
+      max_tokens: 500,
+    });
+    let out = '';
+    for await (const chunk of stream) {
+      const delta = chunk.choices?.[0]?.delta?.content;
+      if (delta) out += delta;
+    }
+    return out.trim();
+  }
+
   async chat(userInput: string): Promise<AgentRunResult> {
     await this.ensureSkillsManifest();
+    await this.refreshPersona();
     this.messages.push({ role: "user", content: userInput });
 
     // BROWSER-ADAPTED: env-var overrides (AUTOCLOW_*) removed; config only.
@@ -159,6 +222,7 @@ RULES OF ENGAGEMENT:
     const taskTimeoutMs = Number.isFinite(parsedTimeoutMs) && parsedTimeoutMs > 0 ? parsedTimeoutMs : 0;
     const deadline = taskTimeoutMs > 0 ? Date.now() + taskTimeoutMs : Number.POSITIVE_INFINITY;
     const abortController = new AbortController();
+    this.currentAbort = abortController;
     const abortTimer = taskTimeoutMs > 0
       ? setTimeout(
           () => abortController.abort(new Error(`task wall-clock timeout after ${taskTimeoutMs}ms`)),
@@ -381,6 +445,7 @@ RULES OF ENGAGEMENT:
     }
 
     if (abortTimer) clearTimeout(abortTimer);
+    this.currentAbort = null;
 
     const result: AgentRunResult = {
       status,
