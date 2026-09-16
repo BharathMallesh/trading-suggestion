@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Buddy — WebGPU spike</title>
+    <style>
+      body { font-family: 'Inter', system-ui, sans-serif; background: #0d0d0f; color: #ededed; margin: 0; padding: 28px; line-height: 1.5; }
+      h1 { font-family: Georgia, serif; font-weight: 400; margin: 0 0 4px; }
+      .sub { color: #a0a0a6; font-size: 14px; margin-bottom: 20px; }
+      button { background: #2dd4bf; color: #05231f; border: none; border-radius: 8px; padding: 10px 18px; font-weight: 600; font-size: 14px; cursor: pointer; }
+      button:disabled { opacity: 0.5; cursor: default; }
+      #status { margin: 16px 0 8px; color: #a0a0a6; font-size: 14px; }
+      #bar { height: 8px; background: #262629; border-radius: 4px; overflow: hidden; margin-bottom: 16px; }
+      #fill { height: 100%; width: 0; background: #2dd4bf; transition: width 0.2s; }
+      #out { white-space: pre-wrap; background: #161618; border: 1px solid #262629; border-radius: 12px; padding: 16px; min-height: 80px; font-size: 15px; }
+      #stats { margin-top: 16px; font-family: ui-monospace, monospace; font-size: 13px; color: #2dd4bf; white-space: pre-wrap; }
+      code { color: #ededed; }
+    </style>
+  </head>
+  <body>
+    <h1>WebGPU inference spike</h1>
+    <div class="sub">Runs <code>Qwen2.5-0.5B</code> on your GPU via web-llm. First run downloads ~400&nbsp;MB (then cached offline).</div>
+    <button id="run">Load model &amp; run</button>
+    <div id="status"></div>
+    <div id="bar"><div id="fill"></div></div>
+    <div id="out"></div>
+    <div id="stats"></div>
+    <script type="module" src="/src/spike/webgpu.ts"></script>
+  </body>
+</html>

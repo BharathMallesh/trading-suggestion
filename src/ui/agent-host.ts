@@ -4,19 +4,21 @@ import { Agent } from '@core/agent';
 import { buildToolRegistry } from '@core/tools';
 import type { AgentEventSink } from '@core/events';
 import type { StorageProvider } from '@core/storage';
+import type { ChatModel } from '@core/chat-model';
 import { WllamaChatModel } from '../llm/shim';
 import { createWllamaWorker } from '../llm/worker-client';
 import type { WorkerRequest, WorkerResponse } from '../llm/protocol';
 
 export interface AgentHost {
   agent: Agent;
-  worker: Worker;
+  worker?: Worker; // present for the wllama engine; the WebGPU engine owns its own
   resolveConfirm: (id: string, ok: boolean) => void;
 }
 
-export function createAgentHost(
+/** Build a host around any ChatModel (wllama, WebGPU, or a test fake). */
+export function buildAgentHost(
   storage: StorageProvider,
-  worker: Worker,
+  chatModel: ChatModel,
   model: string,
   onEvent: AgentEventSink,
 ): AgentHost {
@@ -27,7 +29,8 @@ export function createAgentHost(
   
   // Base configuration
   const config: any = {
-    maxSteps: 25,
+    maxSteps: 8, // cap the tool loop — small models tend to tangent, and each
+                 // extra step is a full generation; fewer steps = faster answers
     autoConfirm: false,
     _emit: onEvent,
     _confirm: (id: string) =>
@@ -64,15 +67,25 @@ export function createAgentHost(
     config.repetition_penalty = 1.1;
   }
 
-  const agent = new Agent(new WllamaChatModel(worker, model), model, config, storage, onEvent);
+  const agent = new Agent(chatModel, model, config, storage, onEvent);
   return {
     agent,
-    worker,
     resolveConfirm: (id: string, ok: boolean) => {
       confirmResolvers.get(id)?.(ok);
       confirmResolvers.delete(id);
     },
   };
+}
+
+/** Convenience for the wllama engine: wrap its worker as a ChatModel + host. */
+export function createAgentHost(
+  storage: StorageProvider,
+  worker: Worker,
+  model: string,
+  onEvent: AgentEventSink,
+): AgentHost {
+  const host = buildAgentHost(storage, new WllamaChatModel(worker, model), model, onEvent);
+  return { ...host, worker };
 }
 
 /**

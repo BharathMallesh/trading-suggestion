@@ -83,8 +83,14 @@ self.onmessage = async (e: MessageEvent<WorkerRequest>) => {
         // callback (the bytes are already local); emit a single tick so the
         // loading screen shows real numbers instead of an indeterminate bar.
         post({ type: 'load_progress', loaded: msg.model.size, total: msg.model.size });
+        // Speed tuning: use all-but-one core for inference (leave one for the
+        // UI/main thread), and a larger prompt batch for faster prefill. Threads
+        // only take effect when cross-origin isolated (COEP), which the app is.
+        const cores = (self.navigator?.hardwareConcurrency ?? 4);
         await wllama.loadModel([msg.model], {
           n_ctx: msg.nCtx ?? 4096,
+          n_threads: Math.max(1, cores - 1),
+          n_batch: 512,
           // SPIKE verdict (docs/lora-spike.md): load-time lora_adapters exists in
           // LoadModelParams but no FS delivery path for the adapter file; runtime
           // switching has no API. adapterUrl is accepted in the protocol but ignored.

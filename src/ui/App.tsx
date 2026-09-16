@@ -9,7 +9,17 @@ import { BASE_MODEL } from '../setup/manifest';
 import SetupWizard, { syncMissingBuiltinSkills } from '../setup/SetupWizard';
 import { AdapterManager } from '../adapters/manager';
 import { Shell } from '../app/Shell';
-import { bootWorker, createAgentHost } from './agent-host';
+import { bootWorker, createAgentHost, buildAgentHost } from './agent-host';
+
+/** Engine preference persisted by the Turbo toggle. */
+function preferredEngine(): 'wllama' | 'webgpu' {
+  try {
+    return localStorage.getItem('luna-engine') === 'webgpu' ? 'webgpu' : 'wllama';
+  } catch {
+    return 'wllama';
+  }
+}
+const hasWebGPU = () => typeof navigator !== 'undefined' && !!(navigator as { gpu?: unknown }).gpu;
 import type { AgentHost } from './agent-host';
 
 const styles: Record<string, CSSProperties> = {
@@ -73,6 +83,36 @@ export default function App() {
     // Back-fill any builtin skills added since this user's setup (e.g. the
     // email assistant), so discovery/superpowers see them without a re-setup.
     await syncMissingBuiltinSkills(storage);
+
+    // Turbo engine (WebGPU): loads its own model into the browser cache, so it
+    // bypasses the GGUF file check entirely. Falls through to wllama otherwise.
+    if (preferredEngine() === 'webgpu' && hasWebGPU()) {
+      setPhase({ name: 'loading', path: 'Turbo (WebGPU) — starting…', loaded: 0, total: 100 });
+      try {
+        workerRef.current?.terminate();
+        workerRef.current = null;
+        const { createWebLLMChatModel, TURBO_MODEL } = await import('../llm/webllm');
+        const { model } = await createWebLLMChatModel(TURBO_MODEL, (r) => {
+          if (gen !== bootGenRef.current) return;
+          setPhase({ name: 'loading', path: `Turbo · ${r.text || 'loading'}`, loaded: Math.round((r.progress ?? 0) * 100), total: 100 });
+        });
+        if (gen !== bootGenRef.current) return true;
+        const host = buildAgentHost(storage, model, TURBO_MODEL, (e) => {
+          for (const fn of emittersRef.current) fn(e);
+        });
+        setPhase({ name: 'ready', host, storage, modelPath: TURBO_MODEL });
+        return true;
+      } catch (err) {
+        if (gen !== bootGenRef.current) return true;
+        setPhase({
+          name: 'error',
+          message: `Turbo (WebGPU) failed: ${err instanceof Error ? err.message : String(err)}`,
+          storage,
+        });
+        return false;
+      }
+    }
+
     const manager = new AdapterManager(storage);
     const artifact = await manager.activeArtifact();
     const modelPath = artifact?.path ?? BASE_MODEL.path;

@@ -13,6 +13,8 @@ import { useBridge } from './bridge';
 import { useNarrow } from './useNarrow';
 import { AUTH_ENABLED } from '../auth/AuthGate';
 import { AccountMenu } from '../auth/AccountMenu';
+
+const hasWebGPU = () => typeof navigator !== 'undefined' && !!(navigator as { gpu?: unknown }).gpu;
 import { PAGE_TITLE } from './nav';
 import type { Page } from './nav';
 import { Home } from './pages/Home';
@@ -262,6 +264,7 @@ export function Shell({ name = 'Buddy', send, stop, draft, registerEmitter, reso
               <button style={s.prefsAction} onClick={() => { nav('personality'); setPrefsOpen(false); }}>
                 Adjust personality →
               </button>
+              {hasWebGPU() && <TurboToggle />}
             </div>
           )}
           <button style={s.prefs} onClick={() => setPrefsOpen((o) => !o)}>⚙ Preferences ▴</button>
@@ -387,6 +390,34 @@ function relTime(ts: number): string {
   if (secs < 3600) return `${Math.floor(secs / 60)}m ago`;
   if (secs < 86400) return `${Math.floor(secs / 3600)}h ago`;
   return `${Math.floor(secs / 86400)}d ago`;
+}
+
+// Toggles the WebGPU "Turbo" engine. Switching engines re-boots the model, so
+// it flips the stored preference and reloads.
+function TurboToggle() {
+  const on = (() => {
+    try {
+      return localStorage.getItem('luna-engine') === 'webgpu';
+    } catch {
+      return false;
+    }
+  })();
+  return (
+    <button
+      style={{ ...s.prefsAction, ...(on ? { color: theme.color.accent, borderColor: theme.color.accent } : {}) }}
+      title="Much faster chat on your GPU (downloads a model on first use). Tool actions like memory & schedules still use the standard engine."
+      onClick={() => {
+        try {
+          localStorage.setItem('luna-engine', on ? 'wllama' : 'webgpu');
+        } catch {
+          /* ignore */
+        }
+        location.reload();
+      }}
+    >
+      ⚡ Turbo (WebGPU): {on ? 'On' : 'Off'}
+    </button>
+  );
 }
 
 function IconBtn({
