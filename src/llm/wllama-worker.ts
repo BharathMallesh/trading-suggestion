@@ -11,7 +11,11 @@ import type { ChatChunk, ChatMessage } from '@core/chat-model';
 // wllama chunks allow null where agent-core ChatChunk does not; normalize at the boundary
 const toChatChunk = (c: ChatCompletionChunk): ChatChunk => ({
   choices: c.choices.map((ch) => ({
-    delta: { content: ch.delta.content ?? undefined, tool_calls: ch.delta.tool_calls },
+    delta: {
+      content: ch.delta.content ?? undefined,
+      reasoning_content: (ch.delta as { reasoning_content?: string }).reasoning_content ?? undefined,
+      tool_calls: ch.delta.tool_calls,
+    },
     finish_reason: ch.finish_reason,
   })),
   usage: c.usage ?? undefined,

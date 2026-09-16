@@ -29,6 +29,12 @@ export function Messages({ bridge, draft: aiDraft }: { bridge: Bridge; draft?: (
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [current?.messages.length, current?.key]);
 
+  // Clear the composer when switching threads so a draft from one conversation
+  // doesn't linger in another.
+  useEffect(() => {
+    setDraft('');
+  }, [current?.key]);
+
   function sendReply(): void {
     const text = draft.trim();
     if (!text || !current) return;
@@ -56,8 +62,8 @@ export function Messages({ bridge, draft: aiDraft }: { bridge: Bridge; draft?: (
         `Conversation so far:\n${recent}`;
       const text = await aiDraft(instruction);
       if (text) setDraft(text);
-    } catch {
-      /* leave the composer as-is on failure */
+    } catch (err) {
+      console.error('Draft failed:', err);
     } finally {
       setDrafting(false);
     }

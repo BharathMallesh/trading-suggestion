@@ -19,7 +19,7 @@ export interface CompletionRequest {
   params: {
     messages: ChatMessage[]; // normalized to wllama's shape in the worker
     tools?: unknown[]; // agent-core types these as unknown[]; asserted at the worker boundary
-    tool_choice?: 'auto';
+    tool_choice?: 'auto' | 'none';
     max_tokens?: number;
     temperature?: number;
     top_p?: number;

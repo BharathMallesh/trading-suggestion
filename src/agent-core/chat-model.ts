@@ -34,7 +34,7 @@ export interface ChatCompletionParams {
   model: string;
   messages: ChatMessage[];
   tools?: unknown[];
-  tool_choice?: 'auto';
+  tool_choice?: 'auto' | 'none';
   stream: true;
   temperature?: number;
   top_p?: number;
