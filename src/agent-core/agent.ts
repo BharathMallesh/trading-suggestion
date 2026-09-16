@@ -93,6 +93,8 @@ export class Agent {
       '- Files: read_file / write_file / list_dir / grep — read, write, list, and search files in your workspace',
       has('render_html') ? '- Render: render_html — convert an HTML/CSS snippet into an SVG or PNG image saved to the workspace' : null,
       has('web_fetch') ? '- Web: web_fetch — fetch a web page and return its text content (online only)' : null,
+      '- Memory: remember / recall_memories — save lasting facts about the user and recall what you know',
+      '- Schedules: create_schedule — set up recurring instructions the app runs on a timer',
       '- Utility: get_current_datetime — accurate current date/time for temporal reasoning',
     ].filter((line): line is string => line !== null).join('\n');
 
