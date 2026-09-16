@@ -53,5 +53,17 @@ export async function loadPersonaBlock(storage: StorageProvider, name = 'the ass
     lines.push('ABOUT THE USER:', ...about.map((a) => `- ${a}`));
   }
 
+  // Memories the user saved in the Memory screen — treat these as things you
+  // already know and remember about them.
+  const memories = await readJson<Array<{ text?: string }>>(storage, 'luna/memory.json');
+  const remembered = (memories ?? [])
+    .map((m) => m?.text?.trim())
+    .filter((t): t is string => !!t)
+    .slice(0, 30);
+  if (remembered.length) {
+    if (lines.length) lines.push('');
+    lines.push('WHAT YOU REMEMBER (things the user told you before — use them naturally):', ...remembered.map((t) => `- ${t}`));
+  }
+
   return lines.length ? lines.join('\n') : '';
 }

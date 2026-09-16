@@ -59,4 +59,16 @@ describe('loadPersonaBlock', () => {
     const block = await loadPersonaBlock(fakeStorage({ 'luna/personality.json': 'not json' }));
     expect(block).toBe('');
   });
+
+  it('includes saved memories the user can rely on', async () => {
+    const memory = [
+      { id: '1', text: 'I take my coffee black', status: 'settled' },
+      { id: '2', text: 'My dog is named Pixel', status: 'pending' },
+      { id: '3', text: '   ' }, // blank → skipped
+    ];
+    const block = await loadPersonaBlock(fakeStorage({ 'luna/memory.json': JSON.stringify(memory) }));
+    expect(block).toContain('WHAT YOU REMEMBER');
+    expect(block).toContain('I take my coffee black');
+    expect(block).toContain('My dog is named Pixel');
+  });
 });
