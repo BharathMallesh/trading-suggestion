@@ -27,7 +27,8 @@ export function createAgentHost(
   
   // Base configuration
   const config: any = {
-    maxSteps: 25,
+    maxSteps: 8, // cap the tool loop — small models tend to tangent, and each
+                 // extra step is a full generation; fewer steps = faster answers
     autoConfirm: false,
     _emit: onEvent,
     _confirm: (id: string) =>

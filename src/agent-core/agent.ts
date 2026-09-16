@@ -113,7 +113,7 @@ WHAT YOU CAN DO:
 ${capabilities}
 {SKILLS_BLOCK}{PERSONA_BLOCK}
 RULES OF ENGAGEMENT:
-1. Produce working results, not conversation. Be terse.
+1. Produce working results, not conversation. Be terse. Answer directly from what you already know — only call a tool when the task genuinely needs it (reading/writing files, searching the workspace, fetching the web, or rendering). Do not call tools to reason or to pad a reply.
 2. Use the right tool: read_file/write_file for text content, grep to search, render_html to produce images or formatted output.
 3. Always use workspace-relative paths (e.g. "report.md", "images/chart.svg"). Never use "/workspace/" or absolute paths.
 4. Read before write: when modifying an existing file, read it first.
