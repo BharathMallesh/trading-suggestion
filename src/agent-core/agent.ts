@@ -190,25 +190,49 @@ RULES OF ENGAGEMENT:
    * loop, and WITHOUT touching the persistent chat history. Returns the text.
    */
   async draftText(instruction: string): Promise<string> {
-    await this.ensureSkillsManifest();
+    // Drafting is plain prose, so we deliberately DON'T reuse the agentic system
+    // prompt (this.messages[0]) — its skills/tool instructions push the model to
+    // emit tool_calls instead of text. We also disable Qwen's "thinking" mode
+    // (via the /no_think switch): otherwise the model spends the whole budget in
+    // a <think> block surfaced as reasoning_content and never emits final
+    // content, so the draft comes back empty. A max_tokens cap bounds the run.
     await this.refreshPersona();
-    const messages: ChatMessage[] = [this.messages[0], { role: 'user', content: instruction }];
+    const persona = this.personaBlock ? `\n${this.personaBlock}\n` : '';
+    // Qwen3.5 is a reasoning model: left alone it burns the whole budget inside a
+    // <think> block and never emits the reply, so drafts came back empty. wllama
+    // doesn't honour the /no_think switch, so we PREFILL the assistant turn with a
+    // closed, empty think block — the model then continues straight into the
+    // reply. tools:[]/tool_choice 'none' keep it from emitting tool calls.
+    const draftSystem =
+      `You write short message replies on the user's behalf.${persona}\n` +
+      `Reply in plain text only — natural and concise, ready to send. ` +
+      `No preamble, no quotation marks, no markdown, no tool calls.`;
+    const messages: ChatMessage[] = [
+      { role: 'system', content: draftSystem },
+      { role: 'user', content: instruction },
+      { role: 'assistant', content: '<think>\n\n</think>\n\n' },
+    ];
     const stream = await this.llm.createChatCompletionStream({
       model: this.model,
       messages,
+      tools: [],
+      tool_choice: 'none',
       stream: true,
       temperature: this.config?.temperature,
       top_p: this.config?.top_p,
       top_k: this.config?.top_k,
       repetition_penalty: this.config?.repetition_penalty,
-      max_tokens: 500,
+      max_tokens: 400,
     });
     let out = '';
     for await (const chunk of stream) {
       const delta = chunk.choices?.[0]?.delta?.content;
       if (delta) out += delta;
     }
-    return out.trim();
+    // If a <think> block still leaks in, keep only what follows it; then strip
+    // any stray tags and a leading "Reply:" the model sometimes echoes.
+    const afterThink = out.includes('</think>') ? out.slice(out.lastIndexOf('</think>') + 8) : out;
+    return afterThink.replace(/<\/?think>/gi, '').replace(/^\s*Reply:\s*/i, '').trim();
   }
 
   async chat(userInput: string): Promise<AgentRunResult> {
