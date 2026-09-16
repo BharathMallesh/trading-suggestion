@@ -7,6 +7,7 @@ import { makeFsTools } from './fs-tools';
 import { makeDateTimeTool } from './datetime';
 import { makeWebFetchTool } from './web-fetch';
 import { makeRenderHtmlTool } from './render-html';
+import { makeBuddyTools } from './buddy-tools';
 
 export interface ToolBuildOptions { online?: boolean; }
 
@@ -21,6 +22,7 @@ export function buildToolRegistry(storage: StorageProvider, opts: ToolBuildOptio
     makeDateTimeTool(),
     makeWebFetchTool(),
     makeRenderHtmlTool(storage),
+    ...makeBuddyTools(storage),
   ];
   setToolRegistry(tools);
   return tools;
