@@ -26,10 +26,13 @@ export class WebLLMChatModel implements ChatModel {
     const signal = options?.signal;
     if (signal?.aborted) throw new DOMException('The operation was aborted', 'AbortError');
 
+    // NOTE: web-llm only supports function calling on a few large Hermes models
+    // — Qwen2.5 throws UnsupportedModelIdError when `tools` is set, which made
+    // Turbo error on every message. So the Turbo engine is deliberately
+    // chat-only: we drop tools rather than crash. Tool-driven actions (memory,
+    // schedules, files) run on the default wllama engine instead.
     const stream = await this.engine.chat.completions.create({
       messages: params.messages as any,
-      tools: params.tools as any,
-      tool_choice: params.tool_choice as any,
       temperature: params.temperature,
       top_p: params.top_p,
       max_tokens: params.max_tokens,

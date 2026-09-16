@@ -405,7 +405,7 @@ function TurboToggle() {
   return (
     <button
       style={{ ...s.prefsAction, ...(on ? { color: theme.color.accent, borderColor: theme.color.accent } : {}) }}
-      title="WebGPU is much faster but downloads a model on first use"
+      title="Much faster chat on your GPU (downloads a model on first use). Tool actions like memory & schedules still use the standard engine."
       onClick={() => {
         try {
           localStorage.setItem('luna-engine', on ? 'wllama' : 'webgpu');
