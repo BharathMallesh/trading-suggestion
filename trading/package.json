@@ -5,6 +5,8 @@
   "type": "module",
   "description": "Isolated finance-research module (OpenRouter + Ling 3.0 Flash Fin). Research and analysis only — no market predictions, no trade execution.",
   "scripts": {
-    "research": "node research.mjs"
+    "research": "node research.mjs",
+    "market": "node market-data.mjs",
+    "test": "node --test"
   }
 }

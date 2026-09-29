@@ -40,7 +40,7 @@ OpenRouter model.
 
 ## Use
 
-CLI:
+### Ask a research question
 
 ```bash
 node trading/research.mjs "Explain HDFC Bank's net interest margin and what moves it"
@@ -49,12 +49,47 @@ node trading/research.mjs "Explain HDFC Bank's net interest margin and what move
 Or as a library:
 
 ```js
-import { research } from './trading/research.mjs';
-const answer = await research('What is a candlestick chart and how is it read?');
+import { research, summarize, explain } from './trading/research.mjs';
+
+const a = await research('What is a candlestick chart and how is it read?');
+
+// Summarize a filing / press release / news you paste in (facts only, no verdict):
+const s = await summarize(pastedFilingText, { focus: 'the revenue segments' });
+
+// Explain a metric or chart pattern generically (textbook-style, ticker-agnostic):
+const e = await explain('a bullish engulfing candle');
+```
+
+### Fetch real market data (read-only, no API key)
+
+Grounds research in actual numbers. Uses the public Yahoo Finance chart endpoint
+— **data in, no predictions out**. Prices may be delayed and carry no warranty.
+Symbols follow Yahoo's convention: bare ticker for US (`AAPL`), a suffix for
+other exchanges (`HDFCBANK.NS` for NSE India, `BP.L` for London).
+
+```bash
+node trading/market-data.mjs AAPL                        # latest quote
+node trading/market-data.mjs HDFCBANK.NS --candles 3mo 1d # OHLC candles
+```
+
+```js
+import { quote, candles } from './trading/market-data.mjs';
+const q = await quote('AAPL');                       // { price, dayHigh, 52wk..., ... }
+const c = await candles('HDFCBANK.NS', { range: '6mo', interval: '1d' });
+```
+
+## Tests
+
+No dependencies — Node's built-in runner with a mocked `fetch` (no network, no key):
+
+```bash
+cd trading && npm test        # or: node --test  (run from inside trading/)
 ```
 
 ## Files
 
 - `config.mjs` — OpenRouter base URL + model (mirrors the app's `ling-fin` preset).
 - `ling-client.mjs` — minimal OpenAI-compatible client (key from `OPENROUTER_API_KEY`).
-- `research.mjs` — the guardrailed research entry point (library + CLI).
+- `research.mjs` — the guardrailed research entry point: `research` / `summarize` / `explain` (library + CLI).
+- `market-data.mjs` — read-only public quotes + OHLC candles (library + CLI, no key).
+- `test.mjs` — unit tests for the client, guardrail prompt, helpers, and data parsing.

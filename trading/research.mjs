@@ -38,6 +38,65 @@ export async function research(question, opts = {}) {
   );
 }
 
+/**
+ * Summarize a filing, press release, transcript, or news article that the user
+ * pastes in. Returns a factual, structured summary — never advice, and never a
+ * verdict on whether the news is "good" or "bad" for the price.
+ * @param {string} text  the document/article text to summarize
+ * @param {{ focus?: string, model?: string, temperature?: number, signal?: AbortSignal }} [opts]
+ *   `focus` optionally steers what to emphasize (e.g. "the revenue segments").
+ */
+export async function summarize(text, opts = {}) {
+  const body = String(text || '').trim();
+  if (!body) throw new Error('Nothing to summarize — pass the text of the filing/news.');
+  const instruction = [
+    'Summarize the following source text for a reader who wants the facts fast.',
+    'Extract the key points, figures, and any stated risks or guidance verbatim',
+    'from the text — do not add outside claims and do not infer numbers.',
+    opts.focus ? `Focus especially on: ${opts.focus}.` : '',
+    'Do NOT judge whether this is bullish/bearish or good/bad for the price, and',
+    'do NOT suggest any action. Just report what the source says.',
+    '',
+    '--- SOURCE TEXT START ---',
+    body,
+    '--- SOURCE TEXT END ---',
+  ]
+    .filter(Boolean)
+    .join('\n');
+  return chat(
+    [
+      { role: 'system', content: RESEARCH_SYSTEM },
+      { role: 'user', content: instruction },
+    ],
+    opts,
+  );
+}
+
+/**
+ * Explain a finance metric, instrument, or chart pattern generically — a
+ * textbook-style, ticker-agnostic explanation. Use this for "what is X / how do
+ * I read X" questions rather than anything tied to a live position.
+ * @param {string} topic  e.g. "net interest margin", "a bullish engulfing candle"
+ * @param {{ model?: string, temperature?: number, signal?: AbortSignal }} [opts]
+ */
+export async function explain(topic, opts = {}) {
+  const t = String(topic || '').trim();
+  if (!t) throw new Error('Pass a topic to explain, e.g. "net interest margin".');
+  const instruction = [
+    `Explain the following finance concept in plain English: ${t}.`,
+    'Cover what it is, how it is calculated or identified, how it is typically',
+    'read, and its common caveats or limitations. Keep it general and educational',
+    '— do not reference any specific current price, position, or time to act.',
+  ].join('\n');
+  return chat(
+    [
+      { role: 'system', content: RESEARCH_SYSTEM },
+      { role: 'user', content: instruction },
+    ],
+    opts,
+  );
+}
+
 // CLI: `node research.mjs "explain HDFC Bank's net interest margin"`
 if (import.meta.url === `file://${process.argv[1]}`) {
   const question = process.argv.slice(2).join(' ').trim();
