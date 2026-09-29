@@ -104,6 +104,22 @@ const p = payoff({ action: 'buy', type: 'CE', strike: 2520, premium: 22, lotSize
 The breakeven/max-loss/max-profit figures describe the mechanics of a position
 *you* describe — they are not a recommendation to take it.
 
+## Web dashboard
+
+A local, zero-dependency web UI over the three capabilities above — an **Ask**
+panel (research / explain / summarize), a read-only **market data** panel, and
+the offline **option calculator**. It's a research dashboard, not a suggestion
+screen: no endpoint recommends a trade or connects to a broker.
+
+```bash
+export OPENROUTER_API_KEY="sk-or-..."   # only the Ask panel needs it
+node trading/server.mjs                  # open http://localhost:3000
+```
+
+Your key stays **server-side** — `server.mjs` reads it from the environment and
+proxies the Ling calls, so it is never sent to the browser. The server binds to
+`127.0.0.1` (loopback only).
+
 ## Tests
 
 No dependencies — Node's built-in runner with a mocked `fetch` (no network, no key):
@@ -119,4 +135,5 @@ cd trading && npm test        # or: node --test  (run from inside trading/)
 - `research.mjs` — the guardrailed research entry point: `research` / `summarize` / `explain` (library + CLI).
 - `market-data.mjs` — read-only public quotes + OHLC candles (library + CLI, no key).
 - `blackscholes.mjs` — offline option greeks + payoff calculator (library + CLI, no data/broker).
+- `server.mjs` + `index.html` — local research dashboard (key stays server-side, loopback only).
 - `test.mjs` — unit tests for the client, guardrail prompt, helpers, data parsing, and the maths.

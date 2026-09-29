@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Trading Research Dashboard</title>
+    <style>
+      :root {
+        --bg: #0f1420; --panel: #171e2e; --line: #263149; --ink: #e7ecf5;
+        --muted: #97a3ba; --accent: #5b9dff; --up: #34d399; --down: #f87171;
+        --warn: #fbbf24;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0; background: var(--bg); color: var(--ink);
+        font: 15px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      }
+      header { padding: 20px 24px; border-bottom: 1px solid var(--line); }
+      h1 { margin: 0; font-size: 18px; }
+      .sub { color: var(--muted); font-size: 13px; margin-top: 4px; }
+      .banner {
+        margin: 12px 24px 0; padding: 10px 14px; border-radius: 8px; font-size: 13px;
+        background: rgba(251, 191, 36, 0.1); border: 1px solid rgba(251, 191, 36, 0.35);
+        color: var(--warn);
+      }
+      main { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 16px 24px 40px; }
+      @media (max-width: 860px) { main { grid-template-columns: 1fr; } }
+      .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+      .card h2 { margin: 0 0 4px; font-size: 15px; }
+      .card p.hint { margin: 0 0 12px; color: var(--muted); font-size: 12.5px; }
+      .span2 { grid-column: 1 / -1; }
+      label { display: block; font-size: 12px; color: var(--muted); margin: 8px 0 3px; }
+      input, select, textarea, button {
+        font: inherit; color: var(--ink); background: #0d1320; border: 1px solid var(--line);
+        border-radius: 8px; padding: 8px 10px; width: 100%;
+      }
+      textarea { min-height: 80px; resize: vertical; }
+      .row { display: flex; gap: 8px; flex-wrap: wrap; }
+      .row > * { flex: 1; min-width: 90px; }
+      button {
+        background: var(--accent); border: none; color: #071019; font-weight: 600;
+        cursor: pointer; width: auto; padding: 9px 16px; margin-top: 12px;
+      }
+      button:disabled { opacity: 0.5; cursor: default; }
+      .out { margin-top: 12px; white-space: pre-wrap; font-size: 14px; }
+      .err { color: var(--down); }
+      table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
+      th, td { text-align: right; padding: 5px 8px; border-bottom: 1px solid var(--line); }
+      th:first-child, td:first-child { text-align: left; }
+      .kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; margin-top: 10px; font-size: 14px; }
+      .kv div:nth-child(odd) { color: var(--muted); }
+      .quote-head { font-size: 15px; font-weight: 600; margin-top: 8px; }
+      .note { color: var(--muted); font-size: 12px; margin-top: 10px; }
+      .tabs { display: flex; gap: 6px; margin-bottom: 10px; }
+      .tabs button { background: #0d1320; color: var(--muted); border: 1px solid var(--line); margin: 0; padding: 6px 12px; }
+      .tabs button.active { background: var(--accent); color: #071019; border-color: var(--accent); }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Trading Research Dashboard</h1>
+      <div class="sub">Research &amp; education only — no price predictions, no buy/sell/hold, no broker. Decision-support, never decision-making.</div>
+    </header>
+
+    <main>
+      <!-- Ask panel -->
+      <section class="card span2">
+        <h2>Ask (research · explain · summarize)</h2>
+        <p class="hint">Factual, educational answers from Ling 3.0 Flash Fin. It will decline to predict prices or recommend trades.</p>
+        <div class="tabs" id="askTabs">
+          <button data-mode="research" class="active">Research</button>
+          <button data-mode="explain">Explain a concept</button>
+          <button data-mode="summarize">Summarize text</button>
+        </div>
+        <div id="qWrap">
+          <label id="qLabel">Question</label>
+          <input id="q" placeholder="e.g. What drives a bank's net interest margin?" />
+        </div>
+        <div id="sumWrap" style="display: none">
+          <label>Paste a filing / news / transcript</label>
+          <textarea id="text" placeholder="Paste the source text here…"></textarea>
+          <label>Focus (optional)</label>
+          <input id="focus" placeholder="e.g. the revenue segments" />
+        </div>
+        <button id="askBtn">Ask</button>
+        <div class="out" id="askOut"></div>
+      </section>
+
+      <!-- Market data panel -->
+      <section class="card">
+        <h2>Market data (read-only)</h2>
+        <p class="hint">Public delayed quotes &amp; candles. US tickers bare (AAPL); others with a suffix (RELIANCE.NS, BP.L).</p>
+        <div class="row">
+          <input id="sym" placeholder="RELIANCE.NS" style="flex: 2" />
+          <select id="range">
+            <option>1mo</option><option>3mo</option><option>6mo</option><option>1y</option><option>5d</option>
+          </select>
+        </div>
+        <button id="mktBtn">Fetch</button>
+        <div class="out" id="mktOut"></div>
+      </section>
+
+      <!-- Option calculator panel -->
+      <section class="card">
+        <h2>Option calculator (offline maths)</h2>
+        <p class="hint">Black-Scholes greeks &amp; payoff for numbers you enter. No data fetch, no broker — same numbers in, same numbers out.</p>
+        <div class="row">
+          <div><label>Spot</label><input id="spot" type="number" value="2500" /></div>
+          <div><label>Strike</label><input id="strike" type="number" value="2520" /></div>
+          <div><label>Days</label><input id="days" type="number" value="7" /></div>
+        </div>
+        <div class="row">
+          <div><label>IV %</label><input id="iv" type="number" value="18" /></div>
+          <div><label>Type</label><select id="otype"><option>CE</option><option>PE</option></select></div>
+          <div><label>Action</label><select id="action"><option value="">— (greeks only)</option><option value="buy">buy</option><option value="sell">sell</option></select></div>
+        </div>
+        <div class="row">
+          <div><label>Lot size</label><input id="lot" type="number" value="250" /></div>
+          <div><label>Premium (blank = theoretical)</label><input id="premium" type="number" placeholder="auto" /></div>
+        </div>
+        <button id="optBtn">Calculate</button>
+        <div class="out" id="optOut"></div>
+      </section>
+    </main>
+
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+
+      async function api(path, opts) {
+        const res = await fetch(path, opts);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        return data;
+      }
+
+      // --- Ask ---
+      let mode = 'research';
+      $('askTabs').addEventListener('click', (e) => {
+        if (e.target.tagName !== 'BUTTON') return;
+        mode = e.target.dataset.mode;
+        [...$('askTabs').children].forEach((b) => b.classList.toggle('active', b === e.target));
+        $('sumWrap').style.display = mode === 'summarize' ? 'block' : 'none';
+        $('qWrap').style.display = mode === 'summarize' ? 'none' : 'block';
+        $('qLabel').textContent = mode === 'explain' ? 'Concept to explain' : 'Question';
+      });
+      $('askBtn').addEventListener('click', async () => {
+        const out = $('askOut');
+        out.className = 'out';
+        out.textContent = 'Thinking…';
+        $('askBtn').disabled = true;
+        try {
+          const body = mode === 'summarize'
+            ? { mode, text: $('text').value, focus: $('focus').value }
+            : { mode, question: $('q').value };
+          const { answer } = await api('/api/ask', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          });
+          out.textContent = answer || '(empty response)';
+        } catch (e) {
+          out.className = 'out err';
+          out.textContent = 'Error: ' + e.message;
+        } finally {
+          $('askBtn').disabled = false;
+        }
+      });
+
+      // --- Market data ---
+      $('mktBtn').addEventListener('click', async () => {
+        const out = $('mktOut');
+        out.className = 'out';
+        out.textContent = 'Loading…';
+        try {
+          const sym = $('sym').value.trim();
+          const q = await api('/api/quote?symbol=' + encodeURIComponent(sym));
+          const { rows } = await api('/api/candles?symbol=' + encodeURIComponent(sym) + '&range=' + $('range').value);
+          const chg = q.price - q.previousClose;
+          const pct = q.previousClose ? (chg / q.previousClose) * 100 : 0;
+          const col = chg >= 0 ? 'var(--up)' : 'var(--down)';
+          let html = `<div class="quote-head">${esc(q.name)} <span style="color:var(--muted)">(${esc(q.symbol)} · ${esc(q.exchange || '')})</span></div>`;
+          html += `<div class="kv">
+            <div>Price</div><div>${q.price} ${esc(q.currency || '')} <span style="color:${col}">(${chg >= 0 ? '+' : ''}${chg.toFixed(2)}, ${pct.toFixed(2)}%)</span></div>
+            <div>Prev close</div><div>${q.previousClose}</div>
+            <div>Day range</div><div>${q.dayLow} – ${q.dayHigh}</div>
+            <div>52-week</div><div>${q.fiftyTwoWeekLow} – ${q.fiftyTwoWeekHigh}</div>
+            <div>Volume</div><div>${(q.volume || 0).toLocaleString()}</div>
+          </div>`;
+          const tail = rows.slice(-10).reverse();
+          html += '<table><tr><th>Date</th><th>Open</th><th>High</th><th>Low</th><th>Close</th></tr>';
+          for (const r of tail) html += `<tr><td>${r.date}</td><td>${r.open}</td><td>${r.high}</td><td>${r.low}</td><td>${r.close}</td></tr>`;
+          html += '</table><div class="note">Public data, may be delayed. Latest 10 rows shown.</div>';
+          out.innerHTML = html;
+        } catch (e) {
+          out.className = 'out err';
+          out.textContent = 'Error: ' + e.message;
+        }
+      });
+
+      // --- Option calculator ---
+      $('optBtn').addEventListener('click', async () => {
+        const out = $('optOut');
+        out.className = 'out';
+        out.textContent = 'Calculating…';
+        try {
+          const p = new URLSearchParams({
+            spot: $('spot').value, strike: $('strike').value, days: $('days').value,
+            iv: $('iv').value, type: $('otype').value,
+          });
+          if ($('action').value) {
+            p.set('action', $('action').value);
+            p.set('lot', $('lot').value);
+            if ($('premium').value) p.set('premium', $('premium').value);
+          }
+          const d = await api('/api/option?' + p.toString());
+          const g = d.greeks;
+          let html = `<div class="kv">
+            <div>Theoretical price</div><div>${g.price.toFixed(2)}</div>
+            <div>Delta</div><div>${g.delta.toFixed(4)}</div>
+            <div>Gamma</div><div>${g.gamma.toFixed(6)}</div>
+            <div>Vega (per 1% IV)</div><div>${g.vegaPer1pct.toFixed(4)}</div>
+            <div>Theta (per day)</div><div>${g.thetaPerDay.toFixed(4)}</div>
+          </div>`;
+          if (d.payoff) {
+            const po = d.payoff;
+            html += `<div class="kv" style="margin-top:14px">
+              <div>Position</div><div>${esc(po.position)} @ ${d.premiumUsed.toFixed(2)}</div>
+              <div>Breakeven</div><div>${po.breakeven}</div>
+              <div>Max loss / lot</div><div>${po.perLot.maxLoss}</div>
+              <div>Max profit / lot</div><div>${po.perLot.maxProfit}</div>
+            </div>`;
+            html += '<div class="note">Mechanics of the position you described — not a suggestion to take it.</div>';
+          }
+          out.innerHTML = html;
+        } catch (e) {
+          out.className = 'out err';
+          out.textContent = 'Error: ' + e.message;
+        }
+      });
+    </script>
+  </body>
+</html>

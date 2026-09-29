@@ -8,6 +8,7 @@
     "research": "node research.mjs",
     "market": "node market-data.mjs",
     "options": "node blackscholes.mjs",
+    "serve": "node server.mjs",
     "test": "node --test"
   }
 }
