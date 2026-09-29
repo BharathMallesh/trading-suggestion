@@ -79,6 +79,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/api/describe') {
       const out = await describeCandles(url.searchParams.get('symbol'), {
         range: url.searchParams.get('range') || '3mo',
+        interval: url.searchParams.get('interval') || '1d',
         narrate: url.searchParams.get('narrate') === '1',
       });
       return json(res, 200, out);

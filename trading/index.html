@@ -93,7 +93,13 @@
         <div class="row">
           <input id="sym" placeholder="RELIANCE.NS" style="flex: 2" />
           <select id="range">
-            <option>1mo</option><option>3mo</option><option>6mo</option><option>1y</option><option>5d</option>
+            <option value="1d-intra">Today (5-min)</option>
+            <option value="1d">Today (1 candle)</option>
+            <option value="5d">5d</option>
+            <option value="1mo" selected>1mo</option>
+            <option value="3mo">3mo</option>
+            <option value="6mo">6mo</option>
+            <option value="1y">1y</option>
           </select>
         </div>
         <button id="mktBtn">Fetch</button>
@@ -128,6 +134,14 @@
     <script>
       const $ = (id) => document.getElementById(id);
       const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+
+      // Map the range dropdown to Yahoo range+interval. "Today (5-min)" is
+      // intraday; everything else is daily candles.
+      function rangeParams() {
+        const v = $('range').value;
+        if (v === '1d-intra') return 'range=1d&interval=5m';
+        return 'range=' + v + '&interval=1d';
+      }
 
       async function api(path, opts) {
         const res = await fetch(path, opts);
@@ -177,7 +191,7 @@
         try {
           const sym = $('sym').value.trim();
           const q = await api('/api/quote?symbol=' + encodeURIComponent(sym));
-          const { rows } = await api('/api/candles?symbol=' + encodeURIComponent(sym) + '&range=' + $('range').value);
+          const { rows } = await api('/api/candles?symbol=' + encodeURIComponent(sym) + '&' + rangeParams());
           const chg = q.price - q.previousClose;
           const pct = q.previousClose ? (chg / q.previousClose) * 100 : 0;
           const col = chg >= 0 ? 'var(--up)' : 'var(--down)';
@@ -206,15 +220,15 @@
         out.className = 'out';
         out.textContent = 'Reading the data…';
         const sym = $('sym').value.trim();
-        const range = $('range').value;
+        const rp = rangeParams();
         try {
           let d;
           try {
-            d = await api('/api/describe?symbol=' + encodeURIComponent(sym) + '&range=' + range + '&narrate=1');
+            d = await api('/api/describe?symbol=' + encodeURIComponent(sym) + '&' + rp + '&narrate=1');
           } catch (e) {
             // No API key (or narration failed) — still show the deterministic facts.
             if (/OPENROUTER_API_KEY|401|402/i.test(e.message)) {
-              d = await api('/api/describe?symbol=' + encodeURIComponent(sym) + '&range=' + range + '&narrate=0');
+              d = await api('/api/describe?symbol=' + encodeURIComponent(sym) + '&' + rp + '&narrate=0');
               d._noNarrate = true;
             } else throw e;
           }

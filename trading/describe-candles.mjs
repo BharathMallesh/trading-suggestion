@@ -112,12 +112,12 @@ export function formatStats(symbol, stats, shape) {
   return [
     `${symbol}: ${stats.from} → ${stats.to} (${stats.days} candles)`,
     `Change over window: ${dir}${stats.change} (${dir}${stats.pctChange}%), close ${stats.firstClose} → ${stats.lastClose}`,
-    `Up days ${stats.upDays} / down days ${stats.downDays} / flat ${stats.flatDays}`,
+    `Up candles ${stats.upDays} / down candles ${stats.downDays} / flat ${stats.flatDays}`,
     `Window high ${stats.highestHigh.value} (${stats.highestHigh.date}), low ${stats.lowestLow.value} (${stats.lowestLow.date})`,
     `Latest close sits ${stats.rangePositionPct}% up the window's range`,
-    stats.streak.days > 1 ? `Current streak: ${stats.streak.days} ${stats.streak.direction} closes in a row` : 'No multi-day streak into the last candle',
+    stats.streak.days > 1 ? `Current streak: ${stats.streak.days} ${stats.streak.direction} closes in a row` : 'No streak into the last candle',
     stats.lastVolVsAvgPct != null ? `Last volume ${stats.lastVolVsAvgPct >= 0 ? '+' : ''}${stats.lastVolVsAvgPct}% vs window average` : 'Volume unavailable',
-    stats.biggestUpDay ? `Biggest up day ${stats.biggestUpDay.pct}% (${stats.biggestUpDay.date}); biggest down day ${stats.biggestDownDay.pct}% (${stats.biggestDownDay.date})` : '',
+    stats.biggestUpDay ? `Biggest up move ${stats.biggestUpDay.pct}% (${stats.biggestUpDay.date}); biggest down move ${stats.biggestDownDay.pct}% (${stats.biggestDownDay.date})` : '',
     `Latest candle: ${shape.direction}, body ${shape.bodyPct}% of range, upper wick ${shape.upperWickPct}%, lower wick ${shape.lowerWickPct}%`,
   ]
     .filter(Boolean)
