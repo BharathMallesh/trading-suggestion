@@ -78,6 +78,32 @@ const q = await quote('AAPL');                       // { price, dayHigh, 52wk..
 const c = await candles('HDFCBANK.NS', { range: '6mo', interval: '1d' });
 ```
 
+### Option greeks & payoff calculator (educational, offline)
+
+A pure-maths Black-Scholes calculator — **you supply every number**; it computes
+theoretical price, greeks (delta/gamma/vega/theta), and the payoff mechanics
+(breakeven, max loss, max profit) of a single-leg position you name. It does
+**not** fetch data, connect to any broker, or suggest what to trade — same
+numbers in, same numbers out.
+
+```bash
+# spot 2500, strike 2520, 7 days to expiry, IV 18%, a call:
+node trading/blackscholes.mjs --spot 2500 --strike 2520 --days 7 --iv 18 --type CE
+
+# add the mechanics of a specific position (e.g. buying it, lot size 250):
+node trading/blackscholes.mjs --spot 2500 --strike 2520 --days 7 --iv 18 --type CE \
+  --action buy --lot 250 --premium 22
+```
+
+```js
+import { greeks, payoff } from './trading/blackscholes.mjs';
+const g = greeks({ spot: 2500, strike: 2520, tYears: 7 / 365, iv: 0.18, type: 'CE' });
+const p = payoff({ action: 'buy', type: 'CE', strike: 2520, premium: 22, lotSize: 250 });
+```
+
+The breakeven/max-loss/max-profit figures describe the mechanics of a position
+*you* describe — they are not a recommendation to take it.
+
 ## Tests
 
 No dependencies — Node's built-in runner with a mocked `fetch` (no network, no key):
@@ -92,4 +118,5 @@ cd trading && npm test        # or: node --test  (run from inside trading/)
 - `ling-client.mjs` — minimal OpenAI-compatible client (key from `OPENROUTER_API_KEY`).
 - `research.mjs` — the guardrailed research entry point: `research` / `summarize` / `explain` (library + CLI).
 - `market-data.mjs` — read-only public quotes + OHLC candles (library + CLI, no key).
-- `test.mjs` — unit tests for the client, guardrail prompt, helpers, and data parsing.
+- `blackscholes.mjs` — offline option greeks + payoff calculator (library + CLI, no data/broker).
+- `test.mjs` — unit tests for the client, guardrail prompt, helpers, data parsing, and the maths.

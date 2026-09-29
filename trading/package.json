@@ -7,6 +7,7 @@
   "scripts": {
     "research": "node research.mjs",
     "market": "node market-data.mjs",
+    "options": "node blackscholes.mjs",
     "test": "node --test"
   }
 }

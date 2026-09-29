@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import { chat } from './ling-client.mjs';
 import { RESEARCH_SYSTEM, research, summarize, explain } from './research.mjs';
 import { quote, candles, fetchChart } from './market-data.mjs';
+import { normCdf, greeks, payoff } from './blackscholes.mjs';
 
 // --- fetch mock ------------------------------------------------------------
 const realFetch = globalThis.fetch;
@@ -192,4 +193,56 @@ test('fetchChart() surfaces an API error payload', async () => {
 test('fetchChart() throws when the result set is empty', async () => {
   mockFetch({ chart: { error: null, result: [] } });
   await assert.rejects(() => fetchChart('AAPL'), /No market data found/);
+});
+
+// --- black-scholes (pure maths, no network/model) --------------------------
+const near = (a, b, eps = 1e-3) => Math.abs(a - b) <= eps;
+
+test('normCdf() matches known reference values', () => {
+  assert.ok(near(normCdf(0), 0.5));
+  assert.ok(near(normCdf(1.96), 0.975, 2e-3)); // ~97.5%
+  assert.ok(near(normCdf(-1.96), 0.025, 2e-3));
+});
+
+test('greeks() reproduces a textbook ATM call and put (put-call parity)', () => {
+  const base = { spot: 100, strike: 100, tYears: 1, iv: 0.2, rate: 0.05 };
+  const call = greeks({ ...base, type: 'CE' });
+  const put = greeks({ ...base, type: 'PE' });
+  // Known BS value for these inputs: call ~= 10.45, put ~= 5.57.
+  assert.ok(near(call.price, 10.4506, 1e-2), `call ${call.price}`);
+  assert.ok(near(put.price, 5.5735, 1e-2), `put ${put.price}`);
+  // Put-call parity: C - P = S - K*e^{-rT}.
+  const parity = base.spot - base.strike * Math.exp(-base.rate * base.tYears);
+  assert.ok(near(call.price - put.price, parity, 1e-6));
+  // Call delta in (0,1); put delta = callDelta - 1; gamma shared and positive.
+  assert.ok(call.delta > 0 && call.delta < 1);
+  assert.ok(near(put.delta, call.delta - 1, 1e-9));
+  assert.ok(call.gamma > 0 && near(call.gamma, put.gamma, 1e-9));
+});
+
+test('greeks() returns intrinsic value at expiry (tYears = 0)', () => {
+  const itm = greeks({ spot: 110, strike: 100, tYears: 0, iv: 0.2, type: 'CE' });
+  assert.equal(itm.price, 10);
+  assert.equal(itm.delta, 1);
+  assert.equal(itm.gamma, 0);
+  const otm = greeks({ spot: 90, strike: 100, tYears: 0, iv: 0.2, type: 'CE' });
+  assert.equal(otm.price, 0);
+});
+
+test('payoff() computes breakeven, capped/unlimited legs, and per-lot scaling', () => {
+  const longCall = payoff({ action: 'buy', type: 'CE', strike: 2500, premium: 30, lotSize: 250 });
+  assert.equal(longCall.breakeven, 2530);
+  assert.equal(longCall.maxLoss, 30);
+  assert.equal(longCall.maxProfit, 'unlimited');
+  assert.equal(longCall.perLot.maxLoss, 7500); // 30 * 250
+
+  const shortCall = payoff({ action: 'sell', type: 'CE', strike: 2500, premium: 30, lotSize: 250 });
+  assert.equal(shortCall.maxProfit, 30);
+  assert.equal(shortCall.maxLoss, 'unlimited');
+  assert.equal(shortCall.perLot.maxProfit, 7500);
+
+  const longPut = payoff({ action: 'buy', type: 'PE', strike: 2500, premium: 40 });
+  assert.equal(longPut.breakeven, 2460);
+  assert.equal(longPut.maxLoss, 40);
+  assert.equal(longPut.maxProfit, 2460); // strike - premium, floored at 0
 });
