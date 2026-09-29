@@ -78,6 +78,28 @@ const q = await quote('AAPL');                       // { price, dayHigh, 52wk..
 const c = await candles('HDFCBANK.NS', { range: '6mo', interval: '1d' });
 ```
 
+### Describe candles (facts, not forecasts)
+
+Fetches real candles for a ticker and reports **what the data shows** — the move
+over the window, up/down days, where price sits in its range, the volume vs its
+average, and the latest candle's shape. The stats are computed offline and are
+purely descriptive. With `--narrate` (and an API key) Ling turns them into a
+plain-English description — still guardrailed: it reports the data and **does
+not** predict direction or suggest a trade.
+
+```bash
+node trading/describe-candles.mjs HDFCBANK.NS 3mo            # facts only (no key)
+node trading/describe-candles.mjs HDFCBANK.NS 6mo --narrate  # + plain-English read
+```
+
+```js
+import { describeCandles, computeStats } from './trading/describe-candles.mjs';
+const d = await describeCandles('RELIANCE.NS', { range: '3mo', narrate: false });
+console.log(d.facts);   // deterministic, offline
+```
+
+It describes the past; it never says where price is headed.
+
 ### Option greeks & payoff calculator (educational, offline)
 
 A pure-maths Black-Scholes calculator — **you supply every number**; it computes
@@ -134,6 +156,7 @@ cd trading && npm test        # or: node --test  (run from inside trading/)
 - `ling-client.mjs` — minimal OpenAI-compatible client (key from `OPENROUTER_API_KEY`).
 - `research.mjs` — the guardrailed research entry point: `research` / `summarize` / `explain` (library + CLI).
 - `market-data.mjs` — read-only public quotes + OHLC candles (library + CLI, no key).
+- `describe-candles.mjs` — factual read of the candles: offline stats + optional guardrailed narration.
 - `blackscholes.mjs` — offline option greeks + payoff calculator (library + CLI, no data/broker).
 - `server.mjs` + `index.html` — local research dashboard (key stays server-side, loopback only).
 - `test.mjs` — unit tests for the client, guardrail prompt, helpers, data parsing, and the maths.

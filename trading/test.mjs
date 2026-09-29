@@ -9,6 +9,7 @@ import { chat } from './ling-client.mjs';
 import { RESEARCH_SYSTEM, research, summarize, explain } from './research.mjs';
 import { quote, candles, fetchChart } from './market-data.mjs';
 import { normCdf, greeks, payoff } from './blackscholes.mjs';
+import { computeStats, candleShape } from './describe-candles.mjs';
 
 // --- fetch mock ------------------------------------------------------------
 const realFetch = globalThis.fetch;
@@ -245,4 +246,51 @@ test('payoff() computes breakeven, capped/unlimited legs, and per-lot scaling', 
   assert.equal(longPut.breakeven, 2460);
   assert.equal(longPut.maxLoss, 40);
   assert.equal(longPut.maxProfit, 2460); // strike - premium, floored at 0
+});
+
+// --- describe-candles (deterministic stats, no forecast) -------------------
+const SERIES = [
+  { date: '2024-01-01', open: 100, high: 104, low: 99, close: 103, volume: 1000 },
+  { date: '2024-01-02', open: 103, high: 108, low: 102, close: 107, volume: 1500 },
+  { date: '2024-01-03', open: 107, high: 110, low: 101, close: 102, volume: 3000 }, // biggest range + down
+  { date: '2024-01-04', open: 102, high: 106, low: 101, close: 105, volume: 1200 },
+  { date: '2024-01-05', open: 105, high: 112, low: 104, close: 111, volume: 2000 },
+];
+
+test('computeStats() summarizes trend, up/down days, range position, and streak', () => {
+  const s = computeStats(SERIES);
+  assert.equal(s.days, 5);
+  assert.equal(s.firstClose, 103);
+  assert.equal(s.lastClose, 111);
+  assert.equal(s.change, 8);
+  assert.equal(s.upDays, 4); // only 2024-01-03 closed below its open
+  assert.equal(s.downDays, 1);
+  assert.deepEqual(s.highestHigh, { value: 112, date: '2024-01-05' });
+  assert.deepEqual(s.lowestLow, { value: 99, date: '2024-01-01' });
+  // last close 111 between low 99 and high 112 -> (111-99)/(112-99) ≈ 92.3%
+  assert.ok(Math.abs(s.rangePositionPct - 92.31) < 0.1);
+  // closes 103,107,102,105,111: the ending up-streak is 102->105->111 (2 up moves)
+  assert.equal(s.streak.direction, 'up');
+  assert.equal(s.streak.days, 2);
+  assert.equal(s.biggestDownDay.date, '2024-01-03');
+});
+
+test('computeStats() flags last volume vs the window average', () => {
+  const s = computeStats(SERIES);
+  // avg of [1000,1500,3000,1200,2000] = 1740; last 2000 -> +14.9%
+  assert.equal(s.avgVolume, 1740);
+  assert.ok(Math.abs(s.lastVolVsAvgPct - 14.94) < 0.1);
+});
+
+test('computeStats() throws on empty input', () => {
+  assert.throws(() => computeStats([]), /No candles to describe/);
+});
+
+test('candleShape() reports geometry as percentages of range', () => {
+  const s = candleShape({ date: 'x', open: 102, high: 110, low: 101, close: 107 });
+  assert.equal(s.direction, 'up');
+  // range 9; body |107-102|=5 -> 55.6%; upper 110-107=3 -> 33.3%; lower 102-101=1 -> 11.1%
+  assert.equal(s.bodyPct, 55.6);
+  assert.equal(s.upperWickPct, 33.3);
+  assert.equal(s.lowerWickPct, 11.1);
 });

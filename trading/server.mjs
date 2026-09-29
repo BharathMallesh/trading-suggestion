@@ -17,6 +17,7 @@ import { dirname, join } from 'node:path';
 import { research, summarize, explain } from './research.mjs';
 import { quote, candles } from './market-data.mjs';
 import { greeks, payoff } from './blackscholes.mjs';
+import { describeCandles } from './describe-candles.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT) || 3000;
@@ -72,6 +73,15 @@ const server = http.createServer(async (req, res) => {
         interval: url.searchParams.get('interval') || '1d',
       });
       return json(res, 200, { rows });
+    }
+
+    // --- factual description of the candles (stats always; narration needs key) ---
+    if (req.method === 'GET' && url.pathname === '/api/describe') {
+      const out = await describeCandles(url.searchParams.get('symbol'), {
+        range: url.searchParams.get('range') || '3mo',
+        narrate: url.searchParams.get('narrate') === '1',
+      });
+      return json(res, 200, out);
     }
 
     // --- offline option maths (no data, no key) ---

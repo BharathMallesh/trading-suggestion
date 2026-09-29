@@ -97,7 +97,9 @@
           </select>
         </div>
         <button id="mktBtn">Fetch</button>
+        <button id="descBtn" style="background: #0d1320; color: var(--ink); border: 1px solid var(--line)">Describe the data</button>
         <div class="out" id="mktOut"></div>
+        <div class="out" id="descOut"></div>
       </section>
 
       <!-- Option calculator panel -->
@@ -191,6 +193,38 @@
           html += '<table><tr><th>Date</th><th>Open</th><th>High</th><th>Low</th><th>Close</th></tr>';
           for (const r of tail) html += `<tr><td>${r.date}</td><td>${r.open}</td><td>${r.high}</td><td>${r.low}</td><td>${r.close}</td></tr>`;
           html += '</table><div class="note">Public data, may be delayed. Latest 10 rows shown.</div>';
+          out.innerHTML = html;
+        } catch (e) {
+          out.className = 'out err';
+          out.textContent = 'Error: ' + e.message;
+        }
+      });
+
+      // --- Describe the data (facts always; narration if the key is set) ---
+      $('descBtn').addEventListener('click', async () => {
+        const out = $('descOut');
+        out.className = 'out';
+        out.textContent = 'Reading the data…';
+        const sym = $('sym').value.trim();
+        const range = $('range').value;
+        try {
+          let d;
+          try {
+            d = await api('/api/describe?symbol=' + encodeURIComponent(sym) + '&range=' + range + '&narrate=1');
+          } catch (e) {
+            // No API key (or narration failed) — still show the deterministic facts.
+            if (/OPENROUTER_API_KEY|401|402/i.test(e.message)) {
+              d = await api('/api/describe?symbol=' + encodeURIComponent(sym) + '&range=' + range + '&narrate=0');
+              d._noNarrate = true;
+            } else throw e;
+          }
+          let html = '<div style="font-family:var(--mono,monospace);font-size:13px">' + esc(d.facts).replace(/\n/g, '<br>') + '</div>';
+          if (d.narrative) {
+            html += '<div style="margin-top:12px;white-space:pre-wrap">' + esc(d.narrative) + '</div>';
+          } else if (d._noNarrate) {
+            html += '<div class="note">Plain-English description needs OPENROUTER_API_KEY set on the server. Facts above are computed offline.</div>';
+          }
+          html += '<div class="note">Describes what the data shows — not a forecast or a suggestion.</div>';
           out.innerHTML = html;
         } catch (e) {
           out.className = 'out err';
