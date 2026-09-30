@@ -83,6 +83,23 @@ const q = await quote('AAPL');                       // { price, dayHigh, 52wk..
 const c = await candles('HDFCBANK.NS', { range: '6mo', interval: '1d' });
 ```
 
+### Optional: candles from Groww (read-only, you run it)
+
+`groww-data.mjs` fetches **historical candles only** from Groww's API as an
+alternative source to Yahoo. It contains **no** order/position/funds endpoints —
+it reads a market, it never trades. Your token is read from the environment and
+never hard-coded or logged; **you** run it with your own token.
+
+```bash
+export GROWW_ACCESS_TOKEN="<your token>"      # in your own terminal, never in chat
+node trading/groww-data.mjs HDFCBANK 2026-09-29 1
+```
+
+Endpoint/response shapes follow Groww's published API; `GROWW_BASE_URL` and
+`GROWW_API_VERSION` are overridable via env if your account needs it. This
+project never connects to a broker on your behalf or handles your token — that
+call is yours to run.
+
 ### Describe candles (facts, not forecasts)
 
 Fetches real candles for a ticker and reports **what the data shows** — the move
@@ -160,7 +177,8 @@ cd trading && npm test        # or: node --test  (run from inside trading/)
 - `config.mjs` — OpenRouter base URL + model (mirrors the app's `ling-fin` preset).
 - `ling-client.mjs` — minimal OpenAI-compatible client (key from `OPENROUTER_API_KEY`).
 - `research.mjs` — the guardrailed research entry point: `research` / `summarize` / `explain` (library + CLI).
-- `market-data.mjs` — read-only public quotes + OHLC candles (library + CLI, no key).
+- `market-data.mjs` — read-only public quotes + OHLC/intraday candles (library + CLI, no key).
+- `groww-data.mjs` — optional read-only Groww candle client (token from env; you run it; no orders).
 - `describe-candles.mjs` — factual read of the candles: offline stats + optional guardrailed narration.
 - `blackscholes.mjs` — offline option greeks + payoff calculator (library + CLI, no data/broker).
 - `server.mjs` + `index.html` — local research dashboard (key stays server-side, loopback only).

@@ -10,6 +10,7 @@ import { RESEARCH_SYSTEM, research, summarize, explain } from './research.mjs';
 import { quote, candles, fetchChart, intraday } from './market-data.mjs';
 import { normCdf, greeks, payoff } from './blackscholes.mjs';
 import { computeStats, candleShape } from './describe-candles.mjs';
+import { historicalCandles, daySession } from './groww-data.mjs';
 
 // --- fetch mock ------------------------------------------------------------
 const realFetch = globalThis.fetch;
@@ -315,6 +316,37 @@ test('computeStats() flags last volume vs the window average', () => {
 
 test('computeStats() throws on empty input', () => {
   assert.throws(() => computeStats([]), /No candles to describe/);
+});
+
+// --- groww-data (read-only client; parsing + auth, mocked network) ---------
+test('historicalCandles() requires GROWW_ACCESS_TOKEN', async () => {
+  delete process.env.GROWW_ACCESS_TOKEN;
+  await assert.rejects(
+    () => historicalCandles({ symbol: 'HDFCBANK', startTime: 1, endTime: 2 }),
+    /Missing GROWW_ACCESS_TOKEN/,
+  );
+});
+
+test('historicalCandles() sends bearer auth and normalizes candle arrays', async () => {
+  process.env.GROWW_ACCESS_TOKEN = 'groww-test-token';
+  // 03:45Z = 09:15 IST
+  const ts = Date.UTC(2026, 8, 29, 3, 45, 0) / 1000;
+  mockFetch({ payload: { candles: [[ts, 715, 715.55, 712.85, 713.75, 0], [ts + 60, 714, 714.2, 712.7, 712.9, 163845]] } });
+  const rows = await historicalCandles({ symbol: 'HDFCBANK', startTime: '2026-09-29 09:15:00', endTime: '2026-09-29 15:30:00', intervalMinutes: 1 });
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].hhmm, '09:15');
+  assert.equal(rows[0].close, 713.75);
+  assert.equal(rows[1].volume, 163845);
+  assert.match(lastRequest.options.headers.Authorization, /^Bearer groww-test-token$/);
+  assert.equal(lastRequest.options.headers['X-API-VERSION'], '1.0');
+  assert.match(lastRequest.url, /trading_symbol=HDFCBANK/);
+  delete process.env.GROWW_ACCESS_TOKEN;
+});
+
+test('daySession() validates the date format', async () => {
+  process.env.GROWW_ACCESS_TOKEN = 't';
+  await assert.rejects(() => daySession('HDFCBANK', '29-09-2026'), /YYYY-MM-DD/);
+  delete process.env.GROWW_ACCESS_TOKEN;
 });
 
 test('candleShape() reports geometry as percentages of range', () => {

@@ -9,6 +9,7 @@
     "market": "node market-data.mjs",
     "options": "node blackscholes.mjs",
     "describe": "node describe-candles.mjs",
+    "groww": "node groww-data.mjs",
     "serve": "node server.mjs",
     "test": "node --test"
   }
