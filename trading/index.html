@@ -104,6 +104,7 @@
         </div>
         <button id="mktBtn">Fetch</button>
         <button id="descBtn" style="background: #0d1320; color: var(--ink); border: 1px solid var(--line)">Describe the data</button>
+        <div id="chartOut" style="margin-top: 12px"></div>
         <div class="out" id="mktOut"></div>
         <div class="out" id="descOut"></div>
       </section>
@@ -141,6 +142,45 @@
         const v = $('range').value;
         if (v === '1d-intra') return 'range=1d&interval=5m';
         return 'range=' + v + '&interval=1d';
+      }
+
+      // Draw a candlestick chart from OHLC rows — pure SVG, no library.
+      function renderCandles(rows, rangeLabel, sym) {
+        if (!rows || !rows.length) return '';
+        const view = rows.slice(-120);
+        const W = 600, H = 280, padL = 48, padR = 10, padT = 12, padB = 24;
+        const plotW = W - padL - padR, plotH = H - padT - padB;
+        let min = Infinity, max = -Infinity;
+        for (const r of view) { if (r.low < min) min = r.low; if (r.high > max) max = r.high; }
+        const raw = max - min || 1;
+        min -= raw * 0.04; max += raw * 0.04;
+        const yFor = (p) => padT + ((max - p) / (max - min)) * plotH;
+        const step = plotW / view.length;
+        const bodyW = Math.max(1, Math.min(14, step * 0.6));
+        const dec = max >= 1000 ? 1 : 2;
+        let s = '';
+        for (let k = 0; k <= 4; k++) {
+          const price = min + ((max - min) * k) / 4;
+          const y = yFor(price).toFixed(1);
+          s += `<line x1="${padL}" y1="${y}" x2="${W - padR}" y2="${y}" stroke="var(--line)" stroke-width="0.5"/>`;
+          s += `<text x="${padL - 6}" y="${y}" text-anchor="end" dominant-baseline="central" fill="var(--muted)" font-size="10">${price.toFixed(dec)}</text>`;
+        }
+        view.forEach((r, i) => {
+          const cx = padL + (i + 0.5) * step;
+          const col = r.close >= r.open ? 'var(--up)' : 'var(--down)';
+          const yH = yFor(r.high), yL = yFor(r.low), yO = yFor(r.open), yC = yFor(r.close);
+          const top = Math.min(yO, yC), h = Math.max(1, Math.abs(yO - yC));
+          s += `<line x1="${cx.toFixed(1)}" y1="${yH.toFixed(1)}" x2="${cx.toFixed(1)}" y2="${yL.toFixed(1)}" stroke="${col}" stroke-width="1"/>`;
+          s += `<rect x="${(cx - bodyW / 2).toFixed(1)}" y="${top.toFixed(1)}" width="${bodyW.toFixed(1)}" height="${h.toFixed(1)}" fill="${col}"/>`;
+        });
+        s += `<text x="${padL}" y="${H - 8}" text-anchor="start" fill="var(--muted)" font-size="10">${view[0].date}</text>`;
+        s += `<text x="${W - padR}" y="${H - 8}" text-anchor="end" fill="var(--muted)" font-size="10">${view[view.length - 1].date}</text>`;
+        const trunc = rows.length > view.length ? ` (last ${view.length})` : '';
+        return (
+          `<div style="font-size:12px;color:var(--muted);margin-bottom:4px">${esc(sym)} · ${esc(rangeLabel)}${trunc} — ` +
+          `<span style="color:var(--up)">■</span> up  <span style="color:var(--down)">■</span> down</div>` +
+          `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Candlestick chart for ${esc(sym)}" style="display:block">${s}</svg>`
+        );
       }
 
       async function api(path, opts) {
@@ -188,10 +228,12 @@
         const out = $('mktOut');
         out.className = 'out';
         out.textContent = 'Loading…';
+        $('chartOut').innerHTML = '';
         try {
           const sym = $('sym').value.trim();
           const q = await api('/api/quote?symbol=' + encodeURIComponent(sym));
           const { rows } = await api('/api/candles?symbol=' + encodeURIComponent(sym) + '&' + rangeParams());
+          $('chartOut').innerHTML = renderCandles(rows, $('range').selectedOptions[0].textContent, sym);
           const chg = q.price - q.previousClose;
           const pct = q.previousClose ? (chg / q.previousClose) * 100 : 0;
           const col = chg >= 0 ? 'var(--up)' : 'var(--down)';
