@@ -18,6 +18,7 @@ import { research, summarize, explain } from './research.mjs';
 import { quote, candles, intraday } from './market-data.mjs';
 import { greeks, payoff } from './blackscholes.mjs';
 import { describeCandles } from './describe-candles.mjs';
+import { daySession } from './groww-data.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT) || 3000;
@@ -82,6 +83,16 @@ const server = http.createServer(async (req, res) => {
         interval: url.searchParams.get('interval') || '1m',
       });
       return json(res, 200, out);
+    }
+
+    // --- one day of intraday candles from Groww (read-only; needs GROWW_ACCESS_TOKEN) ---
+    if (req.method === 'GET' && url.pathname === '/api/groww-intraday') {
+      const symbol = url.searchParams.get('symbol');
+      const date = url.searchParams.get('date');
+      const rows = await daySession(symbol, date, {
+        intervalMinutes: Number(url.searchParams.get('interval')) || 1,
+      });
+      return json(res, 200, { symbol, date, interval: '1m', count: rows.length, exchange: 'NSE', source: 'groww', rows });
     }
 
     // --- factual description of the candles (stats always; narration needs key) ---

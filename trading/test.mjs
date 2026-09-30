@@ -11,6 +11,7 @@ import { quote, candles, fetchChart, intraday } from './market-data.mjs';
 import { normCdf, greeks, payoff } from './blackscholes.mjs';
 import { computeStats, candleShape } from './describe-candles.mjs';
 import { historicalCandles, daySession } from './groww-data.mjs';
+import { sma } from './indicators.mjs';
 
 // --- fetch mock ------------------------------------------------------------
 const realFetch = globalThis.fetch;
@@ -347,6 +348,13 @@ test('daySession() validates the date format', async () => {
   process.env.GROWW_ACCESS_TOKEN = 't';
   await assert.rejects(() => daySession('HDFCBANK', '29-09-2026'), /YYYY-MM-DD/);
   delete process.env.GROWW_ACCESS_TOKEN;
+});
+
+test('sma() returns nulls until the window fills, then the average', () => {
+  assert.deepEqual(sma([1, 2, 3, 4, 5], 3), [null, null, 2, 3, 4]);
+  assert.deepEqual(sma([10, 20], 1), [10, 20]);
+  assert.throws(() => sma([1, 2], 0), /positive integer/);
+  assert.throws(() => sma('nope', 2), /must be an array/);
 });
 
 test('candleShape() reports geometry as percentages of range', () => {

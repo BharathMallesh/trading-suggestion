@@ -103,6 +103,14 @@
             <option value="1y">1y</option>
           </select>
         </div>
+        <div class="row" style="margin-top: 8px; align-items: center">
+          <select id="source" style="flex: 2">
+            <option value="yahoo">Source: Yahoo</option>
+            <option value="groww">Source: Groww</option>
+          </select>
+          <label style="flex: none; display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: 13px"><input type="checkbox" id="ma20" style="width: auto" /> SMA 20</label>
+          <label style="flex: none; display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: 13px"><input type="checkbox" id="ma50" style="width: auto" /> SMA 50</label>
+        </div>
         <button id="mktBtn">Fetch</button>
         <button id="descBtn" style="background: #0d1320; color: var(--ink); border: 1px solid var(--line)">Describe the data</button>
         <div id="chartOut" style="margin-top: 12px"></div>
@@ -145,6 +153,49 @@
         return 'range=' + v + '&interval=1d';
       }
 
+      // Most recent weekday (rough "yesterday" for the Groww day view; NSE
+      // holidays aren't accounted for — the server will report if a day is empty).
+      function prevTradingDay() {
+        const d = new Date();
+        d.setDate(d.getDate() - 1);
+        while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() - 1);
+        return d.toISOString().slice(0, 10);
+      }
+
+      // Simple moving average (descriptive — an average of past closes, not a signal).
+      function sma(values, period) {
+        const out = new Array(values.length).fill(null);
+        let sum = 0;
+        for (let i = 0; i < values.length; i++) {
+          sum += values[i];
+          if (i >= period) sum -= values[i - period];
+          if (i >= period - 1) out[i] = sum / period;
+        }
+        return out;
+      }
+      // Which MAs are toggled on, with a stable colour each.
+      function selectedMAs() {
+        const mas = [];
+        if ($('ma20').checked) mas.push({ period: 20, color: '#EF9F27' });
+        if ($('ma50').checked) mas.push({ period: 50, color: '#378ADD' });
+        return mas;
+      }
+      // Build an SVG polyline for one MA over `closes`, mapped by xFor/yFor.
+      function maPolyline(closes, period, color, xFor, yFor) {
+        const vals = sma(closes, period);
+        let pts = '';
+        for (let i = 0; i < vals.length; i++) {
+          if (vals[i] == null) continue;
+          pts += `${xFor(i).toFixed(1)},${yFor(vals[i]).toFixed(1)} `;
+        }
+        if (!pts) return '';
+        return `<polyline points="${pts.trim()}" fill="none" stroke="${color}" stroke-width="1.3" opacity="0.9"/>`;
+      }
+      function maLegend(mas) {
+        if (!mas.length) return '';
+        return ' ' + mas.map((m) => `<span style="color:${m.color}">— SMA ${m.period}</span>`).join('  ');
+      }
+
       // Draw a candlestick chart from OHLC rows — pure SVG, no library.
       function renderCandles(rows, rangeLabel, sym) {
         if (!rows || !rows.length) return '';
@@ -174,12 +225,16 @@
           s += `<line x1="${cx.toFixed(1)}" y1="${yH.toFixed(1)}" x2="${cx.toFixed(1)}" y2="${yL.toFixed(1)}" stroke="${col}" stroke-width="1"/>`;
           s += `<rect x="${(cx - bodyW / 2).toFixed(1)}" y="${top.toFixed(1)}" width="${bodyW.toFixed(1)}" height="${h.toFixed(1)}" fill="${col}"/>`;
         });
+        // Moving-average overlays (descriptive; drawn on top of the candles).
+        const mas = selectedMAs();
+        const closes = view.map((r) => r.close);
+        for (const m of mas) s += maPolyline(closes, m.period, m.color, (i) => padL + (i + 0.5) * step, yFor);
         s += `<text x="${padL}" y="${H - 8}" text-anchor="start" fill="var(--muted)" font-size="10">${view[0].date}</text>`;
         s += `<text x="${W - padR}" y="${H - 8}" text-anchor="end" fill="var(--muted)" font-size="10">${view[view.length - 1].date}</text>`;
         const trunc = rows.length > view.length ? ` (last ${view.length})` : '';
         return (
           `<div style="font-size:12px;color:var(--muted);margin-bottom:4px">${esc(sym)} · ${esc(rangeLabel)}${trunc} — ` +
-          `<span style="color:var(--up)">■</span> up  <span style="color:var(--down)">■</span> down</div>` +
+          `<span style="color:var(--up)">■</span> up  <span style="color:var(--down)">■</span> down${maLegend(mas)}</div>` +
           `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Candlestick chart for ${esc(sym)}" style="display:block">${s}</svg>`
         );
       }
@@ -229,6 +284,10 @@
             s += `<rect x="${(cx - bodyW / 2).toFixed(1)}" y="${(volTop + volH - vh).toFixed(1)}" width="${bodyW.toFixed(1)}" height="${vh.toFixed(1)}" fill="${col}" opacity="0.5"/>`;
           }
         });
+        // moving-average overlays on the price panel (descriptive)
+        const mas = selectedMAs();
+        const closes = rows.map((r) => r.close);
+        for (const m of mas) s += maPolyline(closes, m.period, m.color, (i) => plotL + (i + 0.5) * step, yP);
         // time axis: ~8 labels evenly across the session
         const nLabels = Math.min(8, rows.length);
         for (let j = 0; j < nLabels; j++) {
@@ -243,7 +302,7 @@
         const chgCol = chg >= 0 ? 'var(--up)' : 'var(--down)';
         const hdr =
           `<div style="font-size:12px;margin-bottom:6px"><span style="color:var(--ink)">${esc(d.symbol)}</span> ` +
-          `<span style="color:var(--muted)">· ${esc(d.date)} · ${esc(d.interval)} · ${esc(d.exchange || '')} · ${d.count} candles</span><br>` +
+          `<span style="color:var(--muted)">· ${esc(d.date)} · ${esc(d.interval)} · ${esc(d.exchange || '')} · ${esc(d.source || 'yahoo')} · ${d.count} candles${maLegend(mas)}</span><br>` +
           `<span style="color:var(--muted)">O</span> ${o.toFixed(dec)} <span style="color:var(--muted)">H</span> ${dayHi.toFixed(dec)} ` +
           `<span style="color:var(--muted)">L</span> ${dayLo.toFixed(dec)} <span style="color:var(--muted)">C</span> ${c.toFixed(dec)} ` +
           `<span style="color:${chgCol}">${chg >= 0 ? '+' : ''}${chg.toFixed(dec)} (${chg >= 0 ? '+' : ''}${pct.toFixed(2)}%)</span></div>`;
@@ -298,13 +357,20 @@
         $('chartOut').innerHTML = '';
         try {
           const sym = $('sym').value.trim();
+          const source = $('source').value;
           // Intraday one-day view (TradingView style): its own endpoint + chart.
           if ($('range').value === 'yesterday') {
-            const d = await api('/api/intraday?symbol=' + encodeURIComponent(sym) + '&interval=1m');
+            let d;
+            if (source === 'groww') {
+              d = await api('/api/groww-intraday?symbol=' + encodeURIComponent(sym) + '&date=' + prevTradingDay() + '&interval=1');
+            } else {
+              d = await api('/api/intraday?symbol=' + encodeURIComponent(sym) + '&interval=1m');
+            }
             $('chartOut').innerHTML = renderIntradayChart(d);
-            out.innerHTML = `<div class="note">${esc(d.symbol)} — ${esc(d.date)} — ${d.count} one-minute candles. Public data, may be delayed.</div>`;
+            out.innerHTML = `<div class="note">${esc(d.symbol)} — ${esc(d.date)} — ${d.count} one-minute candles from ${esc(d.source || 'yahoo')}. May be delayed.</div>`;
             return;
           }
+          // (Groww source applies to the intraday day view; daily ranges use Yahoo.)
           const q = await api('/api/quote?symbol=' + encodeURIComponent(sym));
           const { rows } = await api('/api/candles?symbol=' + encodeURIComponent(sym) + '&' + rangeParams());
           $('chartOut').innerHTML = renderCandles(rows, $('range').selectedOptions[0].textContent, sym);
