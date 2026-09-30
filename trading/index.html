@@ -93,6 +93,7 @@
         <div class="row">
           <input id="sym" placeholder="RELIANCE.NS" style="flex: 2" />
           <select id="range">
+            <option value="yesterday">Yesterday (1-min)</option>
             <option value="1d-intra">Today (5-min)</option>
             <option value="1d">Today (1 candle)</option>
             <option value="5d">5d</option>
@@ -183,6 +184,72 @@
         );
       }
 
+      // TradingView-style intraday chart: candles on top, volume strip below,
+      // price axis on the right, time axis (HH:MM) underneath. Pure SVG.
+      function renderIntradayChart(d) {
+        const rows = d.rows || [];
+        if (!rows.length) return '<div class="err">No intraday candles.</div>';
+        const W = 700, H = 430, plotL = 8, plotR = W - 54;
+        const plotW = plotR - plotL;
+        const priceTop = 30, priceH = 250, volTop = 296, volH = 74;
+        let min = Infinity, max = -Infinity, maxVolRaw = 0;
+        const vols = [];
+        for (const r of rows) {
+          if (r.low < min) min = r.low;
+          if (r.high > max) max = r.high;
+          if (r.volume != null) { vols.push(r.volume); if (r.volume > maxVolRaw) maxVolRaw = r.volume; }
+        }
+        const rawSpan = max - min || 1;
+        min -= rawSpan * 0.03; max += rawSpan * 0.03;
+        // Robust volume scale: use the 98th percentile so a closing-auction
+        // spike doesn't flatten every other bar (spikes just max out).
+        const sorted = [...vols].sort((a, b) => a - b);
+        const volScale = sorted.length ? sorted[Math.floor(sorted.length * 0.98)] || maxVolRaw : 1;
+        const yP = (p) => priceTop + ((max - p) / (max - min)) * priceH;
+        const step = plotW / rows.length;
+        const bodyW = Math.max(1, Math.min(6, step * 0.7));
+        const dec = max >= 1000 ? 1 : 2;
+        let s = '';
+        // price gridlines + right axis
+        for (let k = 0; k <= 4; k++) {
+          const price = min + ((max - min) * k) / 4;
+          const y = yP(price).toFixed(1);
+          s += `<line x1="${plotL}" y1="${y}" x2="${plotR}" y2="${y}" stroke="var(--line)" stroke-width="0.5"/>`;
+          s += `<text x="${plotR + 6}" y="${y}" text-anchor="start" dominant-baseline="central" fill="var(--muted)" font-size="10">${price.toFixed(dec)}</text>`;
+        }
+        // candles + volume
+        rows.forEach((r, i) => {
+          const cx = plotL + (i + 0.5) * step;
+          const col = r.close >= r.open ? 'var(--up)' : 'var(--down)';
+          const yH = yP(r.high), yL = yP(r.low), yO = yP(r.open), yC = yP(r.close);
+          s += `<line x1="${cx.toFixed(1)}" y1="${yH.toFixed(1)}" x2="${cx.toFixed(1)}" y2="${yL.toFixed(1)}" stroke="${col}" stroke-width="0.7"/>`;
+          s += `<rect x="${(cx - bodyW / 2).toFixed(1)}" y="${Math.min(yO, yC).toFixed(1)}" width="${bodyW.toFixed(1)}" height="${Math.max(0.8, Math.abs(yO - yC)).toFixed(1)}" fill="${col}"/>`;
+          if (r.volume != null) {
+            const vh = Math.min(volH, (r.volume / (volScale || 1)) * volH);
+            s += `<rect x="${(cx - bodyW / 2).toFixed(1)}" y="${(volTop + volH - vh).toFixed(1)}" width="${bodyW.toFixed(1)}" height="${vh.toFixed(1)}" fill="${col}" opacity="0.5"/>`;
+          }
+        });
+        // time axis: ~8 labels evenly across the session
+        const nLabels = Math.min(8, rows.length);
+        for (let j = 0; j < nLabels; j++) {
+          const i = Math.round((j * (rows.length - 1)) / (nLabels - 1 || 1));
+          const cx = plotL + (i + 0.5) * step;
+          s += `<text x="${cx.toFixed(1)}" y="${H - 6}" text-anchor="middle" fill="var(--muted)" font-size="10">${rows[i].hhmm}</text>`;
+        }
+        // header O/H/L/C for the day
+        const o = rows[0].open, c = rows[rows.length - 1].close;
+        const dayHi = Math.max(...rows.map((r) => r.high)), dayLo = Math.min(...rows.map((r) => r.low));
+        const chg = c - o, pct = o ? (chg / o) * 100 : 0;
+        const chgCol = chg >= 0 ? 'var(--up)' : 'var(--down)';
+        const hdr =
+          `<div style="font-size:12px;margin-bottom:6px"><span style="color:var(--ink)">${esc(d.symbol)}</span> ` +
+          `<span style="color:var(--muted)">· ${esc(d.date)} · ${esc(d.interval)} · ${esc(d.exchange || '')} · ${d.count} candles</span><br>` +
+          `<span style="color:var(--muted)">O</span> ${o.toFixed(dec)} <span style="color:var(--muted)">H</span> ${dayHi.toFixed(dec)} ` +
+          `<span style="color:var(--muted)">L</span> ${dayLo.toFixed(dec)} <span style="color:var(--muted)">C</span> ${c.toFixed(dec)} ` +
+          `<span style="color:${chgCol}">${chg >= 0 ? '+' : ''}${chg.toFixed(dec)} (${chg >= 0 ? '+' : ''}${pct.toFixed(2)}%)</span></div>`;
+        return hdr + `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Intraday candlestick chart for ${esc(d.symbol)} on ${esc(d.date)}" style="display:block">${s}</svg>`;
+      }
+
       async function api(path, opts) {
         const res = await fetch(path, opts);
         const data = await res.json();
@@ -231,6 +298,13 @@
         $('chartOut').innerHTML = '';
         try {
           const sym = $('sym').value.trim();
+          // Intraday one-day view (TradingView style): its own endpoint + chart.
+          if ($('range').value === 'yesterday') {
+            const d = await api('/api/intraday?symbol=' + encodeURIComponent(sym) + '&interval=1m');
+            $('chartOut').innerHTML = renderIntradayChart(d);
+            out.innerHTML = `<div class="note">${esc(d.symbol)} — ${esc(d.date)} — ${d.count} one-minute candles. Public data, may be delayed.</div>`;
+            return;
+          }
           const q = await api('/api/quote?symbol=' + encodeURIComponent(sym));
           const { rows } = await api('/api/candles?symbol=' + encodeURIComponent(sym) + '&' + rangeParams());
           $('chartOut').innerHTML = renderCandles(rows, $('range').selectedOptions[0].textContent, sym);

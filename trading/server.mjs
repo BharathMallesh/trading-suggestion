@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 import { research, summarize, explain } from './research.mjs';
-import { quote, candles } from './market-data.mjs';
+import { quote, candles, intraday } from './market-data.mjs';
 import { greeks, payoff } from './blackscholes.mjs';
 import { describeCandles } from './describe-candles.mjs';
 
@@ -73,6 +73,15 @@ const server = http.createServer(async (req, res) => {
         interval: url.searchParams.get('interval') || '1d',
       });
       return json(res, 200, { rows });
+    }
+
+    // --- one day of intraday candles with timestamps ---
+    if (req.method === 'GET' && url.pathname === '/api/intraday') {
+      const out = await intraday(url.searchParams.get('symbol'), {
+        date: url.searchParams.get('date') || undefined,
+        interval: url.searchParams.get('interval') || '1m',
+      });
+      return json(res, 200, out);
     }
 
     // --- factual description of the candles (stats always; narration needs key) ---

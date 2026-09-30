@@ -117,21 +117,86 @@ export async function candles(symbol, opts = {}) {
   return rows;
 }
 
+/**
+ * Intraday candles for ONE trading day, with real exchange-local timestamps.
+ * Yahoo only serves fine intervals for a short recent window (1m ≈ last few
+ * days), so this fetches that window and filters to the requested day.
+ * @param {string} symbol
+ * @param {{ interval?: string, date?: string, signal?: AbortSignal }} [opts]
+ *   `interval` e.g. '1m','5m' (default '1m'); `date` 'YYYY-MM-DD' in the
+ *   exchange's local time (default: the most recent day present in the data).
+ * @returns {Promise<{symbol:string,date:string,interval:string,count:number,
+ *   currency:string,exchange:string,
+ *   rows:{time:string,hhmm:string,open:number,high:number,low:number,close:number,volume:(number|null)}[]}>}
+ */
+export async function intraday(symbol, opts = {}) {
+  const interval = opts.interval || '1m';
+  // 1m/2m data spans only a few days on Yahoo; coarser intervals reach further.
+  const range = ['1m', '2m'].includes(interval) ? '5d' : ['5m', '15m', '30m', '60m', '90m', '1h'].includes(interval) ? '1mo' : '5d';
+  const result = await fetchChart(symbol, { range, interval, signal: opts.signal });
+  const off = result.meta?.gmtoffset || 0; // seconds; shifts UTC into exchange-local
+  const ts = result.timestamp || [];
+  const q = result.indicators?.quote?.[0] || {};
+  const all = [];
+  for (let i = 0; i < ts.length; i++) {
+    if (q.open?.[i] == null || q.close?.[i] == null) continue;
+    // Add the offset, then read the UTC parts — that yields exchange wall-clock.
+    const d = new Date((ts[i] + off) * 1000);
+    all.push({
+      localDate: d.toISOString().slice(0, 10),
+      time: d.toISOString().slice(0, 16).replace('T', ' '),
+      hhmm: d.toISOString().slice(11, 16),
+      open: q.open[i],
+      high: q.high?.[i],
+      low: q.low?.[i],
+      close: q.close[i],
+      volume: q.volume?.[i] ?? null,
+    });
+  }
+  if (!all.length) throw new Error(`No intraday data for "${symbol}" at ${interval}.`);
+  const dates = [...new Set(all.map((r) => r.localDate))].sort();
+  const date = opts.date || dates[dates.length - 1];
+  const rows = all.filter((r) => r.localDate === date).map(({ localDate, ...r }) => r);
+  if (!rows.length) {
+    throw new Error(`No ${interval} candles for ${symbol} on ${date}. Available days: ${dates.join(', ')}.`);
+  }
+  return {
+    symbol: result.meta.symbol,
+    date,
+    interval,
+    count: rows.length,
+    currency: result.meta.currency,
+    exchange: result.meta.fullExchangeName || result.meta.exchangeName,
+    rows,
+  };
+}
+
 // CLI:
 //   node market-data.mjs AAPL                 -> latest quote
 //   node market-data.mjs HDFCBANK.NS --candles [range] [interval]  -> OHLC table
+//   node market-data.mjs HDFCBANK.NS --intraday [date] [interval]  -> one day, intraday
 if (import.meta.url === `file://${process.argv[1]}`) {
   const args = process.argv.slice(2);
   const symbol = args.find((a) => !a.startsWith('--'));
   const wantCandles = args.includes('--candles');
+  const wantIntraday = args.includes('--intraday');
   if (!symbol) {
-    console.error('Usage: node market-data.mjs <SYMBOL> [--candles [range] [interval]]');
+    console.error('Usage: node market-data.mjs <SYMBOL> [--candles [range] [interval]] [--intraday [date] [interval]]');
     console.error('  e.g. node market-data.mjs AAPL');
     console.error('       node market-data.mjs HDFCBANK.NS --candles 3mo 1d');
+    console.error('       node market-data.mjs HDFCBANK.NS --intraday 2026-09-29 1m');
     process.exit(1);
   }
   const rest = args.filter((a) => a !== symbol && !a.startsWith('--'));
-  const run = wantCandles
+  const run = wantIntraday
+    ? intraday(symbol, { date: rest.find((r) => /^\d{4}-\d\d-\d\d$/.test(r)), interval: rest.find((r) => /^\d+(m|h)$/.test(r)) || '1m' }).then((d) => {
+        console.log(`${d.symbol} — ${d.exchange} — ${d.date} — ${d.interval} — ${d.count} candles`);
+        console.log(['time', 'open', 'high', 'low', 'close', 'volume'].join('\t'));
+        for (const r of d.rows) {
+          console.log([r.hhmm, r.open, r.high, r.low, r.close, r.volume].join('\t'));
+        }
+      })
+    : wantCandles
     ? candles(symbol, { range: rest[0] || '1mo', interval: rest[1] || '1d' }).then((rows) => {
         if (!rows.length) return console.log('No candles returned.');
         console.log(['date', 'open', 'high', 'low', 'close', 'volume'].join('\t'));

@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 
 import { chat } from './ling-client.mjs';
 import { RESEARCH_SYSTEM, research, summarize, explain } from './research.mjs';
-import { quote, candles, fetchChart } from './market-data.mjs';
+import { quote, candles, fetchChart, intraday } from './market-data.mjs';
 import { normCdf, greeks, payoff } from './blackscholes.mjs';
 import { computeStats, candleShape } from './describe-candles.mjs';
 
@@ -194,6 +194,37 @@ test('fetchChart() surfaces an API error payload', async () => {
 test('fetchChart() throws when the result set is empty', async () => {
   mockFetch({ chart: { error: null, result: [] } });
   await assert.rejects(() => fetchChart('AAPL'), /No market data found/);
+});
+
+test('intraday() filters to one exchange-local day and formats HH:MM from gmtoffset', async () => {
+  const off = 19800; // IST +5:30
+  const t1 = Date.UTC(2024, 0, 2, 3, 45, 0) / 1000; // 09:15 IST, Jan 2
+  const t2 = t1 + 60; // 09:16 IST, Jan 2
+  const t0 = Date.UTC(2024, 0, 1, 4, 0, 0) / 1000; // 09:30 IST, Jan 1 (prior day)
+  const chart = {
+    chart: {
+      error: null,
+      result: [
+        {
+          meta: { symbol: 'X.NS', gmtoffset: off, currency: 'INR', fullExchangeName: 'NSE' },
+          timestamp: [t0, t1, t2],
+          indicators: { quote: [{ open: [10, 20, 21], high: [11, 21, 22], low: [9, 19, 20], close: [10.5, 20.5, 21.5], volume: [100, 200, 300] }] },
+        },
+      ],
+    },
+  };
+  mockFetch(chart);
+  const d = await intraday('X.NS', { interval: '1m' }); // default: latest day present
+  assert.equal(d.date, '2024-01-02');
+  assert.equal(d.count, 2);
+  assert.equal(d.rows[0].hhmm, '09:15');
+  assert.equal(d.rows[1].hhmm, '09:16');
+  assert.equal(d.rows[0].volume, 200);
+
+  mockFetch(chart);
+  const prior = await intraday('X.NS', { interval: '1m', date: '2024-01-01' });
+  assert.equal(prior.count, 1);
+  assert.equal(prior.rows[0].hhmm, '09:30');
 });
 
 // --- black-scholes (pure maths, no network/model) --------------------------

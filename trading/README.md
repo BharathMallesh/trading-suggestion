@@ -70,7 +70,12 @@ other exchanges (`HDFCBANK.NS` for NSE India, `BP.L` for London).
 ```bash
 node trading/market-data.mjs AAPL                        # latest quote
 node trading/market-data.mjs HDFCBANK.NS --candles 3mo 1d # OHLC candles
+node trading/market-data.mjs HDFCBANK.NS --intraday 2026-09-29 1m  # one day, intraday
 ```
+
+The dashboard can draw a full trading day as a TradingView-style intraday chart
+(candles + volume + time axis) — pick **"Yesterday (1-min)"** in the market panel.
+Fine intervals (1m) are only available for the last few days (a Yahoo limit).
 
 ```js
 import { quote, candles } from './trading/market-data.mjs';
