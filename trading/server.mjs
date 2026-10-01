@@ -68,6 +68,36 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/api/quote') {
       return json(res, 200, await quote(url.searchParams.get('symbol')));
     }
+
+    // --- snapshot of several symbols at once (indices + stocks watchlist) ---
+    if (req.method === 'GET' && url.pathname === '/api/snapshot') {
+      const syms = (url.searchParams.get('symbols') || '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .slice(0, 30);
+      const rows = await Promise.all(
+        syms.map(async (s) => {
+          try {
+            const q = await quote(s);
+            const change = q.price - q.previousClose;
+            return {
+              ok: true,
+              symbol: q.symbol,
+              name: q.name,
+              price: q.price,
+              previousClose: q.previousClose,
+              change: +change.toFixed(2),
+              pct: q.previousClose ? +((change / q.previousClose) * 100).toFixed(2) : 0,
+              currency: q.currency,
+            };
+          } catch (e) {
+            return { ok: false, symbol: s, error: e.message };
+          }
+        }),
+      );
+      return json(res, 200, { rows });
+    }
     if (req.method === 'GET' && url.pathname === '/api/candles') {
       const rows = await candles(url.searchParams.get('symbol'), {
         range: url.searchParams.get('range') || '1mo',

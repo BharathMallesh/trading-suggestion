@@ -63,6 +63,17 @@
     </header>
 
     <main>
+      <!-- Today's market panel -->
+      <section class="card span2">
+        <h2>Today's market</h2>
+        <p class="hint">Live snapshot of a watchlist (comma-separated). Prices may be delayed. Facts only — no forecast.</p>
+        <div class="row">
+          <input id="watch" value="^NSEI,^BSESN,RELIANCE.NS,HDFCBANK.NS,TCS.NS,INFY.NS" style="flex: 4" />
+          <button id="snapBtn" style="flex: none">Refresh</button>
+        </div>
+        <div class="out" id="snapOut"></div>
+      </section>
+
       <!-- Ask panel -->
       <section class="card span2">
         <h2>Ask (research · explain · summarize)</h2>
@@ -315,6 +326,37 @@
         if (!res.ok) throw new Error(data.error || res.statusText);
         return data;
       }
+
+      // --- Today's market snapshot ---
+      async function loadSnapshot() {
+        const out = $('snapOut');
+        out.className = 'out';
+        out.textContent = 'Loading…';
+        try {
+          const { rows } = await api('/api/snapshot?symbols=' + encodeURIComponent($('watch').value));
+          let up = 0, down = 0;
+          let html = '<table><tr><th>Symbol</th><th>Price</th><th>Change</th><th>%</th></tr>';
+          for (const r of rows) {
+            if (!r.ok) {
+              html += `<tr><td>${esc(r.symbol)}</td><td colspan="3" class="err">${esc(r.error)}</td></tr>`;
+              continue;
+            }
+            if (r.change >= 0) up++; else down++;
+            const col = r.change >= 0 ? 'var(--up)' : 'var(--down)';
+            const sign = r.change >= 0 ? '+' : '';
+            html += `<tr><td title="${esc(r.name)}">${esc(r.symbol)}</td><td>${r.price} ${esc(r.currency || '')}</td>` +
+              `<td style="color:${col}">${sign}${r.change}</td><td style="color:${col}">${sign}${r.pct}%</td></tr>`;
+          }
+          html += '</table>';
+          html += `<div class="note">${up} up · ${down} down · ${new Date().toLocaleTimeString()} — public data, may be delayed. Describes current prints, not a forecast.</div>`;
+          out.innerHTML = html;
+        } catch (e) {
+          out.className = 'out err';
+          out.textContent = 'Error: ' + e.message;
+        }
+      }
+      $('snapBtn').addEventListener('click', loadSnapshot);
+      loadSnapshot();
 
       // --- Ask ---
       let mode = 'research';
