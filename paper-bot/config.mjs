@@ -1,0 +1,67 @@
+// Paper-bot configuration (experimental signal + paper trading system)
+// Tuned for fewer, higher-quality paper trades on a ₹10k account.
+
+export const PAPER = {
+  // Starting paper capital (INR)
+  startingCapital: 10_000,
+
+  // Risk management — (2) larger size than before, still capped
+  riskPerTradePct: 2.5,       // % of equity risked per trade (was 1.5)
+  maxPositionPct: 35,         // max % of equity in one name (was 25)
+  maxOpenPositions: 3,
+
+  // Stop / Target — (3) better R:R for win-rate economics
+  stopAtrMult: 1.5,           // stop distance = ATR × this
+  targetAtrMult: 3.0,         // target = 3× ATR (was 2.5) → need fewer wins to break even
+  useStops: true,
+
+  // (3) Win-rate helpers
+  minHoldBars: 3,             // don't exit on signal for at least N bars
+  cooldownBarsAfterLoss: 3,   // no re-entry in same symbol for N bars after a loss
+
+  allowShort: true,
+
+  symbols: [
+    'RELIANCE.NS',
+    'HDFCBANK.NS',
+    'TCS.NS',
+    'INFY.NS',
+    'ICICIBANK.NS',
+    'SBIN.NS',
+    'BHARTIARTL.NS',
+    'ITC.NS',
+    'LT.NS',
+    'AXISBANK.NS',
+  ],
+
+  candleRange: '6mo',
+  candleInterval: '1d',
+
+  intraday: {
+    '15m': { range: '5d', interval: '15m', lookbackBars: 80 },
+    '5m':  { range: '5d', interval: '5m',  lookbackBars: 100 },
+    '1h':  { range: '1mo', interval: '60m', lookbackBars: 60 },
+  },
+
+  lookbackBars: 60,
+
+  // (1) Confidence threshold — only act at/above this
+  minConfidence: 0.60,
+
+  brokeragePct: 0.03,
+  slippagePct: 0.05,
+};
+
+// Technical filters — stricter for higher-quality setups
+export const TECH = {
+  rsiPeriod: 14,
+  rsiOverbought: 65,
+  rsiOversold: 35,
+  smaFast: 20,
+  smaSlow: 50,
+  atrPeriod: 14,
+  minVolRatio: 1.0,           // prefer average-or-better volume
+  minSmaSeparationPct: 0.5,   // clearer trend separation
+  // (3) Trend alignment: LONG only above SMA-50, SHORT only below
+  requireTrendAlign: true,
+};

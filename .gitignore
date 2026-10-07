@@ -1,0 +1,21 @@
+# secrets / env
+.env
+.env.*
+*.pem
+*.key
+
+# node / logs
+node_modules/
+npm-debug.log*
+*.log
+.DS_Store
+
+# generated
+paper-bot/last-backtest.json
+
+# editor
+.idea/
+.vscode/
+*.swp
+
+paper-bot/prediction-history.json

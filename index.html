@@ -1,0 +1,1122 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Trading Research Dashboard</title>
+    <style>
+      :root {
+        --bg: #0f1420; --panel: #171e2e; --line: #263149; --ink: #e7ecf5;
+        --muted: #97a3ba; --accent: #5b9dff; --up: #34d399; --down: #f87171;
+        --warn: #fbbf24;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0; background: var(--bg); color: var(--ink);
+        font: 15px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      }
+      header { padding: 20px 24px; border-bottom: 1px solid var(--line); }
+      h1 { margin: 0; font-size: 18px; }
+      .sub { color: var(--muted); font-size: 13px; margin-top: 4px; }
+      .banner {
+        margin: 12px 24px 0; padding: 10px 14px; border-radius: 8px; font-size: 13px;
+        background: rgba(251, 191, 36, 0.1); border: 1px solid rgba(251, 191, 36, 0.35);
+        color: var(--warn);
+      }
+      main { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 16px 24px 40px; }
+      @media (max-width: 860px) { main { grid-template-columns: 1fr; } }
+      .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+      .card h2 { margin: 0 0 4px; font-size: 15px; }
+      .card p.hint { margin: 0 0 12px; color: var(--muted); font-size: 12.5px; }
+      .span2 { grid-column: 1 / -1; }
+      label { display: block; font-size: 12px; color: var(--muted); margin: 8px 0 3px; }
+      input, select, textarea, button {
+        font: inherit; color: var(--ink); background: #0d1320; border: 1px solid var(--line);
+        border-radius: 8px; padding: 8px 10px; width: 100%;
+      }
+      textarea { min-height: 80px; resize: vertical; }
+      .row { display: flex; gap: 8px; flex-wrap: wrap; }
+      .row > * { flex: 1; min-width: 90px; }
+      button {
+        background: var(--accent); border: none; color: #071019; font-weight: 600;
+        cursor: pointer; width: auto; padding: 9px 16px; margin-top: 12px;
+      }
+      button:disabled { opacity: 0.5; cursor: default; }
+      .out { margin-top: 12px; white-space: pre-wrap; font-size: 14px; }
+      .err { color: var(--down); }
+      table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
+      th, td { text-align: right; padding: 5px 8px; border-bottom: 1px solid var(--line); }
+      th:first-child, td:first-child { text-align: left; }
+      .kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; margin-top: 10px; font-size: 14px; }
+      .kv div:nth-child(odd) { color: var(--muted); }
+      .quote-head { font-size: 15px; font-weight: 600; margin-top: 8px; }
+      .note { color: var(--muted); font-size: 12px; margin-top: 10px; }
+      .tabs { display: flex; gap: 6px; margin-bottom: 10px; }
+      .tabs button { background: #0d1320; color: var(--muted); border: 1px solid var(--line); margin: 0; padding: 6px 12px; }
+      .tabs button.active { background: var(--accent); color: #071019; border-color: var(--accent); }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Trading Research Dashboard</h1>
+      <div class="sub">Research &amp; education only — no price predictions, no buy/sell/hold, no broker. Decision-support, never decision-making.</div>
+    </header>
+
+    <main>
+      <!-- Ask panel -->
+      <section class="card span2">
+        <h2>Ask (research · explain · summarize)</h2>
+        <p class="hint">Factual, educational answers from Ling 3.0 Flash Fin. It will decline to predict prices or recommend trades.</p>
+        <div class="tabs" id="askTabs">
+          <button data-mode="research" class="active">Research</button>
+          <button data-mode="explain">Explain a concept</button>
+          <button data-mode="summarize">Summarize text</button>
+        </div>
+        <div id="qWrap">
+          <label id="qLabel">Question</label>
+          <input id="q" placeholder="e.g. What drives a bank's net interest margin?" />
+        </div>
+        <div id="sumWrap" style="display: none">
+          <label>Paste a filing / news / transcript</label>
+          <textarea id="text" placeholder="Paste the source text here…"></textarea>
+          <label>Focus (optional)</label>
+          <input id="focus" placeholder="e.g. the revenue segments" />
+        </div>
+        <button id="askBtn">Ask</button>
+        <div class="out" id="askOut"></div>
+      </section>
+
+      <!-- Market data panel -->
+      <section class="card">
+        <h2>Market data (read-only)</h2>
+        <p class="hint">Public delayed quotes &amp; candles. US tickers bare (AAPL); others with a suffix (RELIANCE.NS, BP.L).</p>
+        <div class="row">
+          <input id="sym" placeholder="RELIANCE.NS" style="flex: 2" />
+          <select id="range">
+            <option value="yesterday">Yesterday (1-min)</option>
+            <option value="1d-intra">Today (5-min)</option>
+            <option value="1d">Today (1 candle)</option>
+            <option value="5d">5d</option>
+            <option value="1mo" selected>1mo</option>
+            <option value="3mo">3mo</option>
+            <option value="6mo">6mo</option>
+            <option value="1y">1y</option>
+          </select>
+        </div>
+        <div class="row" style="margin-top:4px;gap:8px;flex-wrap:wrap">
+          <button id="mktBtn" style="margin-top:0">Fetch</button>
+          <button id="descBtn" style="margin-top:0;background:#0d1320;color:var(--ink);border:1px solid var(--line)">Describe the data</button>
+          <button id="probBtn" style="margin-top:0;background:var(--accent);color:#071019;font-weight:700">Call / Put %</button>
+        </div>
+        <div id="chartOut" style="margin-top: 12px"></div>
+        <div class="out" id="mktOut"></div>
+        <div class="out" id="descOut"></div>
+        <div class="out" id="probOut"></div>
+      </section>
+
+      <!-- Option calculator panel -->
+      <section class="card">
+        <h2>Option calculator (offline maths)</h2>
+        <p class="hint">Black-Scholes greeks &amp; payoff for numbers you enter. No data fetch, no broker — same numbers in, same numbers out.</p>
+        <div class="row">
+          <div><label>Spot</label><input id="spot" type="number" value="2500" /></div>
+          <div><label>Strike</label><input id="strike" type="number" value="2520" /></div>
+          <div><label>Days</label><input id="days" type="number" value="7" /></div>
+        </div>
+        <div class="row">
+          <div><label>IV %</label><input id="iv" type="number" value="18" /></div>
+          <div><label>Type</label><select id="otype"><option>CE</option><option>PE</option></select></div>
+          <div><label>Action</label><select id="action"><option value="">— (greeks only)</option><option value="buy">buy</option><option value="sell">sell</option></select></div>
+        </div>
+        <div class="row">
+          <div><label>Lot size</label><input id="lot" type="number" value="250" /></div>
+          <div><label>Premium (blank = theoretical)</label><input id="premium" type="number" placeholder="auto" /></div>
+        </div>
+        <button id="optBtn">Calculate</button>
+        <div class="out" id="optOut"></div>
+      </section>
+
+      <!-- Paper-Bot panel (experimental) -->
+      <section class="card span2">
+        <h2>Paper-Bot <span style="font-size:12px;color:var(--warn);font-weight:500">EXPERIMENTAL</span></h2>
+        <p class="hint">
+          Signals + paper simulation + multi-agent brief.
+          Not investment advice — no proven edge. Paper only.
+        </p>
+        <div class="row">
+          <div style="flex:2">
+            <label>Symbols (comma-separated, blank = defaults)</label>
+            <input id="pbSyms" placeholder="RELIANCE.NS, TCS.NS, INFY.NS" />
+          </div>
+          <div>
+            <label>Mode</label>
+            <select id="pbMode">
+              <option value="tech">Tech-only (no key)</option>
+              <option value="hybrid">Hybrid (needs key)</option>
+            </select>
+          </div>
+          <div>
+            <label>Interval</label>
+            <select id="pbInterval">
+              <option value="1d" selected>Daily</option>
+              <option value="15m">15-min</option>
+              <option value="5m">5-min</option>
+              <option value="1h">1-hour</option>
+            </select>
+          </div>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <button id="pbBtn">Run scan</button>
+          <button id="pbBacktestBtn" style="background:#0d1320;color:var(--ink);border:1px solid var(--line)">Run backtest</button>
+          <button id="pbAgentsBtn" style="background:#0d1320;color:var(--ink);border:1px solid var(--line)">Run agents</button>
+        </div>
+        <div id="pbStatus" class="note" style="display:none"></div>
+        <div id="pbOut" style="margin-top:12px"></div>
+      </section>
+
+      <!-- Candle → Ling prediction (experimental) -->
+      <section class="card span2">
+        <h2>Candle AI read <span style="font-size:12px;color:var(--warn);font-weight:500">EXPERIMENTAL</span></h2>
+        <p class="hint">
+          Sends recent OHLC candles + indicators to Ling and returns a structured directional lean
+          (bullish / bearish / neutral). Not investment advice — models cannot reliably predict prices.
+        </p>
+        <div class="row">
+          <div style="flex:2">
+            <label>Symbol</label>
+            <input id="cpSym" placeholder="RELIANCE.NS" value="RELIANCE.NS" />
+          </div>
+          <div>
+            <label>Range</label>
+            <select id="cpRange">
+              <option value="1mo">1mo</option>
+              <option value="3mo" selected>3mo</option>
+              <option value="6mo">6mo</option>
+            </select>
+          </div>
+          <div>
+            <label>Interval</label>
+            <select id="cpInterval">
+              <option value="1d" selected>Daily</option>
+              <option value="15m">15-min</option>
+              <option value="1h">1-hour</option>
+            </select>
+          </div>
+        </div>
+        <button id="cpBtn">Analyze candles with Ling</button>
+        <div id="cpStatus" class="note" style="display:none"></div>
+        <div id="cpOut" style="margin-top:12px"></div>
+      </section>
+
+      <!-- Groww live → Ling probability -->
+      <section class="card span2">
+        <h2>Live candles → Ling probability <span style="font-size:12px;color:var(--warn);font-weight:500">EXPERIMENTAL</span></h2>
+        <p class="hint">
+          Two modes: <b>15‑min only</b> (single timeframe) vs <b>Multi‑horizon mix</b>
+          (2m 20% · 1m 20% · Today 25% · 1h 20% · 15m 15%). Yahoo + Ling. Not investment advice.
+        </p>
+        <div class="row" style="gap:8px;margin-bottom:10px">
+          <button type="button" id="gpTab15" class="gp-tab" style="margin-top:0;background:var(--accent);color:#071019;font-weight:700">15‑min only</button>
+          <button type="button" id="gpTabMulti" class="gp-tab" style="margin-top:0;background:#0d1320;color:var(--ink);border:1px solid var(--line)">Multi‑horizon mix</button>
+          <input type="hidden" id="gpMode" value="15m" />
+        </div>
+        <div class="row">
+          <div style="flex:2">
+            <label>Symbol (NSE, with or without .NS)</label>
+            <input id="gpSym" placeholder="HDFCBANK or RELIANCE.NS" value="HDFCBANK" />
+          </div>
+          <div>
+            <label>Interval (minutes)</label>
+            <select id="gpInterval">
+              <option value="5">5</option>
+              <option value="15" selected>15</option>
+              <option value="60">60</option>
+            </select>
+          </div>
+          <div>
+            <label>Data source</label>
+            <select id="gpSource">
+              <option value="yahoo" selected>Yahoo only</option>
+              <option value="groww">Groww first (optional)</option>
+            </select>
+          </div>
+        </div>
+        <button id="gpBtn">Fetch + get probabilities</button>
+        <div id="gpStatus" class="note" style="display:none"></div>
+        <div id="gpOut" style="margin-top:12px"></div>
+      </section>
+
+      <!-- Hit-rate calibration (research) -->
+      <section class="card span2">
+        <h2>Prediction hit-rate <span style="font-size:12px;color:var(--warn);font-weight:500">RESEARCH</span></h2>
+        <p class="hint">
+          Every Call/Put run is logged. After enough time, <b>Evaluate</b> compares the bias to the later Yahoo price.
+          Hit-rate is descriptive only — not a guarantee of future accuracy.
+        </p>
+        <div class="row" style="gap:8px">
+          <button id="hrEvalBtn" type="button">Evaluate pending (≥1h old)</button>
+          <button id="hrStatsBtn" type="button" style="background:#0d1320;color:var(--ink);border:1px solid var(--line)">Refresh stats</button>
+        </div>
+        <div id="hrOut" style="margin-top:12px"></div>
+      </section>
+    </main>
+
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+
+      // Map the range dropdown to Yahoo range+interval. "Today (5-min)" is
+      // intraday; everything else is daily candles.
+      function rangeParams() {
+        const v = $('range').value;
+        if (v === '1d-intra') return 'range=1d&interval=5m';
+        return 'range=' + v + '&interval=1d';
+      }
+
+      // Draw a candlestick chart from OHLC rows — pure SVG, no library.
+      function renderCandles(rows, rangeLabel, sym) {
+        if (!rows || !rows.length) return '';
+        const view = rows.slice(-120);
+        const W = 600, H = 280, padL = 48, padR = 10, padT = 12, padB = 24;
+        const plotW = W - padL - padR, plotH = H - padT - padB;
+        let min = Infinity, max = -Infinity;
+        for (const r of view) { if (r.low < min) min = r.low; if (r.high > max) max = r.high; }
+        const raw = max - min || 1;
+        min -= raw * 0.04; max += raw * 0.04;
+        const yFor = (p) => padT + ((max - p) / (max - min)) * plotH;
+        const step = plotW / view.length;
+        const bodyW = Math.max(1, Math.min(14, step * 0.6));
+        const dec = max >= 1000 ? 1 : 2;
+        let s = '';
+        for (let k = 0; k <= 4; k++) {
+          const price = min + ((max - min) * k) / 4;
+          const y = yFor(price).toFixed(1);
+          s += `<line x1="${padL}" y1="${y}" x2="${W - padR}" y2="${y}" stroke="var(--line)" stroke-width="0.5"/>`;
+          s += `<text x="${padL - 6}" y="${y}" text-anchor="end" dominant-baseline="central" fill="var(--muted)" font-size="10">${price.toFixed(dec)}</text>`;
+        }
+        view.forEach((r, i) => {
+          const cx = padL + (i + 0.5) * step;
+          const col = r.close >= r.open ? 'var(--up)' : 'var(--down)';
+          const yH = yFor(r.high), yL = yFor(r.low), yO = yFor(r.open), yC = yFor(r.close);
+          const top = Math.min(yO, yC), h = Math.max(1, Math.abs(yO - yC));
+          s += `<line x1="${cx.toFixed(1)}" y1="${yH.toFixed(1)}" x2="${cx.toFixed(1)}" y2="${yL.toFixed(1)}" stroke="${col}" stroke-width="1"/>`;
+          s += `<rect x="${(cx - bodyW / 2).toFixed(1)}" y="${top.toFixed(1)}" width="${bodyW.toFixed(1)}" height="${h.toFixed(1)}" fill="${col}"/>`;
+        });
+        s += `<text x="${padL}" y="${H - 8}" text-anchor="start" fill="var(--muted)" font-size="10">${view[0].date}</text>`;
+        s += `<text x="${W - padR}" y="${H - 8}" text-anchor="end" fill="var(--muted)" font-size="10">${view[view.length - 1].date}</text>`;
+        const trunc = rows.length > view.length ? ` (last ${view.length})` : '';
+        return (
+          `<div style="font-size:12px;color:var(--muted);margin-bottom:4px">${esc(sym)} · ${esc(rangeLabel)}${trunc} — ` +
+          `<span style="color:var(--up)">■</span> up  <span style="color:var(--down)">■</span> down</div>` +
+          `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Candlestick chart for ${esc(sym)}" style="display:block">${s}</svg>`
+        );
+      }
+
+      // TradingView-style intraday chart: candles on top, volume strip below,
+      // price axis on the right, time axis (HH:MM) underneath. Pure SVG.
+      function renderIntradayChart(d) {
+        const rows = d.rows || [];
+        if (!rows.length) return '<div class="err">No intraday candles.</div>';
+        const W = 700, H = 430, plotL = 8, plotR = W - 54;
+        const plotW = plotR - plotL;
+        const priceTop = 30, priceH = 250, volTop = 296, volH = 74;
+        let min = Infinity, max = -Infinity, maxVolRaw = 0;
+        const vols = [];
+        for (const r of rows) {
+          if (r.low < min) min = r.low;
+          if (r.high > max) max = r.high;
+          if (r.volume != null) { vols.push(r.volume); if (r.volume > maxVolRaw) maxVolRaw = r.volume; }
+        }
+        const rawSpan = max - min || 1;
+        min -= rawSpan * 0.03; max += rawSpan * 0.03;
+        // Robust volume scale: use the 98th percentile so a closing-auction
+        // spike doesn't flatten every other bar (spikes just max out).
+        const sorted = [...vols].sort((a, b) => a - b);
+        const volScale = sorted.length ? sorted[Math.floor(sorted.length * 0.98)] || maxVolRaw : 1;
+        const yP = (p) => priceTop + ((max - p) / (max - min)) * priceH;
+        const step = plotW / rows.length;
+        const bodyW = Math.max(1, Math.min(6, step * 0.7));
+        const dec = max >= 1000 ? 1 : 2;
+        let s = '';
+        // price gridlines + right axis
+        for (let k = 0; k <= 4; k++) {
+          const price = min + ((max - min) * k) / 4;
+          const y = yP(price).toFixed(1);
+          s += `<line x1="${plotL}" y1="${y}" x2="${plotR}" y2="${y}" stroke="var(--line)" stroke-width="0.5"/>`;
+          s += `<text x="${plotR + 6}" y="${y}" text-anchor="start" dominant-baseline="central" fill="var(--muted)" font-size="10">${price.toFixed(dec)}</text>`;
+        }
+        // candles + volume
+        rows.forEach((r, i) => {
+          const cx = plotL + (i + 0.5) * step;
+          const col = r.close >= r.open ? 'var(--up)' : 'var(--down)';
+          const yH = yP(r.high), yL = yP(r.low), yO = yP(r.open), yC = yP(r.close);
+          s += `<line x1="${cx.toFixed(1)}" y1="${yH.toFixed(1)}" x2="${cx.toFixed(1)}" y2="${yL.toFixed(1)}" stroke="${col}" stroke-width="0.7"/>`;
+          s += `<rect x="${(cx - bodyW / 2).toFixed(1)}" y="${Math.min(yO, yC).toFixed(1)}" width="${bodyW.toFixed(1)}" height="${Math.max(0.8, Math.abs(yO - yC)).toFixed(1)}" fill="${col}"/>`;
+          if (r.volume != null) {
+            const vh = Math.min(volH, (r.volume / (volScale || 1)) * volH);
+            s += `<rect x="${(cx - bodyW / 2).toFixed(1)}" y="${(volTop + volH - vh).toFixed(1)}" width="${bodyW.toFixed(1)}" height="${vh.toFixed(1)}" fill="${col}" opacity="0.5"/>`;
+          }
+        });
+        // time axis: ~8 labels evenly across the session
+        const nLabels = Math.min(8, rows.length);
+        for (let j = 0; j < nLabels; j++) {
+          const i = Math.round((j * (rows.length - 1)) / (nLabels - 1 || 1));
+          const cx = plotL + (i + 0.5) * step;
+          s += `<text x="${cx.toFixed(1)}" y="${H - 6}" text-anchor="middle" fill="var(--muted)" font-size="10">${rows[i].hhmm}</text>`;
+        }
+        // header O/H/L/C for the day
+        const o = rows[0].open, c = rows[rows.length - 1].close;
+        const dayHi = Math.max(...rows.map((r) => r.high)), dayLo = Math.min(...rows.map((r) => r.low));
+        const chg = c - o, pct = o ? (chg / o) * 100 : 0;
+        const chgCol = chg >= 0 ? 'var(--up)' : 'var(--down)';
+        const hdr =
+          `<div style="font-size:12px;margin-bottom:6px"><span style="color:var(--ink)">${esc(d.symbol)}</span> ` +
+          `<span style="color:var(--muted)">· ${esc(d.date)} · ${esc(d.interval)} · ${esc(d.exchange || '')} · ${d.count} candles</span><br>` +
+          `<span style="color:var(--muted)">O</span> ${o.toFixed(dec)} <span style="color:var(--muted)">H</span> ${dayHi.toFixed(dec)} ` +
+          `<span style="color:var(--muted)">L</span> ${dayLo.toFixed(dec)} <span style="color:var(--muted)">C</span> ${c.toFixed(dec)} ` +
+          `<span style="color:${chgCol}">${chg >= 0 ? '+' : ''}${chg.toFixed(dec)} (${chg >= 0 ? '+' : ''}${pct.toFixed(2)}%)</span></div>`;
+        return hdr + `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Intraday candlestick chart for ${esc(d.symbol)} on ${esc(d.date)}" style="display:block">${s}</svg>`;
+      }
+
+      async function api(path, opts) {
+        const res = await fetch(path, opts);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        return data;
+      }
+
+      // --- Ask ---
+      let mode = 'research';
+      $('askTabs').addEventListener('click', (e) => {
+        if (e.target.tagName !== 'BUTTON') return;
+        mode = e.target.dataset.mode;
+        [...$('askTabs').children].forEach((b) => b.classList.toggle('active', b === e.target));
+        $('sumWrap').style.display = mode === 'summarize' ? 'block' : 'none';
+        $('qWrap').style.display = mode === 'summarize' ? 'none' : 'block';
+        $('qLabel').textContent = mode === 'explain' ? 'Concept to explain' : 'Question';
+      });
+      $('askBtn').addEventListener('click', async () => {
+        const out = $('askOut');
+        out.className = 'out';
+        out.textContent = 'Thinking…';
+        $('askBtn').disabled = true;
+        try {
+          const body = mode === 'summarize'
+            ? { mode, text: $('text').value, focus: $('focus').value }
+            : { mode, question: $('q').value };
+          const { answer } = await api('/api/ask', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          });
+          out.textContent = answer || '(empty response)';
+        } catch (e) {
+          out.className = 'out err';
+          out.textContent = 'Error: ' + e.message;
+        } finally {
+          $('askBtn').disabled = false;
+        }
+      });
+
+      // --- Market data ---
+      $('mktBtn').addEventListener('click', async () => {
+        const out = $('mktOut');
+        out.className = 'out';
+        out.textContent = 'Loading…';
+        $('chartOut').innerHTML = '';
+        try {
+          const sym = $('sym').value.trim();
+          // Intraday one-day view (TradingView style): its own endpoint + chart.
+          if ($('range').value === 'yesterday') {
+            const d = await api('/api/intraday?symbol=' + encodeURIComponent(sym) + '&interval=1m');
+            $('chartOut').innerHTML = renderIntradayChart(d);
+            out.innerHTML = `<div class="note">${esc(d.symbol)} — ${esc(d.date)} — ${d.count} one-minute candles. Public data, may be delayed.</div>`;
+            return;
+          }
+          const q = await api('/api/quote?symbol=' + encodeURIComponent(sym));
+          const { rows } = await api('/api/candles?symbol=' + encodeURIComponent(sym) + '&' + rangeParams());
+          $('chartOut').innerHTML = renderCandles(rows, $('range').selectedOptions[0].textContent, sym);
+          const chg = q.price - q.previousClose;
+          const pct = q.previousClose ? (chg / q.previousClose) * 100 : 0;
+          const col = chg >= 0 ? 'var(--up)' : 'var(--down)';
+          let html = `<div class="quote-head">${esc(q.name)} <span style="color:var(--muted)">(${esc(q.symbol)} · ${esc(q.exchange || '')})</span></div>`;
+          html += `<div class="kv">
+            <div>Price</div><div>${q.price} ${esc(q.currency || '')} <span style="color:${col}">(${chg >= 0 ? '+' : ''}${chg.toFixed(2)}, ${pct.toFixed(2)}%)</span></div>
+            <div>Prev close</div><div>${q.previousClose}</div>
+            <div>Day range</div><div>${q.dayLow} – ${q.dayHigh}</div>
+            <div>52-week</div><div>${q.fiftyTwoWeekLow} – ${q.fiftyTwoWeekHigh}</div>
+            <div>Volume</div><div>${(q.volume || 0).toLocaleString()}</div>
+          </div>`;
+          const tail = rows.slice(-10).reverse();
+          html += '<table><tr><th>Date</th><th>Open</th><th>High</th><th>Low</th><th>Close</th></tr>';
+          for (const r of tail) html += `<tr><td>${r.date}</td><td>${r.open}</td><td>${r.high}</td><td>${r.low}</td><td>${r.close}</td></tr>`;
+          html += '</table><div class="note">Public data, may be delayed. Latest 10 rows shown.</div>';
+          out.innerHTML = html;
+        } catch (e) {
+          out.className = 'out err';
+          out.textContent = 'Error: ' + e.message;
+        }
+      });
+
+      // --- Describe the data (facts always; narration if the key is set) ---
+      $('descBtn').addEventListener('click', async () => {
+        const out = $('descOut');
+        out.className = 'out';
+        out.textContent = 'Reading the data…';
+        const sym = $('sym').value.trim();
+        const rp = rangeParams();
+        try {
+          let d;
+          try {
+            d = await api('/api/describe?symbol=' + encodeURIComponent(sym) + '&' + rp + '&narrate=1');
+          } catch (e) {
+            // No API key (or narration failed) — still show the deterministic facts.
+            if (/OPENROUTER_API_KEY|401|402/i.test(e.message)) {
+              d = await api('/api/describe?symbol=' + encodeURIComponent(sym) + '&' + rp + '&narrate=0');
+              d._noNarrate = true;
+            } else throw e;
+          }
+          let html = '<div style="font-family:var(--mono,monospace);font-size:13px">' + esc(d.facts).replace(/\n/g, '<br>') + '</div>';
+          if (d.narrative) {
+            html += '<div style="margin-top:12px;white-space:pre-wrap">' + esc(d.narrative) + '</div>';
+          } else if (d._noNarrate) {
+            html += '<div class="note">Plain-English description needs OPENROUTER_API_KEY set on the server. Facts above are computed offline.</div>';
+          }
+          html += '<div class="note">Describes what the data shows — not a forecast or a suggestion.</div>';
+          out.innerHTML = html;
+        } catch (e) {
+          out.className = 'out err';
+          out.textContent = 'Error: ' + e.message;
+        }
+      });
+
+      // --- Call / Put probability (Yahoo + Ling) ---
+      $('probBtn').addEventListener('click', async () => {
+        const out = $('probOut');
+        out.className = 'out';
+        out.textContent = 'Estimating Call / Put probabilities…';
+        const sym = $('sym').value.trim();
+        if (!sym) {
+          out.className = 'out err';
+          out.textContent = 'Enter a symbol first, e.g. RELIANCE.NS';
+          return;
+        }
+        try {
+          const d = await api('/api/groww-predict', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ symbol: sym, intervalMinutes: 15, preferYahoo: true }),
+          });
+          const p = d.prediction || {};
+          const callPct = ((Number(p.probUp) || 0) * 100).toFixed(0);
+          const putPct = ((Number(p.probDown) || 0) * 100).toFixed(0);
+          const sidePct = ((Number(p.probSideways) || 0) * 100).toFixed(0);
+          const confPct = ((Number(p.confidence) || 0) * 100).toFixed(0);
+          const biasColor =
+            p.bias === 'UP' ? 'var(--up)' : p.bias === 'DOWN' ? 'var(--down)' : 'var(--muted)';
+          out.innerHTML = `
+            <div class="note" style="margin-bottom:8px">${esc(d.disclaimer || '')}</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px">
+              <div style="background:#0d1320;border:1px solid var(--line);border-radius:8px;padding:12px;text-align:center">
+                <div style="font-size:11px;color:var(--muted)">CALL (up)</div>
+                <div style="font-size:28px;font-weight:700;color:var(--up)">${callPct}%</div>
+              </div>
+              <div style="background:#0d1320;border:1px solid var(--line);border-radius:8px;padding:12px;text-align:center">
+                <div style="font-size:11px;color:var(--muted)">PUT (down)</div>
+                <div style="font-size:28px;font-weight:700;color:var(--down)">${putPct}%</div>
+              </div>
+              <div style="background:#0d1320;border:1px solid var(--line);border-radius:8px;padding:12px;text-align:center">
+                <div style="font-size:11px;color:var(--muted)">SIDEWAYS</div>
+                <div style="font-size:28px;font-weight:700;color:var(--muted)">${sidePct}%</div>
+              </div>
+            </div>
+            <div class="kv">
+              <div>Bias</div><div style="color:${biasColor};font-weight:700">${esc(p.bias || '–')}</div>
+              <div>Confidence</div><div>${confPct}%</div>
+              <div>As of</div><div>${esc(d.asOf || '')} · last ${Number(d.lastClose || 0).toFixed(2)}</div>
+            </div>
+            <div style="margin-top:10px;white-space:pre-wrap;font-size:13px">${esc(p.summary || '')}</div>`;
+        } catch (e) {
+          out.className = 'out err';
+          out.textContent = 'Error: ' + e.message;
+        }
+      });
+
+      // --- Option calculator ---
+      $('optBtn').addEventListener('click', async () => {
+        const out = $('optOut');
+        out.className = 'out';
+        out.textContent = 'Calculating…';
+        try {
+          const p = new URLSearchParams({
+            spot: $('spot').value, strike: $('strike').value, days: $('days').value,
+            iv: $('iv').value, type: $('otype').value,
+          });
+          if ($('action').value) {
+            p.set('action', $('action').value);
+            p.set('lot', $('lot').value);
+            if ($('premium').value) p.set('premium', $('premium').value);
+          }
+          const d = await api('/api/option?' + p.toString());
+          const g = d.greeks;
+          let html = `<div class="kv">
+            <div>Theoretical price</div><div>${g.price.toFixed(2)}</div>
+            <div>Delta</div><div>${g.delta.toFixed(4)}</div>
+            <div>Gamma</div><div>${g.gamma.toFixed(6)}</div>
+            <div>Vega (per 1% IV)</div><div>${g.vegaPer1pct.toFixed(4)}</div>
+            <div>Theta (per day)</div><div>${g.thetaPerDay.toFixed(4)}</div>
+          </div>`;
+          if (d.payoff) {
+            const po = d.payoff;
+            html += `<div class="kv" style="margin-top:14px">
+              <div>Position</div><div>${esc(po.position)} @ ${d.premiumUsed.toFixed(2)}</div>
+              <div>Breakeven</div><div>${po.breakeven}</div>
+              <div>Max loss / lot</div><div>${po.perLot.maxLoss}</div>
+              <div>Max profit / lot</div><div>${po.perLot.maxProfit}</div>
+            </div>`;
+            html += '<div class="note">Mechanics of the position you described — not a suggestion to take it.</div>';
+          }
+          out.innerHTML = html;
+        } catch (e) {
+          out.className = 'out err';
+          out.textContent = 'Error: ' + e.message;
+        }
+      });
+
+      // --- Paper-Bot helpers ---
+      function pbParams() {
+        const raw = $('pbSyms').value.trim();
+        const symbols = raw
+          ? raw.split(/[,\s]+/).map((s) => s.trim()).filter(Boolean)
+          : undefined;
+        return {
+          symbols,
+          techOnly: $('pbMode').value === 'tech',
+          interval: $('pbInterval').value,
+        };
+      }
+
+      function renderEquityCurve(curve) {
+        if (!curve || curve.length < 2) return '';
+        const W = 640, H = 160, padL = 48, padR = 12, padT = 12, padB = 22;
+        const vals = curve.map((p) => p.equity);
+        let min = Math.min(...vals), max = Math.max(...vals);
+        const span = max - min || 1;
+        min -= span * 0.05; max += span * 0.05;
+        const plotW = W - padL - padR, plotH = H - padT - padB;
+        const xFor = (i) => padL + (i / (curve.length - 1)) * plotW;
+        const yFor = (v) => padT + ((max - v) / (max - min)) * plotH;
+        let path = '';
+        curve.forEach((p, i) => {
+          path += (i === 0 ? 'M' : 'L') + xFor(i).toFixed(1) + ',' + yFor(p.equity).toFixed(1);
+        });
+        const last = curve[curve.length - 1];
+        const first = curve[0];
+        const col = last.equity >= first.equity ? 'var(--up)' : 'var(--down)';
+        return `<div style="margin-top:12px">
+          <div style="font-size:12px;color:var(--muted);margin-bottom:4px">Equity curve</div>
+          <svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;background:#0d1320;border-radius:8px">
+            <path d="${path}" fill="none" stroke="${col}" stroke-width="2"/>
+            <text x="${padL}" y="${H - 6}" fill="var(--muted)" font-size="10">${esc(String(first.date || ''))}</text>
+            <text x="${W - padR}" y="${H - 6}" text-anchor="end" fill="var(--muted)" font-size="10">${esc(String(last.date || ''))}</text>
+            <text x="${padL - 4}" y="${yFor(max) + 3}" text-anchor="end" fill="var(--muted)" font-size="10">${max.toFixed(0)}</text>
+            <text x="${padL - 4}" y="${yFor(min) + 3}" text-anchor="end" fill="var(--muted)" font-size="10">${min.toFixed(0)}</text>
+          </svg>
+        </div>`;
+      }
+
+      // Scan
+      $('pbBtn').addEventListener('click', async () => {
+        const out = $('pbOut');
+        const status = $('pbStatus');
+        out.innerHTML = '';
+        status.style.display = 'block';
+        status.textContent = 'Scanning…';
+        $('pbBtn').disabled = true;
+        try {
+          const d = await api('/api/paper-scan', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(pbParams()),
+          });
+          let html = `<div class="note" style="margin-bottom:10px">
+            Mode: <b>${esc(d.mode)}</b> · Interval: <b>${esc(d.interval)}</b> · ${esc(d.disclaimer)}
+          </div>`;
+          html += `<table><thead><tr>
+            <th>Symbol</th><th>Signal</th><th>Conf</th><th>Tech bias</th>
+            <th>Close</th><th>RSI</th><th>Reasoning</th>
+          </tr></thead><tbody>`;
+          for (const s of d.signals || []) {
+            const color = s.signal === 'LONG' ? 'var(--up)' : s.signal === 'SHORT' ? 'var(--down)' : 'var(--muted)';
+            html += `<tr>
+              <td>${esc(s.symbol)}</td>
+              <td style="color:${color};font-weight:600">${esc(s.signal)}</td>
+              <td>${((s.confidence || 0) * 100).toFixed(0)}%</td>
+              <td>${esc(s.techBias || '–')}</td>
+              <td>${s.indicators?.close != null ? s.indicators.close.toFixed(2) : '–'}</td>
+              <td>${s.indicators?.rsi14 != null ? s.indicators.rsi14.toFixed(1) : '–'}</td>
+              <td style="text-align:left;max-width:280px;font-size:12px">${esc((s.reasoning || '').slice(0, 140))}</td>
+            </tr>`;
+          }
+          html += '</tbody></table>';
+          const p = d.paper || {};
+          html += `<div class="kv" style="margin-top:16px">
+            <div>Starting capital</div><div>₹${Number(p.startingCapital || 0).toLocaleString('en-IN')}</div>
+            <div>Paper equity</div><div>₹${Number(p.equity || 0).toFixed(0)}</div>
+            <div>Cash</div><div>₹${Number(p.cash || 0).toFixed(0)}</div>
+            <div>Open positions</div><div>${p.openPositions || 0}</div>
+          </div>`;
+          if (p.opened?.length) {
+            html += '<div style="margin-top:10px;font-size:13px"><b>Opened this scan:</b><ul style="margin:6px 0 0 18px">';
+            for (const o of p.opened) {
+              const sideColor = o.side === 'LONG' ? 'var(--up)' : 'var(--down)';
+              html += `<li><span style="color:${sideColor};font-weight:600">${esc(o.side)}</span>
+                ${esc(o.symbol)} qty=${o.qty} @ ${Number(o.price).toFixed(2)}
+                stop=${o.stop != null ? Number(o.stop).toFixed(2) : '–'}
+                tgt=${o.target != null ? Number(o.target).toFixed(2) : '–'}</li>`;
+            }
+            html += '</ul></div>';
+          } else {
+            html += '<div class="note" style="margin-top:10px">No positions opened (FLAT or below confidence).</div>';
+          }
+          out.innerHTML = html;
+          status.style.display = 'none';
+        } catch (e) {
+          status.style.display = 'none';
+          out.innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
+        } finally {
+          $('pbBtn').disabled = false;
+        }
+      });
+
+      // Backtest
+      $('pbBacktestBtn').addEventListener('click', async () => {
+        const out = $('pbOut');
+        const status = $('pbStatus');
+        out.innerHTML = '';
+        status.style.display = 'block';
+        status.textContent = 'Running backtest… may take 20–60s.';
+        $('pbBacktestBtn').disabled = true;
+        try {
+          const d = await api('/api/paper-backtest', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(pbParams()),
+          });
+          const s = d.summary || {};
+          let html = `<div class="note" style="margin-bottom:10px">
+            Backtest · ${esc(d.mode)} · ${esc(d.interval)} · ${esc((d.symbols || []).join(', '))}
+          </div>`;
+          html += `<div class="kv">
+            <div>Starting capital</div><div>₹${Number(s.startingCapital || 0).toLocaleString('en-IN')}</div>
+            <div>Final equity</div><div>₹${Number(s.finalEquity || 0).toFixed(0)}</div>
+            <div>Total return</div><div>${Number(s.totalReturnPct || 0).toFixed(1)}%</div>
+            <div>Closed trades</div><div>${s.closedTrades || 0}</div>
+            <div>LONG / SHORT</div><div>${s.sideBreakdown?.LONG || 0} / ${s.sideBreakdown?.SHORT || 0}</div>
+            <div>Win rate</div><div>${Number(s.winRatePct || 0).toFixed(1)}%</div>
+            <div>Profit factor</div><div>${s.profitFactor === Infinity ? '∞' : Number(s.profitFactor || 0).toFixed(2)}</div>
+            <div>Max drawdown</div><div>${Number(s.maxDrawdownPct || 0).toFixed(1)}%</div>
+            <div>Exit reasons</div><div>${esc(JSON.stringify(s.exitReasons || {}))}</div>
+          </div>`;
+          html += renderEquityCurve(d.equityCurve || []);
+          if (d.trades?.length) {
+            html += `<div style="margin-top:14px;font-size:13px"><b>Recent trades</b></div>
+              <table><thead><tr>
+                <th>Entry</th><th>Exit</th><th>Side</th><th>Symbol</th><th>PnL</th><th>Reason</th>
+              </tr></thead><tbody>`;
+            for (const t of d.trades.slice(-15).reverse()) {
+              const col = t.pnl >= 0 ? 'var(--up)' : 'var(--down)';
+              html += `<tr>
+                <td>${esc(t.entryDate)}</td><td>${esc(t.exitDate)}</td>
+                <td>${esc(t.side)}</td><td>${esc(t.symbol)}</td>
+                <td style="color:${col}">${t.pnl >= 0 ? '+' : ''}₹${Number(t.pnl).toFixed(0)} (${Number(t.pnlPct).toFixed(1)}%)</td>
+                <td>${esc(t.reason)}</td>
+              </tr>`;
+            }
+            html += '</tbody></table>';
+          }
+          html += `<div class="note" style="margin-top:10px">${esc(d.disclaimer || '')}</div>`;
+          out.innerHTML = html;
+          status.style.display = 'none';
+        } catch (e) {
+          status.style.display = 'none';
+          out.innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
+        } finally {
+          $('pbBacktestBtn').disabled = false;
+        }
+      });
+
+      // Multi-agent
+      $('pbAgentsBtn').addEventListener('click', async () => {
+        const out = $('pbOut');
+        const status = $('pbStatus');
+        out.innerHTML = '';
+        status.style.display = 'block';
+        status.textContent = 'Running research + signal agents…';
+        $('pbAgentsBtn').disabled = true;
+        try {
+          const params = pbParams();
+          const d = await api('/api/agents', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(params),
+          });
+
+          let html = `<div class="note" style="margin-bottom:10px">
+            Multi-agent brief · ${(d.disclaimers || []).join(' ')}
+          </div>`;
+
+          // Research
+          const r = d.agents?.research || {};
+          html += `<div style="margin-top:8px"><b>Research agent</b> ${r.symbol ? '(' + esc(r.symbol) + ')' : ''}</div>`;
+          if (r.quote) {
+            html += `<div class="kv">
+              <div>Price</div><div>${Number(r.quote.price).toFixed(2)} ${esc(r.quote.currency || '')}</div>
+              <div>Day range</div><div>${Number(r.quote.dayLow).toFixed(2)} – ${Number(r.quote.dayHigh).toFixed(2)}</div>
+            </div>`;
+          }
+          if (r.answer) {
+            html += `<div class="out" style="margin-top:8px;white-space:pre-wrap;font-size:13px">${esc(r.answer)}</div>`;
+          }
+
+          // Signals
+          const sigs = d.agents?.signal?.signals || [];
+          html += `<div style="margin-top:16px"><b>Signal agent</b> (${esc(d.agents?.signal?.mode || '')})</div>`;
+          html += `<table><thead><tr><th>Symbol</th><th>Signal</th><th>Conf</th><th>Reasoning</th></tr></thead><tbody>`;
+          for (const s of sigs) {
+            const color = s.signal === 'LONG' ? 'var(--up)' : s.signal === 'SHORT' ? 'var(--down)' : 'var(--muted)';
+            html += `<tr>
+              <td>${esc(s.symbol)}</td>
+              <td style="color:${color};font-weight:600">${esc(s.signal)}</td>
+              <td>${((s.confidence || 0) * 100).toFixed(0)}%</td>
+              <td style="text-align:left;font-size:12px">${esc((s.reasoning || '').slice(0, 120))}</td>
+            </tr>`;
+          }
+          html += '</tbody></table>';
+
+          // Experimental paper suggestions
+          html += `<div style="margin-top:16px"><b>Experimental paper suggestions</b>
+            <span style="color:var(--warn);font-size:12px"> — paper simulation only, not advice</span></div>`;
+          if (d.experimentalSuggestions?.length) {
+            html += '<ul style="margin:8px 0 0 18px;font-size:13px">';
+            for (const s of d.experimentalSuggestions) {
+              const col = s.action.includes('LONG') ? 'var(--up)' : 'var(--down)';
+              html += `<li>
+                <span style="color:${col};font-weight:600">${esc(s.action)}</span>
+                ${esc(s.symbol)} qty=${s.qty} @ ${Number(s.entry).toFixed(2)}
+                stop=${s.stop != null ? Number(s.stop).toFixed(2) : '–'}
+                tgt=${s.target != null ? Number(s.target).toFixed(2) : '–'}
+                <div style="color:var(--muted);font-size:12px">${esc(s.why || '')}</div>
+              </li>`;
+            }
+            html += '</ul>';
+          } else {
+            html += '<div class="note">No paper suggestions (all FLAT or below confidence).</div>';
+          }
+
+          const p = d.paper || {};
+          html += `<div class="kv" style="margin-top:14px">
+            <div>Paper equity</div><div>₹${Number(p.equity || 0).toFixed(0)}</div>
+            <div>Open positions</div><div>${p.openPositions || 0}</div>
+          </div>`;
+
+          out.innerHTML = html;
+          status.style.display = 'none';
+        } catch (e) {
+          status.style.display = 'none';
+          out.innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
+        } finally {
+          $('pbAgentsBtn').disabled = false;
+        }
+      });
+
+      // --- Candle AI read (Ling prediction-style) ---
+      $('cpBtn').addEventListener('click', async () => {
+        const out = $('cpOut');
+        const status = $('cpStatus');
+        out.innerHTML = '';
+        status.style.display = 'block';
+        status.textContent = 'Fetching candles and asking Ling…';
+        $('cpBtn').disabled = true;
+        try {
+          const symbol = $('cpSym').value.trim();
+          if (!symbol) throw new Error('Enter a symbol, e.g. RELIANCE.NS');
+          const d = await api('/api/candle-predict', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              symbol,
+              range: $('cpRange').value,
+              interval: $('cpInterval').value,
+            }),
+          });
+          const p = d.prediction || {};
+          const biasColor =
+            p.bias === 'BULLISH' ? 'var(--up)' : p.bias === 'BEARISH' ? 'var(--down)' : 'var(--muted)';
+          let html = `<div class="note" style="margin-bottom:10px">${esc(d.disclaimer || '')}</div>`;
+          html += `<div class="kv">
+            <div>Symbol</div><div>${esc(d.symbol)} · as of ${esc(d.asOf || '')}</div>
+            <div>Last close</div><div>${Number(d.lastClose || 0).toFixed(2)}</div>
+            <div>Bias</div><div style="color:${biasColor};font-weight:700;font-size:16px">${esc(p.bias || '–')}</div>
+            <div>Horizon</div><div>${esc(p.horizon || '–')}</div>
+            <div>Confidence</div><div>${((p.confidence || 0) * 100).toFixed(0)}%</div>
+            <div>RSI / ATR</div><div>${d.indicators?.rsi14 != null ? Number(d.indicators.rsi14).toFixed(1) : '–'} / ${d.indicators?.atr14 != null ? Number(d.indicators.atr14).toFixed(2) : '–'}</div>
+          </div>`;
+          html += `<div style="margin-top:12px;white-space:pre-wrap;font-size:14px">${esc(p.summary || '')}</div>`;
+          if (p.supports?.length) {
+            html += '<div style="margin-top:12px"><b>Supports</b><ul style="margin:6px 0 0 18px">';
+            for (const s of p.supports) html += `<li>${esc(s)}</li>`;
+            html += '</ul></div>';
+          }
+          if (p.risks?.length) {
+            html += '<div style="margin-top:10px"><b>Risks</b><ul style="margin:6px 0 0 18px">';
+            for (const s of p.risks) html += `<li>${esc(s)}</li>`;
+            html += '</ul></div>';
+          }
+          if (p.invalidation) {
+            html += `<div class="note" style="margin-top:10px"><b>Invalidation:</b> ${esc(p.invalidation)}</div>`;
+          }
+          out.innerHTML = html;
+          status.style.display = 'none';
+        } catch (e) {
+          status.style.display = 'none';
+          out.innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
+        } finally {
+          $('cpBtn').disabled = false;
+        }
+      });
+
+      // --- Groww → Ling probability (tabs: 15m vs multi-horizon) ---
+      function setGpTab(mode) {
+        $('gpMode').value = mode;
+        const on = 'margin-top:0;background:var(--accent);color:#071019;font-weight:700';
+        const off = 'margin-top:0;background:#0d1320;color:var(--ink);border:1px solid var(--line)';
+        $('gpTab15').style.cssText = mode === '15m' ? on : off;
+        $('gpTabMulti').style.cssText = mode === 'multi' ? on : off;
+      }
+      $('gpTab15').addEventListener('click', () => setGpTab('15m'));
+      $('gpTabMulti').addEventListener('click', () => setGpTab('multi'));
+
+      $('gpBtn').addEventListener('click', async () => {
+        const out = $('gpOut');
+        const status = $('gpStatus');
+        out.innerHTML = '';
+        status.style.display = 'block';
+        const mode = $('gpMode').value || '15m';
+        status.textContent =
+          mode === 'multi'
+            ? 'Multi-horizon mix: scoring 2m + 1m + today + 1h + 15m…'
+            : '15-min only: scoring primary interval…';
+        $('gpBtn').disabled = true;
+        try {
+          const symbol = $('gpSym').value.trim();
+          if (!symbol) throw new Error('Enter a symbol, e.g. HDFCBANK');
+          const d = await api('/api/groww-predict', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              symbol,
+              intervalMinutes: Number($('gpInterval').value),
+              preferYahoo: $('gpSource').value === 'yahoo',
+              mode,
+            }),
+          });
+          const p = d.prediction || {};
+          const biasColor =
+            p.bias === 'UP' ? 'var(--up)' : p.bias === 'DOWN' ? 'var(--down)' : 'var(--muted)';
+          const pctNum = (x) => ((Number(x) || 0) * 100).toFixed(0);
+          const pct = (x) => pctNum(x) + '%';
+          const callPct = pctNum(p.probUp);
+          const putPct = pctNum(p.probDown);
+          const sidePct = pctNum(p.probSideways);
+          let html = `<div class="note" style="margin-bottom:10px">${esc(d.disclaimer || '')}</div>`;
+          html += `<div class="note" style="margin-bottom:8px">Source: <b>${esc(d.source || 'yahoo')}</b> · ${d.bars || 0} bars · ${esc(String(d.intervalMinutes || ''))}m · as of ${esc(d.asOf || '')}</div>`;
+
+          // Big Call / Put / Sideways cards
+          html += `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin:12px 0">
+            <div style="background:#0d1320;border:1px solid var(--line);border-radius:10px;padding:14px;text-align:center">
+              <div style="font-size:12px;color:var(--muted)">CALL · probability price goes UP</div>
+              <div style="font-size:32px;font-weight:700;color:var(--up);margin-top:4px">${callPct}%</div>
+            </div>
+            <div style="background:#0d1320;border:1px solid var(--line);border-radius:10px;padding:14px;text-align:center">
+              <div style="font-size:12px;color:var(--muted)">PUT · probability price goes DOWN</div>
+              <div style="font-size:32px;font-weight:700;color:var(--down);margin-top:4px">${putPct}%</div>
+            </div>
+            <div style="background:#0d1320;border:1px solid var(--line);border-radius:10px;padding:14px;text-align:center">
+              <div style="font-size:12px;color:var(--muted)">SIDEWAYS · chop / no clear move</div>
+              <div style="font-size:32px;font-weight:700;color:var(--muted);margin-top:4px">${sidePct}%</div>
+            </div>
+          </div>`;
+
+          html += `<div class="kv">
+            <div>Symbol</div><div>${esc(d.symbol)} · last ${Number(d.lastClose || 0).toFixed(2)}</div>
+            <div>Bias</div><div style="color:${biasColor};font-weight:700">${esc(p.bias || '–')}</div>
+            <div>Model confidence</div><div>${pct(p.confidence)}</div>
+            <div>Horizon</div><div>${esc(p.horizon || 'next session')}</div>
+          </div>`;
+
+          // Expected move (ATR bands) + time window
+          const em = d.expectedMove || {};
+          if (em.available) {
+            const fmt = (x) => Number(x).toFixed(2);
+            const fp = (x) => Number(x).toFixed(2);
+            html += `<div style="margin-top:12px;padding:12px;border:1px solid var(--line);border-radius:10px;background:#0d1320">
+              <div style="font-weight:700;margin-bottom:6px">Research range (ATR-based) · not a trade target</div>
+              <div class="kv">
+                <div>Time window</div><div>${esc(em.timeWindow || '–')}</div>
+                <div>ATR-14</div><div>${fmt(em.atr)}</div>
+                <div>Upside band</div><div style="color:var(--up)">soft +${fp(em.upside.softPct)}% (${fmt(em.upside.soft)}) · typical +${fp(em.upside.typicalPct)}% (${fmt(em.upside.typical)}) · extended +${fp(em.upside.extendedPct)}% (${fmt(em.upside.extended)})</div>
+                <div>Downside band</div><div style="color:var(--down)">soft −${fp(em.downside.softPct)}% (${fmt(em.downside.soft)}) · typical −${fp(em.downside.typicalPct)}% (${fmt(em.downside.typical)}) · extended −${fp(em.downside.extendedPct)}% (${fmt(em.downside.extended)})</div>
+              </div>
+              <div class="note" style="margin-top:8px">${esc(em.note || '')} ${em.lean ? '(' + esc(em.lean) + ')' : ''}</div>
+            </div>`;
+          } else if (em.timeWindow) {
+            html += `<div class="note" style="margin-top:10px"><b>Time window:</b> ${esc(em.timeWindow)} — ${esc(em.note || '')}</div>`;
+          }
+
+          // Hybrid / multi-horizon breakdown
+          const h = d.hybrid || {};
+          if (h.baseProbabilities) {
+            const b = h.baseProbabilities;
+            const modeLabel = (h.multiHorizon || h.mode === 'multi') ? 'Multi-horizon hybrid' : 'Single timeframe (primary interval)';
+            html += `<div class="note" style="margin-top:10px">
+              <b>${modeLabel}</b> · score <b>${Number(h.techScore || 0).toFixed(2)}</b> (−1 bear … +1 bull)
+              · base Call ${pctNum(b.probUp)}% / Put ${pctNum(b.probDown)}% / Side ${pctNum(b.probSideways)}%
+              · Ling adjust ≤${Math.round((h.maxAdjust || 0.15) * 100)}%
+            </div>`;
+          }
+          if (h.horizons?.length) {
+            html += `<div style="margin-top:8px;overflow-x:auto"><table style="width:100%;font-size:12px;border-collapse:collapse">
+              <tr style="color:var(--muted);text-align:left">
+                <th style="padding:4px 6px">Horizon</th>
+                <th style="padding:4px 6px">Weight</th>
+                <th style="padding:4px 6px">Score</th>
+                <th style="padding:4px 6px">Call</th>
+                <th style="padding:4px 6px">Put</th>
+                <th style="padding:4px 6px">Side</th>
+              </tr>`;
+            for (const hz of h.horizons) {
+              html += `<tr>
+                <td style="padding:4px 6px">${esc(hz.label || hz.key)}</td>
+                <td style="padding:4px 6px">${Math.round((hz.weight || 0) * 100)}%</td>
+                <td style="padding:4px 6px">${Number(hz.score || 0).toFixed(2)}</td>
+                <td style="padding:4px 6px;color:var(--up)">${pctNum(hz.probUp)}%</td>
+                <td style="padding:4px 6px;color:var(--down)">${pctNum(hz.probDown)}%</td>
+                <td style="padding:4px 6px">${pctNum(hz.probSideways)}%</td>
+              </tr>`;
+            }
+            html += `</table></div>`;
+          }
+
+          html += `<div style="margin-top:12px;display:flex;height:22px;border-radius:8px;overflow:hidden;border:1px solid var(--line)">
+            <div style="width:${callPct}%;background:var(--up)" title="Call ${callPct}%"></div>
+            <div style="width:${sidePct}%;background:#4b5563" title="Sideways ${sidePct}%"></div>
+            <div style="width:${putPct}%;background:var(--down)" title="Put ${putPct}%"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-top:4px">
+            <span>Call ${callPct}%</span><span>Sideways ${sidePct}%</span><span>Put ${putPct}%</span>
+          </div>`;
+
+          html += `<div style="margin-top:14px;white-space:pre-wrap;font-size:14px">${esc(p.summary || '')}</div>`;
+          if (p.adjustmentNote) {
+            html += `<div class="note" style="margin-top:8px"><b>Ling adjustment:</b> ${esc(p.adjustmentNote)}</div>`;
+          }
+          if (p.drivers?.length) {
+            html += '<div style="margin-top:10px"><b>Why (drivers)</b><ul style="margin:6px 0 0 18px">';
+            for (const s of p.drivers) html += `<li>${esc(s)}</li>`;
+            html += '</ul></div>';
+          }
+          if (p.risks?.length) {
+            html += '<div style="margin-top:8px"><b>Risks</b><ul style="margin:6px 0 0 18px">';
+            for (const s of p.risks) html += `<li>${esc(s)}</li>`;
+            html += '</ul></div>';
+          }
+          out.innerHTML = html;
+          status.style.display = 'none';
+        } catch (e) {
+          status.style.display = 'none';
+          out.innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
+        } finally {
+          $('gpBtn').disabled = false;
+        }
+      });
+
+      // --- Hit-rate calibration ---
+      function renderHitStats(stats, note) {
+        const out = $('hrOut');
+        if (!stats) {
+          out.innerHTML = '<div class="note">No stats yet. Run Call/Put a few times, wait ≥1 hour, then Evaluate.</div>';
+          return;
+        }
+        const pct = (x) => (x == null ? '–' : (x * 100).toFixed(0) + '%');
+        let html = '';
+        if (note) html += `<div class="note" style="margin-bottom:8px">${esc(note)}</div>`;
+        html += `<div class="kv">
+          <div>Logged</div><div>${stats.totalLogged}</div>
+          <div>Pending</div><div>${stats.pending}</div>
+          <div>Evaluated</div><div>${stats.evaluated}</div>
+          <div>Hit-rate (bias)</div><div><b>${pct(stats.hitRateBias)}</b></div>
+          <div>Hit-rate (top prob)</div><div>${pct(stats.hitRateTopProb)}</div>
+        </div>`;
+        if (stats.byBias) {
+          html += '<div style="margin-top:10px;font-size:13px"><b>By bias</b><ul style="margin:6px 0 0 18px">';
+          for (const [k, v] of Object.entries(stats.byBias)) {
+            html += `<li>${esc(k)}: ${v.hits}/${v.n} (${pct(v.hitRate)})</li>`;
+          }
+          html += '</ul></div>';
+        }
+        if (stats.confidenceBuckets?.length) {
+          html += '<div style="margin-top:8px;font-size:13px"><b>By confidence</b><ul style="margin:6px 0 0 18px">';
+          for (const b of stats.confidenceBuckets) {
+            html += `<li>${esc(b.label)}: ${b.hits}/${b.n} (${pct(b.hitRate)})</li>`;
+          }
+          html += '</ul></div>';
+        }
+        if (stats.recentEvaluated?.length) {
+          html += '<div style="margin-top:10px;font-size:12px;overflow-x:auto"><b>Recent evaluated</b><table style="width:100%;margin-top:6px;border-collapse:collapse">';
+          html += '<tr style="color:var(--muted)"><th style="text-align:left;padding:3px">When</th><th style="text-align:left;padding:3px">Sym</th><th style="text-align:left;padding:3px">Bias</th><th style="text-align:left;padding:3px">Realized</th><th style="text-align:left;padding:3px">Ret%</th><th style="text-align:left;padding:3px">Hit</th></tr>';
+          for (const e of stats.recentEvaluated.slice(0, 8)) {
+            html += `<tr>
+              <td style="padding:3px">${esc((e.ts || '').slice(0, 16))}</td>
+              <td style="padding:3px">${esc(e.symbol)}</td>
+              <td style="padding:3px">${esc(e.bias)}</td>
+              <td style="padding:3px">${esc(e.realizedLabel)}</td>
+              <td style="padding:3px">${e.realizedRetPct != null ? Number(e.realizedRetPct).toFixed(2) : '–'}</td>
+              <td style="padding:3px">${e.hitBias ? '✓' : '✗'}</td>
+            </tr>`;
+          }
+          html += '</table></div>';
+        }
+        html += '<div class="note" style="margin-top:10px">Research metric only. Past hit-rate ≠ future performance.</div>';
+        out.innerHTML = html;
+      }
+
+      $('hrStatsBtn').addEventListener('click', async () => {
+        $('hrOut').textContent = 'Loading…';
+        try {
+          const d = await api('/api/prediction-stats');
+          renderHitStats(d.stats, d.disclaimer);
+        } catch (e) {
+          $('hrOut').innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
+        }
+      });
+
+      $('hrEvalBtn').addEventListener('click', async () => {
+        $('hrOut').textContent = 'Evaluating pending predictions against later prices…';
+        try {
+          const d = await api('/api/prediction-evaluate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ minAgeMinutes: 60, limit: 40 }),
+          });
+          renderHitStats(
+            d.stats,
+            `Checked ${d.checked}, newly scored ${d.updated}. ${d.disclaimer || ''}`,
+          );
+        } catch (e) {
+          $('hrOut').innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
+        }
+      });
+    </script>
+  </body>
+</html>

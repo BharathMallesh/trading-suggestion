@@ -1,0 +1,684 @@
+// Hybrid probability: technical base score → Ling adjusts within limits.
+// Yahoo (default) or Groww candles. Experimental / paper research only.
+
+import { chat } from '../ling-client.mjs';
+import { historicalCandles } from '../groww-data.mjs';
+import { candles as yahooCandles } from '../market-data.mjs';
+import { computeIndicators } from './indicators.mjs';
+import { logPrediction } from './prediction-log.mjs';
+
+const ADJUST_MAX = 0.15; // Ling may move each leg by at most ±15 percentage points (as fraction)
+
+const SYSTEM = `
+You are a quantitative research assistant for PAPER TRADING education only.
+You receive a TECHNICAL BASE probability mix already computed from indicators.
+Your job: lightly adjust those weights using the candle context, then explain.
+
+Output ONLY a JSON object (no markdown fences):
+{
+  "probUp": 0.0,
+  "probDown": 0.0,
+  "probSideways": 0.0,
+  "bias": "UP" | "DOWN" | "SIDEWAYS",
+  "confidence": 0.0,
+  "horizon": "next session",
+  "summary": "2-4 sentences",
+  "drivers": ["..."],
+  "risks": ["..."],
+  "adjustmentNote": "one sentence on how/why you adjusted the base"
+}
+
+Hard rules:
+- Start from the provided base probabilities.
+- Do NOT move any of probUp, probDown, probSideways by more than 0.15 from the base.
+- After adjustment, values must still sum to 1.
+- bias = whichever of up/down/sideways is largest after adjustment.
+- confidence 0-1: higher when trend, RSI, and volume agree.
+- Educational only — not a trade recommendation.
+`.trim();
+
+/** Strip Yahoo-style suffix for Groww trading symbol */
+export function toGrowwSymbol(symbol) {
+  return String(symbol || '')
+    .trim()
+    .toUpperCase()
+    .replace(/\.NS$/i, '')
+    .replace(/\.BO$/i, '');
+}
+
+function formatIST(d) {
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+export async function fetchGrowwRecent(symbol, opts = {}) {
+  const gSym = toGrowwSymbol(symbol);
+  const intervalMinutes = opts.intervalMinutes || 15;
+  const end = new Date();
+  const endStr = opts.endTime || formatIST(end);
+  const start = new Date(end.getTime() - (opts.lookbackDays || 10) * 86400000);
+  const startStr = opts.startTime || formatIST(start);
+
+  const rows = await historicalCandles({
+    symbol: gSym,
+    exchange: opts.exchange || 'NSE',
+    segment: opts.segment || 'CASH',
+    startTime: startStr,
+    endTime: endStr,
+    intervalMinutes,
+  });
+
+  const normalized = rows.map((r) => ({
+    date: (r.time || '').slice(0, 10) || r.hhmm,
+    open: r.open,
+    high: r.high,
+    low: r.low,
+    close: r.close,
+    volume: r.volume,
+    time: r.time,
+  }));
+
+  return { symbol: gSym, source: 'groww', intervalMinutes, rows: normalized, rawCount: rows.length };
+}
+
+async function fetchYahooRecent(symbol, opts = {}) {
+  const intervalMinutes = opts.intervalMinutes || 15;
+  const interval =
+    intervalMinutes <= 5 ? '5m' : intervalMinutes <= 15 ? '15m' : intervalMinutes <= 60 ? '60m' : '1d';
+  const range = interval === '1d' ? '3mo' : '5d';
+  const yahooSym = String(symbol).includes('.') ? symbol : `${symbol}.NS`;
+  const rows = await yahooCandles(yahooSym, { range, interval });
+  return {
+    symbol: yahooSym,
+    source: 'yahoo-fallback',
+    intervalMinutes,
+    rows,
+    rawCount: rows.length,
+  };
+}
+
+/**
+ * Technical score in [-1, +1].
+ * +1 = strong bullish structure, -1 = strong bearish, 0 = mixed/chop.
+ */
+export function techScore(ind) {
+  if (!ind || ind.close == null) return 0;
+  let score = 0;
+  let weight = 0;
+
+  // Trend vs SMAs
+  if (ind.sma20 != null) {
+    const w = 0.3;
+    if (ind.aboveSma20) score += w;
+    else score -= w;
+    weight += w;
+  }
+  if (ind.sma50 != null) {
+    const w = 0.25;
+    if (ind.aboveSma50) score += w;
+    else score -= w;
+    weight += w;
+  }
+  if (ind.sma20 != null && ind.sma50 != null) {
+    const w = 0.15;
+    if (ind.sma20AboveSma50) score += w;
+    else score -= w;
+    weight += w;
+  }
+
+  // RSI: mid is neutral; extremes push opposite (mean-reversion pressure) but mild trend with RSI
+  if (ind.rsi14 != null) {
+    const w = 0.2;
+    if (ind.rsi14 >= 55 && ind.rsi14 <= 68) score += w * 0.8; // healthy up momentum
+    else if (ind.rsi14 > 68 && ind.rsi14 < 80) score += w * 0.2; // overbought — weak long bias
+    else if (ind.rsi14 >= 80) score -= w * 0.5; // extreme OB — pullback risk
+    else if (ind.rsi14 <= 45 && ind.rsi14 >= 32) score -= w * 0.8;
+    else if (ind.rsi14 < 32 && ind.rsi14 > 20) score -= w * 0.2;
+    else if (ind.rsi14 <= 20) score += w * 0.5; // extreme OS — bounce risk
+    weight += w;
+  }
+
+  // Short-term return
+  if (ind.ret5 != null) {
+    const w = 0.1;
+    if (ind.ret5 > 1.5) score += w;
+    else if (ind.ret5 < -1.5) score -= w;
+    else score += (ind.ret5 / 5) * w; // scaled small contribution
+    weight += w;
+  }
+
+  if (weight <= 0) return 0;
+  // Normalize roughly into [-1,1]
+  let s = score / Math.max(weight, 0.01);
+  // Soft volume: low volume pulls toward 0 (less conviction)
+  if (ind.volRatio != null && ind.volRatio < 0.7) s *= 0.7;
+  if (ind.volRatio != null && ind.volRatio > 1.3) s *= 1.1;
+  return Math.max(-1, Math.min(1, s));
+}
+
+/**
+ * Map tech score → base probability triangle (sums to 1).
+ */
+export function baseProbabilities(score) {
+  // High |score| → directional; low → sideways-heavy
+  const abs = Math.abs(score);
+  const directional = 0.28 + abs * 0.42; // 0.28..0.70 total for the winning side + partial other
+  let up;
+  let down;
+  let side;
+
+  if (score >= 0) {
+    up = 0.22 + score * 0.38; // 0.22 .. 0.60
+    down = 0.18 + (1 - score) * 0.12; // shrinks as bullish
+    side = 1 - up - down;
+  } else {
+    const s = -score;
+    down = 0.22 + s * 0.38;
+    up = 0.18 + (1 - s) * 0.12;
+    side = 1 - up - down;
+  }
+
+  // Floor sideways when score is weak
+  if (abs < 0.25) {
+    side = Math.max(side, 0.4);
+    const rest = 1 - side;
+    const ud = up + down || 1;
+    up = (up / ud) * rest;
+    down = (down / ud) * rest;
+  }
+
+  return normalizeProbs(up, down, side);
+}
+
+function normalizeProbs(up, down, side) {
+  up = Math.max(0.05, up);
+  down = Math.max(0.05, down);
+  side = Math.max(0.05, side);
+  const sum = up + down + side;
+  return {
+    probUp: up / sum,
+    probDown: down / sum,
+    probSideways: side / sum,
+  };
+}
+
+/** Blend two probability sets (e.g. intraday + daily). */
+function blendProbs(a, b, weightA = 0.6) {
+  const wB = 1 - weightA;
+  return normalizeProbs(
+    a.probUp * weightA + b.probUp * wB,
+    a.probDown * weightA + b.probDown * wB,
+    a.probSideways * weightA + b.probSideways * wB,
+  );
+}
+
+function clampToBase(adjusted, base, maxDelta = ADJUST_MAX) {
+  const clamp = (v, b) => Math.max(b - maxDelta, Math.min(b + maxDelta, v));
+  return normalizeProbs(
+    clamp(adjusted.probUp, base.probUp),
+    clamp(adjusted.probDown, base.probDown),
+    clamp(adjusted.probSideways, base.probSideways),
+  );
+}
+
+function normalizeConfidence(c) {
+  if (typeof c === 'number' && !Number.isNaN(c)) {
+    return Math.max(0, Math.min(1, c > 1 ? c / 100 : c));
+  }
+  const s = String(c || '').toLowerCase();
+  if (s.includes('high') || s.includes('strong')) return 0.75;
+  if (s.includes('moderate') || s.includes('medium')) return 0.55;
+  if (s.includes('low') || s.includes('weak')) return 0.35;
+  const n = parseFloat(s);
+  if (!Number.isNaN(n)) return Math.max(0, Math.min(1, n > 1 ? n / 100 : n));
+  return 0.45;
+}
+
+function parseProb(raw, base) {
+  let text = String(raw || '').trim();
+  text = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
+  const match = text.match(/\{[\s\S]*\}/);
+  if (match) {
+    try {
+      const p = JSON.parse(match[0]);
+      let up = Math.max(0, Number(p.probUp) || 0);
+      let down = Math.max(0, Number(p.probDown) || 0);
+      let side = Math.max(0, Number(p.probSideways) || 0);
+      if (up > 1 || down > 1 || side > 1) {
+        up /= 100;
+        down /= 100;
+        side /= 100;
+      }
+      let adj = normalizeProbs(up, down, side);
+      if (base) adj = clampToBase(adj, base);
+
+      let bias = String(p.bias || '').toUpperCase();
+      if (bias.includes('UP') || bias.includes('BULL')) bias = 'UP';
+      else if (bias.includes('DOWN') || bias.includes('BEAR')) bias = 'DOWN';
+      else if (bias.includes('SIDE') || bias.includes('NEUTRAL')) bias = 'SIDEWAYS';
+      else {
+        bias =
+          adj.probUp >= adj.probDown && adj.probUp >= adj.probSideways
+            ? 'UP'
+            : adj.probDown >= adj.probSideways
+              ? 'DOWN'
+              : 'SIDEWAYS';
+      }
+
+      return {
+        ...adj,
+        bias,
+        confidence: normalizeConfidence(p.confidence),
+        horizon: String(p.horizon || 'next session').slice(0, 60),
+        summary: String(p.summary || '').slice(0, 900),
+        drivers: Array.isArray(p.drivers) ? p.drivers.map(String).slice(0, 6) : [],
+        risks: Array.isArray(p.risks) ? p.risks.map(String).slice(0, 6) : [],
+        adjustmentNote: String(p.adjustmentNote || '').slice(0, 300),
+      };
+    } catch {
+      /* fall through */
+    }
+  }
+  // Fallback: pure technical base
+  const b = base || { probUp: 0.33, probDown: 0.33, probSideways: 0.34 };
+  const bias =
+    b.probUp >= b.probDown && b.probUp >= b.probSideways
+      ? 'UP'
+      : b.probDown >= b.probSideways
+        ? 'DOWN'
+        : 'SIDEWAYS';
+  return {
+    ...b,
+    bias,
+    confidence: 0.4,
+    horizon: 'next session',
+    summary: text
+      ? `Model parse failed — showing technical base only. ${text.slice(0, 120)}`
+      : 'Model empty — showing technical base probabilities only.',
+    drivers: ['Technical base score (SMA / RSI / returns)'],
+    risks: ['Ling adjustment unavailable'],
+    adjustmentNote: 'No LLM adjustment applied',
+  };
+}
+
+/** Weights for multi-horizon blend (must sum ~1). Longer horizons = structure; short = timing. */
+const HORIZON_WEIGHTS = {
+  m2: 0.2, // ~2 months daily
+  m1: 0.2, // ~1 month daily
+  today: 0.25, // today's session
+  h1: 0.2, // last ~1 hour
+  m15: 0.15, // last ~15 minutes
+};
+
+function scoreWindow(rows, label, minBars = 5) {
+  if (!rows || rows.length < minBars) return null;
+  const ind = computeIndicators(rows);
+  const score = techScore(ind);
+  const base = baseProbabilities(score);
+  return {
+    label,
+    bars: rows.length,
+    score,
+    base,
+    rsi: ind.rsi14,
+    close: ind.close,
+    ret5: ind.ret5,
+  };
+}
+
+function weightedBlend(windows) {
+  // windows: [{ weight, base, score }]
+  let up = 0;
+  let down = 0;
+  let side = 0;
+  let score = 0;
+  let wSum = 0;
+  for (const w of windows) {
+    if (!w?.base) continue;
+    up += w.base.probUp * w.weight;
+    down += w.base.probDown * w.weight;
+    side += w.base.probSideways * w.weight;
+    score += w.score * w.weight;
+    wSum += w.weight;
+  }
+  if (wSum <= 0) {
+    return {
+      base: { probUp: 0.33, probDown: 0.33, probSideways: 0.34 },
+      score: 0,
+    };
+  }
+  // Renormalize if some windows missing
+  up /= wSum;
+  down /= wSum;
+  side /= wSum;
+  score /= wSum;
+  return { base: normalizeProbs(up, down, side), score };
+}
+
+function buildUserPayload(meta, rows, ind, base, score, horizons) {
+  const last = rows[rows.length - 1];
+  const tail = rows.slice(-6);
+  const lines = tail
+    .map(
+      (r) =>
+        `${r.time || r.date}: O=${Number(r.open).toFixed(2)} H=${Number(r.high).toFixed(2)} L=${Number(r.low).toFixed(2)} C=${Number(r.close).toFixed(2)}`,
+    )
+    .join('\n');
+
+  const horizonLines = (horizons || [])
+    .filter(Boolean)
+    .map(
+      (h) =>
+        `  ${h.label}: score=${h.score.toFixed(2)} up=${(h.base.probUp * 100).toFixed(0)}% down=${(h.base.probDown * 100).toFixed(0)}% side=${(h.base.probSideways * 100).toFixed(0)}% (n=${h.bars})`,
+    )
+    .join('\n');
+
+  return [
+    `Symbol: ${meta.symbol} | Primary interval: ${meta.intervalMinutes}m | Source: ${meta.source}`,
+    `Latest close: ${Number(last.close).toFixed(2)} (${last.time || last.date})`,
+    `SMA-20: ${ind.sma20?.toFixed(2) ?? 'n/a'} | SMA-50: ${ind.sma50?.toFixed(2) ?? 'n/a'}`,
+    `RSI-14: ${ind.rsi14?.toFixed(1) ?? 'n/a'} | Vol: ${ind.volRatio != null ? ind.volRatio.toFixed(2) + 'x' : 'n/a'}`,
+    '',
+    'MULTI-HORIZON technical scores:',
+    horizonLines || '  (none)',
+    '',
+    `COMBINED tech score: ${score.toFixed(3)} (−1 bear … +1 bull)`,
+    `BASE probabilities (do not move any leg by more than 0.15):`,
+    `  probUp=${base.probUp.toFixed(3)}  probDown=${base.probDown.toFixed(3)}  probSideways=${base.probSideways.toFixed(3)}`,
+    '',
+    'Recent primary candles:',
+    lines,
+    '',
+    'Return adjusted probability JSON for near-term direction now.',
+  ].join('\n');
+}
+
+/**
+ * Fetch multi-horizon windows and build combined base probabilities.
+ */
+async function buildMultiHorizon(symbol) {
+  const yahooSym = String(symbol).includes('.') ? symbol : `${toGrowwSymbol(symbol)}.NS`;
+  const horizons = [];
+
+  // Daily: ~2 months and ~1 month
+  let daily = [];
+  try {
+    daily = await yahooCandles(yahooSym, { range: '3mo', interval: '1d' });
+  } catch {
+    daily = [];
+  }
+  if (daily.length >= 20) {
+    const m2 = scoreWindow(daily.slice(-45), '2-month (daily)');
+    const m1 = scoreWindow(daily.slice(-22), '1-month (daily)');
+    if (m2) horizons.push({ key: 'm2', weight: HORIZON_WEIGHTS.m2, ...m2 });
+    if (m1) horizons.push({ key: 'm1', weight: HORIZON_WEIGHTS.m1, ...m1 });
+  }
+
+  // Intraday 5m for today / 1h / 15m (more bars)
+  let intra = [];
+  try {
+    intra = await yahooCandles(yahooSym, { range: '5d', interval: '5m' });
+  } catch {
+    try {
+      intra = await yahooCandles(yahooSym, { range: '5d', interval: '15m' });
+    } catch {
+      intra = [];
+    }
+  }
+
+  if (intra.length >= 8) {
+    // Today: bars from last calendar date in series
+    const lastDate = String(intra[intra.length - 1].date || '').slice(0, 10);
+    const todayBars = intra.filter((r) => String(r.date || '').slice(0, 10) === lastDate);
+    const todayWin = scoreWindow(todayBars.length >= 8 ? todayBars : intra.slice(-78), 'Today (session)');
+    if (todayWin) horizons.push({ key: 'today', weight: HORIZON_WEIGHTS.today, ...todayWin });
+
+    // Last ~1 hour: 12 x 5m or 4 x 15m
+    const h1Bars = intra.slice(-12);
+    const h1 = scoreWindow(h1Bars, 'Last ~1 hour');
+    if (h1) horizons.push({ key: 'h1', weight: HORIZON_WEIGHTS.h1, ...h1 });
+
+    // Last ~15 min: 3 x 5m (allow short window)
+    const m15Bars = intra.slice(-3);
+    const m15 = scoreWindow(m15Bars, 'Last ~15 min', 2);
+    if (m15) horizons.push({ key: 'm15', weight: HORIZON_WEIGHTS.m15, ...m15 });
+  }
+
+  const { base, score } = weightedBlend(horizons);
+  return { yahooSym, horizons, base, score, daily, intra };
+}
+
+/**
+ * Main entry: technical base (+ optional multi-horizon) + Ling adjustment (±15%).
+ * @param {string} symbol
+ * @param {{ intervalMinutes?: number, preferYahoo?: boolean, mode?: '15m'|'multi' }} [opts]
+ *   mode '15m'   = single timeframe (primary interval only)
+ *   mode 'multi' = 2m + 1m + today + 1h + 15m weighted blend (default)
+ */
+export async function growwProbability(symbol, opts = {}) {
+  const intervalMinutes = opts.intervalMinutes || 15;
+  const mode = opts.mode === '15m' ? '15m' : 'multi';
+  let meta;
+  let usedFallback = false;
+
+  // Primary display series (user-selected interval)
+  if (opts.preferYahoo || !process.env.GROWW_ACCESS_TOKEN) {
+    meta = await fetchYahooRecent(symbol, { intervalMinutes });
+    usedFallback = meta.source.includes('yahoo');
+  } else {
+    try {
+      meta = await fetchGrowwRecent(symbol, {
+        intervalMinutes,
+        lookbackDays: opts.lookbackDays || 10,
+      });
+    } catch (err) {
+      meta = await fetchYahooRecent(symbol, { intervalMinutes });
+      usedFallback = true;
+      meta.growwError = err.message;
+    }
+  }
+
+  if (!meta.rows?.length || meta.rows.length < 15) {
+    throw new Error(
+      `Not enough candles from ${meta.source} for ${symbol} (${meta.rows?.length || 0} bars). ` +
+        (meta.growwError ? `Groww: ${meta.growwError}` : ''),
+    );
+  }
+
+  const ind = computeIndicators(meta.rows);
+
+  let score = techScore(ind);
+  let base = baseProbabilities(score);
+  let horizons = [];
+
+  // Multi-horizon only when mode === 'multi'
+  if (mode === 'multi') {
+    let multi;
+    try {
+      multi = await buildMultiHorizon(symbol);
+    } catch {
+      multi = null;
+    }
+    if (multi?.horizons?.length) {
+      base = multi.base;
+      score = multi.score;
+      horizons = multi.horizons;
+    }
+  } else {
+    // Single-horizon label for UI transparency
+    horizons = [
+      {
+        key: '15m',
+        label: `Primary ${intervalMinutes}m only`,
+        weight: 1,
+        score,
+        bars: meta.rows.length,
+        base,
+        probUp: base.probUp,
+        probDown: base.probDown,
+        probSideways: base.probSideways,
+        rsi: ind.rsi14,
+      },
+    ];
+  }
+
+  const user = buildUserPayload(meta, meta.rows, ind, base, score, horizons);
+
+  let raw = '';
+  try {
+    raw = await chat(
+      [
+        { role: 'system', content: SYSTEM },
+        { role: 'user', content: user },
+      ],
+      { temperature: 0.15, timeoutMs: 45_000 },
+    );
+  } catch {
+    raw = '';
+  }
+
+  if (!String(raw || '').trim() || !String(raw).match(/\{[\s\S]*\}/)) {
+    try {
+      raw = await chat(
+        [
+          { role: 'system', content: SYSTEM },
+          {
+            role: 'user',
+            content: `${meta.symbol} multiHorizonScore=${score.toFixed(2)} base up=${base.probUp.toFixed(2)} down=${base.probDown.toFixed(2)} side=${base.probSideways.toFixed(2)} RSI=${ind.rsi14?.toFixed(1)}. Adjust ≤0.15 and return JSON.`,
+          },
+        ],
+        { temperature: 0.1, timeoutMs: 30_000 },
+      );
+    } catch {
+      /* pure base */
+    }
+  }
+
+  const prediction = parseProb(raw, base);
+  const last = meta.rows[meta.rows.length - 1];
+  const move = expectedMoveEstimate({
+    close: last.close,
+    atr: ind.atr14,
+    mode,
+    intervalMinutes,
+    bias: prediction.bias,
+  });
+
+  const out = {
+    symbol: meta.symbol,
+    source: meta.source,
+    usedFallback,
+    growwError: meta.growwError || null,
+    intervalMinutes: meta.intervalMinutes,
+    mode,
+    bars: meta.rawCount,
+    asOf: last.time || last.date,
+    lastClose: last.close,
+    hybrid: {
+      techScore: score,
+      baseProbabilities: base,
+      maxAdjust: ADJUST_MAX,
+      multiHorizon: mode === 'multi',
+      mode,
+      horizons: horizons.map((h) => ({
+        key: h.key,
+        label: h.label,
+        weight: h.weight,
+        score: h.score,
+        bars: h.bars,
+        probUp: (h.base || h).probUp,
+        probDown: (h.base || h).probDown,
+        probSideways: (h.base || h).probSideways,
+        rsi: h.rsi,
+      })),
+    },
+    indicators: {
+      sma20: ind.sma20,
+      sma50: ind.sma50,
+      rsi14: ind.rsi14,
+      atr14: ind.atr14,
+      volRatio: ind.volRatio,
+    },
+    /** ATR-based research range + time window — not a price target guarantee */
+    expectedMove: move,
+    prediction,
+    disclaimer:
+      mode === 'multi'
+        ? 'Multi-horizon hybrid + ATR range estimate. Experimental research only. Not investment advice. Ranges are volatility bands, not promises.'
+        : 'Single-timeframe hybrid + ATR range estimate. Experimental research only. Not investment advice. Ranges are volatility bands, not promises.',
+  };
+
+  // Auto-log for hit-rate calibration (research)
+  try {
+    const logged = logPrediction(out);
+    if (logged) out.logId = logged.id;
+  } catch {
+    /* non-fatal */
+  }
+  return out;
+}
+
+/**
+ * Rough expected move bands from ATR (research only).
+ * Not a forecast that price will hit these levels.
+ */
+function expectedMoveEstimate({ close, atr, mode, intervalMinutes, bias }) {
+  const px = Number(close) || 0;
+  const a = Number(atr) || 0;
+  if (px <= 0 || a <= 0) {
+    return {
+      available: false,
+      timeWindow: mode === 'multi' ? '1–3 sessions (mixed horizons)' : `next few ${intervalMinutes}m bars`,
+      note: 'ATR unavailable — cannot size a range.',
+    };
+  }
+
+  // Soft / typical / extended multiples of ATR
+  const soft = 0.5 * a;
+  const typical = 1.0 * a;
+  const extended = 1.5 * a;
+
+  const pct = (x) => ((x / px) * 100);
+
+  let timeWindow;
+  if (mode === 'multi') {
+    timeWindow = 'About 1 session to 1–3 sessions (mix of intraday + daily structure)';
+  } else if (intervalMinutes <= 5) {
+    timeWindow = 'About next 15–45 minutes (several 5m bars)';
+  } else if (intervalMinutes <= 15) {
+    timeWindow = 'About next 30–90 minutes (several 15m bars)';
+  } else if (intervalMinutes <= 60) {
+    timeWindow = 'About next 2–6 hours';
+  } else {
+    timeWindow = 'About next 1–3 daily sessions';
+  }
+
+  const lean =
+    bias === 'UP' ? 'upside band slightly emphasized' : bias === 'DOWN' ? 'downside band slightly emphasized' : 'balanced bands (sideways bias)';
+
+  return {
+    available: true,
+    lastClose: px,
+    atr: a,
+    timeWindow,
+    lean,
+    upside: {
+      soft: px + soft,
+      typical: px + typical,
+      extended: px + extended,
+      softPct: pct(soft),
+      typicalPct: pct(typical),
+      extendedPct: pct(extended),
+    },
+    downside: {
+      soft: px - soft,
+      typical: px - typical,
+      extended: px - extended,
+      softPct: pct(soft),
+      typicalPct: pct(typical),
+      extendedPct: pct(extended),
+    },
+    note:
+      'Ranges = 0.5× / 1× / 1.5× ATR from last close. Volatility bands for research — not targets, stops, or trade instructions.',
+  };
+}

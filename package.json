@@ -1,0 +1,21 @@
+{
+  "name": "autoclaw-trading",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Isolated finance-research module (OpenRouter + Ling 3.0 Flash Fin). Research and analysis only — no market predictions, no trade execution.",
+  "scripts": {
+    "research": "node research.mjs",
+    "market": "node market-data.mjs",
+    "options": "node blackscholes.mjs",
+    "describe": "node describe-candles.mjs",
+    "groww": "node groww-data.mjs",
+    "serve": "node server.mjs",
+    "paper": "node paper-bot/run.mjs",
+    "paper:tech": "node paper-bot/run.mjs --tech-only",
+    "paper:backtest": "node paper-bot/run.mjs --backtest",
+    "paper:backtest:tech": "node paper-bot/run.mjs --backtest --tech-only",
+    "paper:15m": "node paper-bot/run.mjs --tech-only --interval 15m",
+    "test": "node --test"
+  }
+}
