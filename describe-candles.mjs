@@ -7,6 +7,7 @@
 // The optional Ling narration is guardrailed (see research.mjs) to report only
 // what the numbers say — it will NOT forecast direction or give buy/sell/hold.
 // "Here's what happened", never "here's what will happen".
+import { pathToFileURL } from 'node:url';
 import { candles } from './market-data.mjs';
 import { chat } from './ling-client.mjs';
 import { RESEARCH_SYSTEM } from './research.mjs';
@@ -166,7 +167,7 @@ export async function describeCandles(symbol, opts = {}) {
 // CLI:
 //   node describe-candles.mjs HDFCBANK.NS               # facts only (no key)
 //   node describe-candles.mjs HDFCBANK.NS 6mo --narrate # + plain-English narration
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const args = process.argv.slice(2);
   const positional = args.filter((a) => !a.startsWith('--'));
   const sym = positional[0];

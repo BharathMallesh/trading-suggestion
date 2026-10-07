@@ -16,6 +16,8 @@
 //   GROWW_BASE_URL      (default https://api.groww.in)
 //   GROWW_API_VERSION   (default 1.0)
 
+import { pathToFileURL } from 'node:url';
+
 const BASE = process.env.GROWW_BASE_URL || 'https://api.groww.in';
 const API_VERSION = process.env.GROWW_API_VERSION || '1.0';
 const TOKEN_ENV = 'GROWW_ACCESS_TOKEN';
@@ -120,7 +122,7 @@ export async function daySession(symbol, dateStr, opts = {}) {
 
 // CLI (run this yourself with GROWW_ACCESS_TOKEN set):
 //   node groww-data.mjs HDFCBANK 2026-09-29 1
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const [symbol, date, mins] = process.argv.slice(2);
   if (!symbol || !date) {
     console.error('Usage: node groww-data.mjs <SYMBOL> <YYYY-MM-DD> [intervalMinutes]');

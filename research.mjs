@@ -5,6 +5,7 @@
 // does NOT predict prices or market direction, does NOT give buy/sell/hold
 // recommendations or price targets, and does NOT place trades or move money.
 // Those are deliberately out of scope — see README.md for why.
+import { pathToFileURL } from 'node:url';
 import { chat } from './ling-client.mjs';
 
 export const RESEARCH_SYSTEM = [
@@ -98,7 +99,7 @@ export async function explain(topic, opts = {}) {
 }
 
 // CLI: `node research.mjs "explain HDFC Bank's net interest margin"`
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const question = process.argv.slice(2).join(' ').trim();
   if (!question) {
     console.error('Usage: node research.mjs "your finance research question"');

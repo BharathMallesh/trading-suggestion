@@ -11,6 +11,8 @@
 // (often ~15 min) and provided as-is with no warranty — treat everything here as
 // general information, not a real-time trading feed.
 
+import { pathToFileURL } from 'node:url';
+
 const CHART_BASE = 'https://query1.finance.yahoo.com/v8/finance/chart';
 
 // Yahoo occasionally rejects the default runtime User-Agent; send a plain one.
@@ -175,7 +177,7 @@ export async function intraday(symbol, opts = {}) {
 //   node market-data.mjs AAPL                 -> latest quote
 //   node market-data.mjs HDFCBANK.NS --candles [range] [interval]  -> OHLC table
 //   node market-data.mjs HDFCBANK.NS --intraday [date] [interval]  -> one day, intraday
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const args = process.argv.slice(2);
   const symbol = args.find((a) => !a.startsWith('--'));
   const wantCandles = args.includes('--candles');

@@ -4,6 +4,8 @@
 // Everything here is mechanical: given inputs, the outputs are fixed. It does
 // NOT estimate future prices or say whether a trade is good.
 
+import { pathToFileURL } from 'node:url';
+
 const SQRT2PI = Math.sqrt(2 * Math.PI);
 
 /** Standard normal probability density function. */
@@ -107,7 +109,7 @@ export function payoff({ action, type, strike, premium, lotSize = 1 }) {
 //
 //   node blackscholes.mjs --spot 2500 --strike 2520 --days 7 --iv 18 --type CE
 //   ...add --action buy --lot 250 to also print the payoff of that position.
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const args = process.argv.slice(2);
   const get = (flag) => {
     const i = args.indexOf(flag);
