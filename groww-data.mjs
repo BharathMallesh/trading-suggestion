@@ -17,6 +17,7 @@
 //   GROWW_API_VERSION   (default 1.0)
 
 import { pathToFileURL } from 'node:url';
+import { HttpError, badRequest } from './util.mjs';
 
 const BASE = process.env.GROWW_BASE_URL || 'https://api.groww.in';
 const API_VERSION = process.env.GROWW_API_VERSION || '1.0';
@@ -25,7 +26,8 @@ const TOKEN_ENV = 'GROWW_ACCESS_TOKEN';
 function authHeaders() {
   const token = process.env[TOKEN_ENV];
   if (!token) {
-    throw new Error(
+    throw new HttpError(
+      503,
       `Missing ${TOKEN_ENV}. Set your Groww access token first, e.g.:\n` +
         `  export ${TOKEN_ENV}="<your token>"\n` +
         `(Run this yourself; never paste the token into a chat.)`,
@@ -60,8 +62,8 @@ export async function historicalCandles(p = {}) {
     intervalMinutes = 1,
     signal,
   } = p;
-  if (!symbol) throw new Error('A trading symbol is required, e.g. "HDFCBANK".');
-  if (!startTime || !endTime) throw new Error('startTime and endTime are required.');
+  if (!symbol) throw badRequest('A trading symbol is required, e.g. "HDFCBANK".');
+  if (!startTime || !endTime) throw badRequest('startTime and endTime are required.');
 
   const qs = new URLSearchParams({
     exchange,
@@ -76,7 +78,7 @@ export async function historicalCandles(p = {}) {
   const res = await fetch(url, { headers: authHeaders(), signal });
   if (!res.ok) {
     const body = await res.text().catch(() => '');
-    throw new Error(`Groww HTTP ${res.status} ${res.statusText}: ${body.slice(0, 300)}`);
+    throw new HttpError(502, `Groww HTTP ${res.status} ${res.statusText}: ${body.slice(0, 300)}`);
   }
   const data = await res.json();
   // Groww returns candles as arrays: [epochSeconds, open, high, low, close, volume].
@@ -106,9 +108,11 @@ export async function historicalCandles(p = {}) {
 
 /** Convenience: one full NSE session (09:15–15:30 IST) for a date. */
 export async function daySession(symbol, dateStr, opts = {}) {
-  if (!/^\d{4}-\d\d-\d\d$/.test(String(dateStr || ''))) {
-    throw new Error('Pass a date as YYYY-MM-DD, e.g. 2026-09-29.');
-  }
+  const ds = String(dateStr || '');
+  // Format check plus a round-trip so impossible dates (2026-13-45) are rejected.
+  const valid = /^\d{4}-\d\d-\d\d$/.test(ds) && !Number.isNaN(Date.parse(ds + 'T00:00:00Z')) &&
+    new Date(ds + 'T00:00:00Z').toISOString().slice(0, 10) === ds;
+  if (!valid) throw badRequest('Pass a real date as YYYY-MM-DD, e.g. 2026-09-29.');
   return historicalCandles({
     symbol,
     exchange: opts.exchange || 'NSE',

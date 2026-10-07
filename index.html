@@ -36,7 +36,7 @@
       }
       textarea { min-height: 80px; resize: vertical; }
       .row { display: flex; gap: 8px; flex-wrap: wrap; }
-      .row > * { flex: 1; min-width: 90px; }
+      .row > * { flex: 1; min-width: 120px; }
       button {
         background: var(--accent); border: none; color: #071019; font-weight: 600;
         cursor: pointer; width: auto; padding: 9px 16px; margin-top: 12px;
@@ -213,7 +213,7 @@
         <h2>Live candles → Ling probability <span style="font-size:12px;color:var(--warn);font-weight:500">EXPERIMENTAL</span></h2>
         <p class="hint">
           Two modes: <b>15‑min only</b> (single timeframe) vs <b>Multi‑horizon mix</b>
-          (2m 20% · 1m 20% · Today 25% · 1h 20% · 15m 15%). Yahoo + Ling. Not investment advice.
+          (2-month 20% · 1-month 20% · today 25% · last hour 20% · last 15 min 15%). Yahoo + Ling. Not investment advice.
         </p>
         <div class="row" style="gap:8px;margin-bottom:10px">
           <button type="button" id="gpTab15" class="gp-tab" style="margin-top:0;background:var(--accent);color:#071019;font-weight:700">15‑min only</button>
@@ -222,7 +222,7 @@
         </div>
         <div class="row">
           <div style="flex:2">
-            <label>Symbol (NSE, with or without .NS)</label>
+            <label>Symbol (NSE with or without .NS, or AAPL, ^NSEI…)</label>
             <input id="gpSym" placeholder="HDFCBANK or RELIANCE.NS" value="HDFCBANK" />
           </div>
           <div>
@@ -250,11 +250,11 @@
       <section class="card span2">
         <h2>Prediction hit-rate <span style="font-size:12px;color:var(--warn);font-weight:500">RESEARCH</span></h2>
         <p class="hint">
-          Every Call/Put run is logged. After enough time, <b>Evaluate</b> compares the bias to the later Yahoo price.
+          Every Call/Put run is logged. Once its horizon has passed (≈4 bars for single-timeframe runs, the next completed session for multi-horizon), <b>Evaluate</b> compares the bias to the later Yahoo price.
           Hit-rate is descriptive only — not a guarantee of future accuracy.
         </p>
         <div class="row" style="gap:8px">
-          <button id="hrEvalBtn" type="button">Evaluate pending (≥1h old)</button>
+          <button id="hrEvalBtn" type="button">Evaluate due predictions</button>
           <button id="hrStatsBtn" type="button" style="background:#0d1320;color:var(--ink);border:1px solid var(--line)">Refresh stats</button>
         </div>
         <div id="hrOut" style="margin-top:12px"></div>
@@ -263,7 +263,7 @@
 
     <script>
       const $ = (id) => document.getElementById(id);
-      const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+      const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
       // Map the range dropdown to Yahoo range+interval. "Today (5-min)" is
       // intraday; everything else is daily candles.
@@ -394,6 +394,9 @@
         $('sumWrap').style.display = mode === 'summarize' ? 'block' : 'none';
         $('qWrap').style.display = mode === 'summarize' ? 'none' : 'block';
         $('qLabel').textContent = mode === 'explain' ? 'Concept to explain' : 'Question';
+        // Don't leave the previous tab's answer/error on screen.
+        $('askOut').className = 'out';
+        $('askOut').textContent = '';
       });
       $('askBtn').addEventListener('click', async () => {
         const out = $('askOut');
@@ -428,7 +431,7 @@
           const sym = $('sym').value.trim();
           // Intraday one-day view (TradingView style): its own endpoint + chart.
           if ($('range').value === 'yesterday') {
-            const d = await api('/api/intraday?symbol=' + encodeURIComponent(sym) + '&interval=1m');
+            const d = await api('/api/intraday?symbol=' + encodeURIComponent(sym) + '&interval=1m&date=previous');
             $('chartOut').innerHTML = renderIntradayChart(d);
             out.innerHTML = `<div class="note">${esc(d.symbol)} — ${esc(d.date)} — ${d.count} one-minute candles. Public data, may be delayed.</div>`;
             return;
@@ -706,7 +709,9 @@
           const s = d.summary || {};
           let html = `<div class="note" style="margin-bottom:10px">
             Backtest · ${esc(d.mode)} · ${esc(d.interval)} · ${esc((d.symbols || []).join(', '))}
+            ${d.period ? ` · ${esc(d.period.from)} → ${esc(d.period.to)}` : ''}
           </div>`;
+          if (d.skipped?.length) html += `<div class="err" style="margin-bottom:8px">Skipped: ${esc(d.skipped.join(' · '))}</div>`;
           html += `<div class="kv">
             <div>Starting capital</div><div>₹${Number(s.startingCapital || 0).toLocaleString('en-IN')}</div>
             <div>Final equity</div><div>₹${Number(s.finalEquity || 0).toFixed(0)}</div>
@@ -714,7 +719,7 @@
             <div>Closed trades</div><div>${s.closedTrades || 0}</div>
             <div>LONG / SHORT</div><div>${s.sideBreakdown?.LONG || 0} / ${s.sideBreakdown?.SHORT || 0}</div>
             <div>Win rate</div><div>${Number(s.winRatePct || 0).toFixed(1)}%</div>
-            <div>Profit factor</div><div>${s.profitFactor === Infinity ? '∞' : Number(s.profitFactor || 0).toFixed(2)}</div>
+            <div>Profit factor</div><div>${s.profitFactor === 'Infinity' ? '∞' : Number(s.profitFactor || 0).toFixed(2)}</div>
             <div>Max drawdown</div><div>${Number(s.maxDrawdownPct || 0).toFixed(1)}%</div>
             <div>Exit reasons</div><div>${esc(JSON.stringify(s.exitReasons || {}))}</div>
           </div>`;
@@ -775,8 +780,13 @@
               <div>Day range</div><div>${Number(r.quote.dayLow).toFixed(2)} – ${Number(r.quote.dayHigh).toFixed(2)}</div>
             </div>`;
           }
+          if (r.description) {
+            html += `<div style="margin-top:8px;font-family:var(--mono,monospace);font-size:12px">${esc(r.description).replace(/\n/g, '<br>')}</div>`;
+          }
           if (r.answer) {
             html += `<div class="out" style="margin-top:8px;white-space:pre-wrap;font-size:13px">${esc(r.answer)}</div>`;
+          } else if (r.error) {
+            html += `<div class="err" style="margin-top:8px">Research answer unavailable: ${esc(r.error)}</div>`;
           }
 
           // Signals
@@ -854,6 +864,7 @@
           const biasColor =
             p.bias === 'BULLISH' ? 'var(--up)' : p.bias === 'BEARISH' ? 'var(--down)' : 'var(--muted)';
           let html = `<div class="note" style="margin-bottom:10px">${esc(d.disclaimer || '')}</div>`;
+          if (d.rangeAdjusted) html += `<div class="note" style="margin-bottom:8px;color:var(--warn)">${esc(d.rangeAdjusted)}</div>`;
           html += `<div class="kv">
             <div>Symbol</div><div>${esc(d.symbol)} · as of ${esc(d.asOf || '')}</div>
             <div>Last close</div><div>${Number(d.lastClose || 0).toFixed(2)}</div>
@@ -1045,7 +1056,7 @@
       function renderHitStats(stats, note) {
         const out = $('hrOut');
         if (!stats) {
-          out.innerHTML = '<div class="note">No stats yet. Run Call/Put a few times, wait ≥1 hour, then Evaluate.</div>';
+          out.innerHTML = '<div class="note">No stats yet. Run Call/Put a few times, wait for their horizon to pass, then Evaluate.</div>';
           return;
         }
         const pct = (x) => (x == null ? '–' : (x * 100).toFixed(0) + '%');
@@ -1107,7 +1118,7 @@
           const d = await api('/api/prediction-evaluate', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ minAgeMinutes: 60, limit: 40 }),
+            body: JSON.stringify({ limit: 40 }),
           });
           renderHitStats(
             d.stats,

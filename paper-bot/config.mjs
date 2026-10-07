@@ -38,7 +38,8 @@ export const PAPER = {
   candleInterval: '1d',
 
   intraday: {
-    '15m': { range: '5d', interval: '15m', lookbackBars: 80 },
+    // 15m needs ~1 month of bars: 5d (~80 bars) is too short for SMA-50 warm-up + a walk.
+    '15m': { range: '1mo', interval: '15m', lookbackBars: 80 },
     '5m':  { range: '5d', interval: '5m',  lookbackBars: 100 },
     '1h':  { range: '1mo', interval: '60m', lookbackBars: 60 },
   },

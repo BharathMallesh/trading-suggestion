@@ -8,7 +8,8 @@ import { fileURLToPath } from 'url';
 import { candles as yahooCandles } from '../market-data.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
-const LOG_PATH = join(__dir, 'prediction-history.json');
+// Overridable so tests never touch the real log.
+const LOG_PATH = process.env.PREDICTION_LOG_PATH || join(__dir, 'prediction-history.json');
 
 function loadLog() {
   try {
@@ -58,6 +59,7 @@ export function logPrediction(result) {
     techScore: result.hybrid?.techScore ?? null,
     atr: result.indicators?.atr14 ?? result.expectedMove?.atr ?? null,
     timeWindow: result.expectedMove?.timeWindow || null,
+    horizonMinutes: horizonFor(result.mode, result.intervalMinutes),
     // Filled later by evaluate
     evaluated: false,
     evalTs: null,
@@ -72,6 +74,16 @@ export function logPrediction(result) {
   if (log.entries.length > 500) log.entries = log.entries.slice(-500);
   saveLog(log);
   return entry;
+}
+
+/**
+ * Minutes until a prediction is scored. Single-timeframe runs are judged ~4
+ * bars later (5m → 20 min, 15m → 1 h, 60m → 4 h); multi-horizon / daily runs
+ * are judged on the next completed session's close (null = session-based).
+ */
+export function horizonFor(mode, intervalMinutes = 15) {
+  if (mode === 'multi' || intervalMinutes >= 1440) return null;
+  return Math.max(5, Number(intervalMinutes) || 15) * 4;
 }
 
 function labelFromReturn(retPct, thresholdPct) {
@@ -90,15 +102,45 @@ function topProbLabel(entry) {
 }
 
 /**
- * Evaluate pending predictions that are old enough.
- * Uses Yahoo daily/intraday close after a minimum wait.
+ * Price that settles one entry, or null if its horizon hasn't fully elapsed yet.
+ * - Intraday horizon: OPEN of the first completed bar starting at/after
+ *   prediction time + horizon (so a closed market can't score as "flat").
+ * - Session horizon: close of the first COMPLETED daily session after the
+ *   prediction's date.
+ */
+async function settlementPrice(entry, now) {
+  const sym = String(entry.symbol); // stored already resolved to a Yahoo symbol
+  const predMs = new Date(entry.ts).getTime();
+  const horizon = entry.horizonMinutes !== undefined ? entry.horizonMinutes : horizonFor(entry.mode, entry.intervalMinutes);
+  if (horizon != null) {
+    const im = Number(entry.intervalMinutes) || 15;
+    const interval = im <= 5 ? '5m' : im <= 15 ? '15m' : '60m';
+    const barMs = (interval === '5m' ? 5 : interval === '15m' ? 15 : 60) * 60000;
+    const target = predMs + horizon * 60000;
+    if (now < target) return null;
+    const rows = await yahooCandles(sym, { range: '1mo', interval });
+    const bar = rows.find((r) => r.ts * 1000 >= target && r.ts * 1000 + barMs <= now);
+    return bar ? { price: Number(bar.open), at: bar.date } : null;
+  }
+  const rows = await yahooCandles(sym, { range: '1mo', interval: '1d' });
+  if (!rows.length) return null;
+  // Exchange-local dates: candles() already labels daily bars in local time.
+  const predDate = String(entry.asOf || '').slice(0, 10) || new Date(predMs).toISOString().slice(0, 10);
+  const latest = rows[rows.length - 1].date; // may still be in progress
+  const bar = rows.find((r) => r.date > predDate && r.date < latest);
+  return bar ? { price: Number(bar.close), at: bar.date } : null;
+}
+
+/**
+ * Score pending predictions whose horizon has elapsed. Entries that aren't due
+ * yet stay pending — they are never scored against an unchanged price.
  *
  * @param {{ minAgeMinutes?: number, thresholdPct?: number, limit?: number }} [opts]
  */
 export async function evaluatePending(opts = {}) {
-  const minAgeMinutes = opts.minAgeMinutes ?? 60; // default: at least 1 hour later
-  const thresholdPct = opts.thresholdPct ?? 0.15; // move larger than this => UP/DOWN else SIDEWAYS
-  const limit = opts.limit ?? 30;
+  const minAgeMinutes = Number.isFinite(opts.minAgeMinutes) ? opts.minAgeMinutes : 0;
+  const thresholdPct = Number.isFinite(opts.thresholdPct) ? opts.thresholdPct : 0.15; // move larger than this => UP/DOWN else SIDEWAYS
+  const limit = Number.isFinite(opts.limit) && opts.limit > 0 ? opts.limit : 30;
   const log = loadLog();
   const now = Date.now();
   let checked = 0;
@@ -112,18 +154,10 @@ export async function evaluatePending(opts = {}) {
     checked++;
 
     try {
-      const sym = String(entry.symbol).includes('.')
-        ? entry.symbol
-        : `${entry.symbol}.NS`;
-      // Prefer recent intraday if prediction was intraday; else daily
-      const interval = (entry.intervalMinutes || 15) <= 60 ? '15m' : '1d';
-      const range = interval === '1d' ? '5d' : '5d';
-      const rows = await yahooCandles(sym, { range, interval });
-      if (!rows?.length) continue;
-      const futureClose = Number(rows[rows.length - 1].close);
-      if (!futureClose || !entry.lastClose) continue;
+      const settled = await settlementPrice(entry, now);
+      if (!settled || !settled.price || !entry.lastClose) continue; // not due yet
 
-      const retPct = ((futureClose - entry.lastClose) / entry.lastClose) * 100;
+      const retPct = ((settled.price - entry.lastClose) / entry.lastClose) * 100;
       // Scale threshold a bit with ATR if present
       let thr = thresholdPct;
       if (entry.atr && entry.lastClose) {
@@ -133,7 +167,8 @@ export async function evaluatePending(opts = {}) {
       const realizedLabel = labelFromReturn(retPct, thr);
       entry.evaluated = true;
       entry.evalTs = new Date().toISOString();
-      entry.futureClose = futureClose;
+      entry.settledAt = settled.at;
+      entry.futureClose = settled.price;
       entry.realizedRetPct = retPct;
       entry.realizedLabel = realizedLabel;
       entry.hitBias = realizedLabel === entry.bias;
@@ -205,6 +240,7 @@ export function computeStats(entries) {
 }
 
 export function getHistory(limit = 50) {
+  const n = Math.min(500, Math.max(1, Math.floor(Number(limit)) || 50));
   const log = loadLog();
-  return log.entries.slice(-limit).reverse();
+  return log.entries.slice(-n).reverse();
 }

@@ -3,6 +3,7 @@
 // API key comes from the environment (OPENROUTER_API_KEY); it is never stored
 // or logged here.
 import { OPENROUTER } from './config.mjs';
+import { HttpError } from './util.mjs';
 
 /**
  * Call the model with a list of chat messages and return the assistant text.
@@ -13,7 +14,8 @@ import { OPENROUTER } from './config.mjs';
 export async function chat(messages, opts = {}) {
   const key = process.env[OPENROUTER.apiKeyEnv];
   if (!key) {
-    throw new Error(
+    throw new HttpError(
+      503,
       `Missing ${OPENROUTER.apiKeyEnv}. Set your OpenRouter key first, e.g.:\n` +
         `  export ${OPENROUTER.apiKeyEnv}="sk-or-..."`,
     );
@@ -43,7 +45,7 @@ export async function chat(messages, opts = {}) {
   });
   if (!res.ok) {
     const body = await res.text().catch(() => '');
-    throw new Error(`OpenRouter HTTP ${res.status} ${res.statusText}: ${body.slice(0, 400)}`);
+    throw new HttpError(502, `OpenRouter HTTP ${res.status} ${res.statusText}: ${body.slice(0, 400)}`);
   }
   const data = await res.json();
   return data?.choices?.[0]?.message?.content ?? '';

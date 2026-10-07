@@ -4,6 +4,7 @@
 import { candles } from '../market-data.mjs';
 import { generateSignal } from '../paper-bot/signal.mjs';
 import { PAPER } from '../paper-bot/config.mjs';
+import { parseSymbols } from '../util.mjs';
 
 /**
  * Signal Agent — hybrid or tech-only signals for one or more symbols.
@@ -14,9 +15,8 @@ export async function signalAgent({
   techOnly = false,
   interval = '1d',
 } = {}) {
-  const list = (symbols.length ? symbols : PAPER.symbols.slice(0, 5))
-    .map((s) => String(s).trim())
-    .filter(Boolean);
+  const given = parseSymbols(symbols);
+  const list = given.length ? given : PAPER.symbols.slice(0, 5);
 
   let range = PAPER.candleRange;
   let candleInterval = '1d';

@@ -5,6 +5,8 @@ import { chat } from '../ling-client.mjs';
 import { candles } from '../market-data.mjs';
 import { computeIndicators } from './indicators.mjs';
 import { PAPER } from './config.mjs';
+import { extractJson, normalizeConfidence } from './llm-json.mjs';
+import { HttpError, badRequest } from '../util.mjs';
 
 const SYSTEM = `
 You are a market-structure research assistant for PAPER TRADING education only.
@@ -57,66 +59,49 @@ function buildUserPayload(symbol, rows, ind) {
   ].join('\n');
 }
 
-function normalizeConfidence(c) {
-  if (typeof c === 'number' && !Number.isNaN(c)) {
-    return Math.max(0, Math.min(1, c > 1 ? c / 100 : c));
-  }
-  const s = String(c || '').toLowerCase();
-  if (s.includes('high') || s.includes('strong')) return 0.75;
-  if (s.includes('moderate') || s.includes('medium')) return 0.55;
-  if (s.includes('low') || s.includes('weak')) return 0.35;
-  const n = parseFloat(s);
-  if (!Number.isNaN(n)) return Math.max(0, Math.min(1, n > 1 ? n / 100 : n));
-  return 0.4;
+/** Map a model bias string onto the enum. Only exact words count, so "NOT BEARISH" → NEUTRAL. */
+export function normalizeBias(b) {
+  const t = String(b || '').trim().toUpperCase();
+  if (['BULLISH', 'BULL', 'UP'].includes(t)) return 'BULLISH';
+  if (['BEARISH', 'BEAR', 'DOWN'].includes(t)) return 'BEARISH';
+  return 'NEUTRAL';
 }
 
-function parseResponse(raw) {
-  let text = String(raw || '').trim();
-  text = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
-  const match = text.match(/\{[\s\S]*\}/);
-  if (!match) {
+export function parseResponse(raw) {
+  const text = String(raw || '').trim();
+  const p = extractJson(text, (o) => 'bias' in o || 'summary' in o);
+  if (!p) {
+    const looksLikeJson = /\{[\s\S]*\}/.test(text);
     return {
       bias: 'NEUTRAL',
       horizon: 'unclear',
       confidence: 0,
-      summary: text
-        ? `Could not parse model response: ${text.slice(0, 200)}`
-        : 'Empty model response — try again or use daily interval.',
+      summary: !text
+        ? 'Empty model response — try again or use daily interval.'
+        : looksLikeJson
+          ? `Invalid JSON from model: ${text.slice(0, 200)}`
+          : `Could not parse model response: ${text.slice(0, 200)}`,
       supports: [],
-      risks: ['Model output was not valid JSON'],
+      risks: [looksLikeJson ? 'Parse error' : 'Model output was not valid JSON'],
       invalidation: 'n/a',
       raw,
     };
   }
-  try {
-    const p = JSON.parse(match[0]);
-    let bias = String(p.bias || 'NEUTRAL').toUpperCase();
-    if (bias.includes('BULL') || bias === 'UP') bias = 'BULLISH';
-    else if (bias.includes('BEAR') || bias === 'DOWN') bias = 'BEARISH';
-    else bias = 'NEUTRAL';
-    return {
-      bias,
-      horizon: String(p.horizon || 'unclear').slice(0, 40),
-      confidence: normalizeConfidence(p.confidence),
-      summary: String(p.summary || '').slice(0, 800),
-      supports: Array.isArray(p.supports) ? p.supports.map(String).slice(0, 6) : [],
-      risks: Array.isArray(p.risks) ? p.risks.map(String).slice(0, 6) : [],
-      invalidation: String(p.invalidation || '').slice(0, 300),
-      raw,
-    };
-  } catch {
-    return {
-      bias: 'NEUTRAL',
-      horizon: 'unclear',
-      confidence: 0,
-      summary: `Invalid JSON from model: ${text.slice(0, 200)}`,
-      supports: [],
-      risks: ['Parse error'],
-      invalidation: 'n/a',
-      raw,
-    };
-  }
+  return {
+    bias: normalizeBias(p.bias),
+    horizon: String(p.horizon || 'unclear').slice(0, 40),
+    confidence: normalizeConfidence(p.confidence, 0.4),
+    summary: String(p.summary || '').slice(0, 800),
+    supports: Array.isArray(p.supports) ? p.supports.map(String).slice(0, 6) : [],
+    risks: Array.isArray(p.risks) ? p.risks.map(String).slice(0, 6) : [],
+    invalidation: String(p.invalidation || '').slice(0, 300),
+    raw,
+  };
 }
+
+// Yahoo serves minute bars only for a recent window (~60 days); longer ranges
+// return HTTP 422. Clamp the range for intraday intervals instead of failing.
+const INTRADAY_MAX_RANGE = { '1m': '5d', '2m': '1mo', '5m': '1mo', '15m': '1mo', '30m': '1mo', '90m': '1mo' };
 
 /**
  * Fetch candles, send to Ling, return structured directional read.
@@ -124,15 +109,24 @@ function parseResponse(raw) {
  * @param {{ range?: string, interval?: string }} [opts]
  */
 export async function candlePredict(symbol, opts = {}) {
-  const range = opts.range || PAPER.candleRange || '3mo';
+  const sym = String(symbol || '').trim();
+  if (!sym) throw badRequest('symbol is required, e.g. RELIANCE.NS');
+  let range = opts.range || PAPER.candleRange || '3mo';
   let interval = opts.interval || '1d';
   // Yahoo interval aliases
   if (interval === '15-min' || interval === '15min') interval = '15m';
   if (interval === '1-hour' || interval === '1h') interval = '60m';
+  let rangeAdjusted = null;
+  const maxRange = INTRADAY_MAX_RANGE[interval];
+  if (maxRange && !['1d', '5d', maxRange].includes(range)) {
+    rangeAdjusted = `Range ${range} isn't available for ${interval} bars; used ${maxRange} instead.`;
+    range = maxRange;
+  }
+  symbol = sym;
 
   const rows = await candles(symbol, { range, interval });
   if (!rows || rows.length < 30) {
-    throw new Error(`Not enough candles for ${symbol} (${rows?.length || 0} bars). Try range 3mo and interval Daily.`);
+    throw new HttpError(400, `Not enough candles for ${symbol} (${rows?.length || 0} bars). Try range 3mo and interval Daily.`);
   }
 
   const recent = rows.slice(-(PAPER.lookbackBars || 60));
@@ -149,7 +143,7 @@ export async function candlePredict(symbol, opts = {}) {
       { temperature: 0.15, timeoutMs: 45_000 },
     );
   } catch (err) {
-    throw new Error(`Ling request failed: ${err.message || err}`);
+    throw new HttpError(err.status || 502, `Ling request failed: ${err.message || err}`);
   }
 
   // One retry with ultra-compact prompt if empty
@@ -179,6 +173,7 @@ export async function candlePredict(symbol, opts = {}) {
     symbol,
     range,
     interval,
+    rangeAdjusted,
     asOf: recent[recent.length - 1].date,
     lastClose: ind.close,
     indicators: {

@@ -13,7 +13,12 @@ import { candles } from '../market-data.mjs';
 import { PAPER } from './config.mjs';
 import { generateSignal } from './signal.mjs';
 import { PaperEngine } from './paper-engine.mjs';
+import { runBacktest as walkForward } from './backtest.mjs';
 import { writeFileSync } from 'fs';
+import { dirname, join } from 'path';
+import { fileURLToPath } from 'url';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
 
 const args = process.argv.slice(2);
 const doBacktest = args.includes('--backtest');
@@ -150,23 +155,15 @@ async function scanOnce() {
 }
 
 /**
- * Improved sequential backtest:
- * - Fill at next bar's OPEN (more realistic than close)
- * - Stops/targets checked on high/low of each bar
- * - Supports LONG + SHORT
+ * Sequential backtest via the shared walk-forward engine (backtest.mjs):
+ * - Fills at next bar's OPEN; stops/targets on high/low (gap-aware)
+ * - LONG + SHORT; symbols aligned by date
  */
 async function runBacktest() {
   printBanner();
   console.log('Starting sequential paper backtest…\n');
-  console.log('Improvements vs earlier version:');
-  console.log('  • Fills at next bar OPEN (instead of close)');
-  console.log('  • Full LONG + SHORT support');
-  console.log('  • Stops / targets on high-low');
-  console.log('  • Exit reason + side breakdown\n');
 
-  const engine = new PaperEngine();
   const history = {};
-
   for (const sym of targetSymbols) {
     process.stdout.write(`  Loading ${sym}… `);
     try {
@@ -177,110 +174,36 @@ async function runBacktest() {
       console.log(`ERROR: ${err.message}`);
     }
   }
-
-  const available = Object.keys(history);
-  if (!available.length) {
+  if (!Object.keys(history).length) {
     console.error('No data loaded.');
     process.exit(1);
   }
 
-  const minLen = Math.min(...available.map((s) => history[s].length));
-  const startIdx = Math.max(55, dataSettings.lookbackBars);
-
-  if (minLen <= startIdx + 2) {
-    console.error('Not enough bars for backtest with current interval/lookback.');
+  const pnlStr = (t) => `${t.pnl >= 0 ? '+' : ''}₹${t.pnl.toFixed(0)} (${t.pnl >= 0 ? '+' : ''}${t.pnlPct.toFixed(1)}%)`;
+  let result;
+  try {
+    result = await walkForward(history, {
+      techOnly,
+      lookbackBars: dataSettings.lookbackBars,
+      onEvent(e) {
+        if (e.type === 'stop') console.log(`${e.date}  ${e.trade.reason.padEnd(12)} ${e.trade.side.padEnd(5)} ${e.trade.symbol.padEnd(14)} PnL ${pnlStr(e.trade)}`);
+        else if (e.type === 'open') console.log(`${e.date}  ${e.side.padEnd(12)} ${e.symbol.padEnd(14)} qty=${e.qty} @ ${e.price.toFixed(2)}  stop=${e.stop?.toFixed(1) ?? '–'} tgt=${e.target?.toFixed(1) ?? '–'}`);
+        else if (e.type === 'close') console.log(`${e.date}  CLOSE        ${e.trade.side.padEnd(5)} ${e.trade.symbol.padEnd(14)} PnL ${pnlStr(e.trade)}`);
+        else if (e.type === 'end') console.log(`${e.date}  END          ${e.trade.side.padEnd(5)} ${e.trade.symbol.padEnd(14)} PnL ${pnlStr(e.trade)}`);
+        else if (e.type === 'bar' && e.index % 20 === 0) process.stdout.write(`  … ${e.date}  equity ₹${e.equity.toFixed(0)}  trades=${e.trades}\r`);
+      },
+    });
+  } catch (err) {
+    console.error(err.message);
     process.exit(1);
   }
 
-  console.log(`\nWalking forward bars ${startIdx} → ${minLen - 2} (${available.length} symbols)…\n`);
-
-  for (let i = startIdx; i < minLen - 1; i++) {
-    const barDate = history[available[0]][i].date;
-    const marks = {};
-    engine.tickBar(); // min-hold age + loss cooldown
-
-    for (const sym of available) {
-      const bars = history[sym];
-      const bar = bars[i];
-      const nextBar = bars[i + 1];
-      marks[sym] = nextBar.open;
-
-      // 1. Check stops / targets on current bar's high/low (always allowed)
-      const stopped = engine.checkStopsAndTargets(sym, bar);
-      for (const t of stopped) {
-        const sign = t.pnl >= 0 ? '+' : '';
-        console.log(`${bar.date}  ${t.reason.padEnd(12)} ${t.side.padEnd(5)} ${sym.padEnd(14)} PnL ${sign}₹${t.pnl.toFixed(0)} (${sign}${t.pnlPct.toFixed(1)}%)`);
-      }
-
-      // 2. Generate signal on data up to current bar
-      const slice = bars.slice(0, i + 1);
-      const signal = await generateSignal(sym, slice, {
-        techOnly,
-        lookbackBars: dataSettings.lookbackBars,
-      });
-
-      const hasPos = engine.positions.has(sym);
-      const fillPrice = nextBar.open;
-
-      if (!hasPos && signal.confidence >= PAPER.minConfidence) {
-        if (signal.signal === 'LONG') {
-          const res = engine.openLong(sym, fillPrice, nextBar.date, signal.indicators?.atr14);
-          if (res.ok) {
-            console.log(`${nextBar.date}  LONG         ${sym.padEnd(14)} qty=${res.qty} @ ${fillPrice.toFixed(2)}  stop=${res.stop?.toFixed(1) ?? '–'} tgt=${res.target?.toFixed(1) ?? '–'}`);
-          }
-        } else if (signal.signal === 'SHORT') {
-          const res = engine.openShort(sym, fillPrice, nextBar.date, signal.indicators?.atr14);
-          if (res.ok) {
-            console.log(`${nextBar.date}  SHORT        ${sym.padEnd(14)} qty=${res.qty} @ ${fillPrice.toFixed(2)}  stop=${res.stop?.toFixed(1) ?? '–'} tgt=${res.target?.toFixed(1) ?? '–'}`);
-          }
-        }
-      } else if (hasPos && engine.canSignalExit(sym)) {
-        const pos = engine.positions.get(sym);
-        const shouldExit =
-          signal.signal === 'FLAT' ||
-          (pos.side === 'LONG' && signal.signal === 'SHORT') ||
-          (pos.side === 'SHORT' && signal.signal === 'LONG');
-
-        if (shouldExit) {
-          const res = engine.closePosition(sym, fillPrice, nextBar.date, 'signal');
-          if (res.ok) {
-            const t = res.trade;
-            const sign = t.pnl >= 0 ? '+' : '';
-            console.log(`${nextBar.date}  CLOSE        ${t.side.padEnd(5)} ${sym.padEnd(14)} PnL ${sign}₹${t.pnl.toFixed(0)} (${sign}${t.pnlPct.toFixed(1)}%)`);
-          }
-        }
-      }
-    }
-
-    engine.mark(barDate, marks);
-
-    if (i % 20 === 0) {
-      process.stdout.write(`  … ${barDate}  equity ₹${engine.equity(marks).toFixed(0)}  trades=${engine.closedTrades.length}\r`);
-    }
-  }
-
-  // Close remaining
-  const lastMarks = {};
-  for (const sym of available) {
-    const last = history[sym][history[sym].length - 1];
-    lastMarks[sym] = last.close;
-    if (engine.positions.has(sym)) {
-      const res = engine.closePosition(sym, last.close, last.date, 'end-of-test');
-      if (res.ok) {
-        const t = res.trade;
-        const sign = t.pnl >= 0 ? '+' : '';
-        console.log(`${last.date}  END          ${t.side.padEnd(5)} ${sym.padEnd(14)} PnL ${sign}₹${t.pnl.toFixed(0)}`);
-      }
-    }
-  }
-  engine.mark('end', lastMarks);
-
-  const s = engine.summary();
-
+  const s = result.summary;
   console.log('\n\n══════════════ PAPER BACKTEST RESULTS ══════════════');
   console.log(`Mode              : ${techOnly ? 'TECH-ONLY' : 'HYBRID'}`);
   console.log(`Interval          : ${dataSettings.label}`);
-  console.log(`Symbols           : ${available.length}`);
+  console.log(`Symbols           : ${result.symbols.length}`);
+  console.log(`Period            : ${result.startDate} → ${result.endDate} (${result.bars} shared bars)`);
   console.log(`Starting capital  : ₹${s.startingCapital.toLocaleString('en-IN')}`);
   console.log(`Final equity      : ₹${s.finalEquity.toFixed(0)}`);
   console.log(`Total return      : ${s.totalReturnPct >= 0 ? '+' : ''}${s.totalReturnPct.toFixed(1)}%`);
@@ -295,13 +218,14 @@ async function runBacktest() {
   console.log('════════════════════════════════════════════════════');
   console.log();
 
+  // Saved next to this script, whatever directory the command was run from.
+  const outPath = join(HERE, 'last-backtest.json');
   try {
-    const outPath = 'paper-bot/last-backtest.json';
     writeFileSync(outPath, JSON.stringify({
       generatedAt: new Date().toISOString(),
       mode: techOnly ? 'tech-only' : 'hybrid',
       interval: dataSettings.label,
-      symbols: available,
+      symbols: result.symbols,
       summary: {
         startingCapital: s.startingCapital,
         finalEquity: s.finalEquity,
@@ -309,14 +233,16 @@ async function runBacktest() {
         closedTrades: s.closedTrades,
         sideBreakdown: s.sideBreakdown,
         winRatePct: s.winRatePct,
-        profitFactor: s.profitFactor,
+        profitFactor: s.profitFactor === Infinity ? 'Infinity' : s.profitFactor,
         maxDrawdownPct: s.maxDrawdownPct,
         exitReasons: s.exitReasons,
       },
       trades: s.trades,
     }, null, 2));
     console.log(`Results saved to ${outPath}`);
-  } catch (_) {}
+  } catch (err) {
+    console.error(`Could not save results to ${outPath}: ${err.message}`);
+  }
 
   console.log();
   console.log('DISCLAIMER: Experimental research simulation only. Not investment advice.');

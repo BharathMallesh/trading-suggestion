@@ -12,6 +12,7 @@
 // general information, not a real-time trading feed.
 
 import { pathToFileURL } from 'node:url';
+import { HttpError, badRequest } from './util.mjs';
 
 const CHART_BASE = 'https://query1.finance.yahoo.com/v8/finance/chart';
 
@@ -26,6 +27,22 @@ const RANGES = new Set([
 const INTERVALS = new Set([
   '1m', '2m', '5m', '15m', '30m', '60m', '90m', '1h', '1d', '5d', '1wk', '1mo', '3mo',
 ]);
+const INTRADAY = new Set(['1m', '2m', '5m', '15m', '30m', '60m', '90m', '1h']);
+
+/** True for minute/hour intervals (bars carry a time, not just a date). */
+export const isIntraday = (interval) => INTRADAY.has(interval);
+
+// Tiny in-memory cache so repeated clicks / parallel panels don't hammer Yahoo
+// (it rate-limits with HTTP 429). Successful payloads only, short TTL.
+const CACHE_TTL_MS = 30_000;
+const cache = new Map(); // url -> { at, result }
+
+/** Drop all cached chart payloads (used by tests). */
+export function clearMarketCache() {
+  cache.clear();
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /**
  * Low-level fetch of the raw chart payload for a symbol. Symbols use Yahoo's
@@ -37,29 +54,61 @@ const INTERVALS = new Set([
  */
 export async function fetchChart(symbol, opts = {}) {
   const sym = String(symbol || '').trim();
-  if (!sym) throw new Error('A ticker symbol is required, e.g. "AAPL" or "HDFCBANK.NS".');
+  if (!sym) throw badRequest('A ticker symbol is required, e.g. "AAPL" or "HDFCBANK.NS".');
 
   const range = opts.range || '1mo';
   const interval = opts.interval || '1d';
   if (!RANGES.has(range)) {
-    throw new Error(`Unsupported range "${range}". Use one of: ${[...RANGES].join(', ')}.`);
+    throw badRequest(`Unsupported range "${range}". Use one of: ${[...RANGES].join(', ')}.`);
   }
   if (!INTERVALS.has(interval)) {
-    throw new Error(`Unsupported interval "${interval}". Use one of: ${[...INTERVALS].join(', ')}.`);
+    throw badRequest(`Unsupported interval "${interval}". Use one of: ${[...INTERVALS].join(', ')}.`);
   }
 
   const url = `${CHART_BASE}/${encodeURIComponent(sym)}?interval=${interval}&range=${range}`;
-  const res = await fetch(url, { headers: { 'User-Agent': UA }, signal: opts.signal });
+  const hit = cache.get(url);
+  if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.result;
+
+  let res = await fetch(url, { headers: { 'User-Agent': UA }, signal: opts.signal });
+  if (res.status === 429) {
+    // Rate-limited: back off once before giving up.
+    await sleep(800);
+    res = await fetch(url, { headers: { 'User-Agent': UA }, signal: opts.signal });
+  }
   if (!res.ok) {
     const body = await res.text().catch(() => '');
-    throw new Error(`Market data HTTP ${res.status} ${res.statusText}: ${body.slice(0, 200)}`);
+    throw chartHttpError(sym, res.status, res.statusText, body);
   }
   const data = await res.json();
   const err = data?.chart?.error;
-  if (err) throw new Error(`Market data error for "${sym}": ${err.description || err.code || 'unknown'}`);
+  if (err) throw chartHttpError(sym, 404, '', JSON.stringify({ chart: { error: err } }));
   const result = data?.chart?.result?.[0];
-  if (!result) throw new Error(`No market data found for "${sym}". Check the ticker symbol.`);
+  if (!result) throw new HttpError(404, `No market data found for "${sym}". Check the ticker symbol.`);
+  cache.set(url, { at: Date.now(), result });
   return result;
+}
+
+/** Turn a Yahoo error response into a short, user-readable HttpError. */
+function chartHttpError(sym, status, statusText, body) {
+  let description = '';
+  try {
+    description = JSON.parse(body)?.chart?.error?.description || '';
+  } catch {
+    /* not JSON */
+  }
+  if (status === 404 || /No data found/i.test(description)) {
+    const hint = /^[A-Z0-9&-]+$/i.test(sym) && !sym.includes('.')
+      ? ` NSE stocks need the .NS suffix (e.g. "${sym.toUpperCase()}.NS"); BSE uses .BO.`
+      : '';
+    return new HttpError(404, `No data found for "${sym}" — check the ticker symbol.${hint}`);
+  }
+  if (status === 429) {
+    return new HttpError(503, 'Market data source is rate-limiting requests. Wait a few seconds and try again.');
+  }
+  if (status === 422 || status === 400) {
+    return new HttpError(400, `Market data: ${description || 'that range/interval combination is not available'}.`);
+  }
+  return new HttpError(502, `Market data HTTP ${status} ${statusText}: ${(description || body).slice(0, 200)}`);
 }
 
 /**
@@ -99,6 +148,8 @@ export async function quote(symbol, opts = {}) {
  */
 export async function candles(symbol, opts = {}) {
   const result = await fetchChart(symbol, opts);
+  const intra = isIntraday(opts.interval || '1d');
+  const off = result.meta?.gmtoffset || 0; // seconds; shifts UTC into exchange-local
   const ts = result.timestamp || [];
   const q = result.indicators?.quote?.[0] || {};
   const adj = result.indicators?.adjclose?.[0]?.adjclose || [];
@@ -106,8 +157,12 @@ export async function candles(symbol, opts = {}) {
   for (let i = 0; i < ts.length; i++) {
     // Yahoo emits null OHLC for holidays/halts; skip incomplete rows.
     if (q.open?.[i] == null || q.close?.[i] == null) continue;
+    const local = new Date((ts[i] + off) * 1000).toISOString();
     rows.push({
-      date: new Date(ts[i] * 1000).toISOString().slice(0, 10),
+      // Daily bars: exchange-local date. Intraday bars: date + HH:MM so each
+      // bar is uniquely labelled (charts, trade logs, alignment).
+      date: intra ? local.slice(0, 16).replace('T', ' ') : local.slice(0, 10),
+      ts: ts[i],
       open: q.open[i],
       high: q.high?.[i],
       low: q.low?.[i],
@@ -126,13 +181,17 @@ export async function candles(symbol, opts = {}) {
  * @param {string} symbol
  * @param {{ interval?: string, date?: string, signal?: AbortSignal }} [opts]
  *   `interval` e.g. '1m','5m' (default '1m'); `date` 'YYYY-MM-DD' in the
- *   exchange's local time (default: the most recent day present in the data).
+ *   exchange's local time, or 'previous' for the last full session before the
+ *   exchange's today (default: the most recent day present in the data).
  * @returns {Promise<{symbol:string,date:string,interval:string,count:number,
  *   currency:string,exchange:string,
  *   rows:{time:string,hhmm:string,open:number,high:number,low:number,close:number,volume:(number|null)}[]}>}
  */
 export async function intraday(symbol, opts = {}) {
   const interval = opts.interval || '1m';
+  if (opts.date && opts.date !== 'previous' && !/^\d{4}-\d\d-\d\d$/.test(opts.date)) {
+    throw badRequest(`Pass the date as YYYY-MM-DD (or "previous"), got "${opts.date}".`);
+  }
   // 1m/2m data spans only a few days on Yahoo; coarser intervals reach further.
   const range = ['1m', '2m'].includes(interval) ? '5d' : ['5m', '15m', '30m', '60m', '90m', '1h'].includes(interval) ? '1mo' : '5d';
   const result = await fetchChart(symbol, { range, interval, signal: opts.signal });
@@ -155,12 +214,19 @@ export async function intraday(symbol, opts = {}) {
       volume: q.volume?.[i] ?? null,
     });
   }
-  if (!all.length) throw new Error(`No intraday data for "${symbol}" at ${interval}.`);
+  if (!all.length) throw new HttpError(404, `No intraday data for "${symbol}" at ${interval}.`);
   const dates = [...new Set(all.map((r) => r.localDate))].sort();
-  const date = opts.date || dates[dates.length - 1];
+  let date = opts.date || dates[dates.length - 1];
+  if (opts.date === 'previous') {
+    // "Yesterday" = the latest session strictly before the exchange's today.
+    const today = new Date(Date.now() + off * 1000).toISOString().slice(0, 10);
+    const before = dates.filter((d) => d < today);
+    if (!before.length) throw new HttpError(404, `No previous session in the data for ${symbol}.`);
+    date = before[before.length - 1];
+  }
   const rows = all.filter((r) => r.localDate === date).map(({ localDate, ...r }) => r);
   if (!rows.length) {
-    throw new Error(`No ${interval} candles for ${symbol} on ${date}. Available days: ${dates.join(', ')}.`);
+    throw new HttpError(404, `No ${interval} candles for ${symbol} on ${date}. Available days: ${dates.join(', ')}.`);
   }
   return {
     symbol: result.meta.symbol,

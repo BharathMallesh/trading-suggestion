@@ -5,6 +5,7 @@
 // NOT estimate future prices or say whether a trade is good.
 
 import { pathToFileURL } from 'node:url';
+import { badRequest } from './util.mjs';
 
 const SQRT2PI = Math.sqrt(2 * Math.PI);
 
@@ -38,6 +39,12 @@ export function normCdf(x) {
  *   thetaPerDay:number, d1:number, d2:number}}
  */
 export function greeks({ spot, strike, tYears, iv, type, rate = 0.065 }) {
+  if (type !== 'CE' && type !== 'PE') throw badRequest(`Option type must be CE or PE, got "${type}".`);
+  if (!(Number.isFinite(spot) && spot > 0)) throw badRequest('Spot must be a positive number.');
+  if (!(Number.isFinite(strike) && strike > 0)) throw badRequest('Strike must be a positive number.');
+  if (!(Number.isFinite(tYears) && tYears >= 0)) throw badRequest('Days to expiry must be 0 or more.');
+  if (!(Number.isFinite(iv) && iv >= 0)) throw badRequest('IV must be 0 or more.');
+  if (!Number.isFinite(rate)) throw badRequest('Rate must be a number.');
   const isCall = type === 'CE';
   // Guard the degenerate cases (expiry today, zero vol) so we return the
   // intrinsic value cleanly instead of dividing by zero.
@@ -81,6 +88,15 @@ export function greeks({ spot, strike, tYears, iv, type, rate = 0.065 }) {
  *   maxProfit:(number|'unlimited'), perLot:object}}
  */
 export function payoff({ action, type, strike, premium, lotSize = 1 }) {
+  if (action !== 'buy' && action !== 'sell') throw badRequest(`Action must be buy or sell, got "${action}".`);
+  if (type !== 'CE' && type !== 'PE') throw badRequest(`Option type must be CE or PE, got "${type}".`);
+  if (!(Number.isFinite(strike) && strike > 0)) throw badRequest('Strike must be a positive number.');
+  if (!(Number.isFinite(premium) && premium >= 0)) throw badRequest('Premium must be 0 or more.');
+  if (!(Number.isFinite(lotSize) && lotSize > 0)) throw badRequest('Lot size must be a positive number.');
+  // A put can never be worth more than its strike (the most it can ever pay).
+  if (type === 'PE' && premium > strike) {
+    throw badRequest(`A put premium (${premium}) cannot exceed its strike (${strike}).`);
+  }
   const isCall = type === 'CE';
   const breakeven = isCall ? strike + premium : strike - premium;
   // Long option: pay premium, loss capped at premium. Short option: collect
@@ -131,7 +147,13 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     process.exit(1);
   }
 
-  const g = greeks({ spot, strike, tYears: days / 365, iv: ivPct / 100, type, rate });
+  let g;
+  try {
+    g = greeks({ spot, strike, tYears: days / 365, iv: ivPct / 100, type, rate });
+  } catch (err) {
+    console.error('Error:', err.message);
+    process.exit(1);
+  }
   console.log(`${type} ${strike} | spot ${spot} | ${days}d | IV ${ivPct}% | r ${(rate * 100).toFixed(1)}%`);
   console.log(`Theoretical price : ${g.price.toFixed(2)}`);
   console.log(`Delta             : ${g.delta.toFixed(4)}`);
@@ -144,7 +166,13 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     // Use --premium if given, else the theoretical price, for the payoff maths.
     const premium = num('--premium') ?? g.price;
     const lotSize = num('--lot') ?? 1;
-    const p = payoff({ action, type, strike, premium, lotSize });
+    let p;
+    try {
+      p = payoff({ action, type, strike, premium, lotSize });
+    } catch (err) {
+      console.error('Error:', err.message);
+      process.exit(1);
+    }
     console.log(`\nPosition          : ${p.position} @ ${premium.toFixed(2)}`);
     console.log(`Breakeven         : ${p.breakeven}`);
     console.log(`Max loss / lot    : ${p.perLot.maxLoss}`);

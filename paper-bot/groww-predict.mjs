@@ -6,6 +6,8 @@ import { historicalCandles } from '../groww-data.mjs';
 import { candles as yahooCandles } from '../market-data.mjs';
 import { computeIndicators } from './indicators.mjs';
 import { logPrediction } from './prediction-log.mjs';
+import { extractJson, normalizeConfidence } from './llm-json.mjs';
+import { HttpError, badRequest } from '../util.mjs';
 
 const ADJUST_MAX = 0.15; // Ling may move each leg by at most ±15 percentage points (as fraction)
 
@@ -46,9 +48,35 @@ export function toGrowwSymbol(symbol) {
     .replace(/\.BO$/i, '');
 }
 
-function formatIST(d) {
-  const pad = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+/** "YYYY-MM-DD HH:mm:ss" in IST (UTC+5:30), independent of this machine's timezone. */
+export function formatIST(d) {
+  return new Date(d.getTime() + 19800 * 1000).toISOString().slice(0, 19).replace('T', ' ');
+}
+
+const yahooSymbolCache = new Map();
+
+/**
+ * Resolve user input to a Yahoo symbol. Anything already qualified (has a
+ * suffix like .NS/.BO/.L, or is an index/crypto/FX like ^NSEI, BTC-USD,
+ * INR=X) is used as-is. A bare ticker is tried as NSE first (HDFCBANK →
+ * HDFCBANK.NS), then as-is (AAPL), so both Indian and US tickers work.
+ * @param {string} symbol
+ * @returns {Promise<string>}
+ */
+export async function resolveYahooSymbol(symbol) {
+  const raw = String(symbol || '').trim().toUpperCase();
+  if (!raw) throw badRequest('symbol is required, e.g. HDFCBANK or RELIANCE.NS');
+  if (/[.^=-]/.test(raw)) return raw;
+  if (yahooSymbolCache.has(raw)) return yahooSymbolCache.get(raw);
+  let resolved = raw;
+  try {
+    await yahooCandles(`${raw}.NS`, { range: '5d', interval: '1d' });
+    resolved = `${raw}.NS`;
+  } catch (err) {
+    if (err.status !== 404) throw err; // network / rate-limit: surface it
+  }
+  yahooSymbolCache.set(raw, resolved);
+  return resolved;
 }
 
 export async function fetchGrowwRecent(symbol, opts = {}) {
@@ -86,7 +114,7 @@ async function fetchYahooRecent(symbol, opts = {}) {
   const interval =
     intervalMinutes <= 5 ? '5m' : intervalMinutes <= 15 ? '15m' : intervalMinutes <= 60 ? '60m' : '1d';
   const range = interval === '1d' ? '3mo' : '5d';
-  const yahooSym = String(symbol).includes('.') ? symbol : `${symbol}.NS`;
+  const yahooSym = await resolveYahooSymbol(symbol);
   const rows = await yahooCandles(yahooSym, { range, interval });
   return {
     symbol: yahooSym,
@@ -158,36 +186,19 @@ export function techScore(ind) {
 
 /**
  * Map tech score → base probability triangle (sums to 1).
+ * Symmetric and monotone: score 0 → 25% up / 25% down / 50% sideways; as
+ * |score| grows, sideways shrinks (to 20%) and the winning side takes a
+ * larger share of the directional mass (to ~72% / 8%).
  */
 export function baseProbabilities(score) {
-  // High |score| → directional; low → sideways-heavy
-  const abs = Math.abs(score);
-  const directional = 0.28 + abs * 0.42; // 0.28..0.70 total for the winning side + partial other
-  let up;
-  let down;
-  let side;
-
-  if (score >= 0) {
-    up = 0.22 + score * 0.38; // 0.22 .. 0.60
-    down = 0.18 + (1 - score) * 0.12; // shrinks as bullish
-    side = 1 - up - down;
-  } else {
-    const s = -score;
-    down = 0.22 + s * 0.38;
-    up = 0.18 + (1 - s) * 0.12;
-    side = 1 - up - down;
-  }
-
-  // Floor sideways when score is weak
-  if (abs < 0.25) {
-    side = Math.max(side, 0.4);
-    const rest = 1 - side;
-    const ud = up + down || 1;
-    up = (up / ud) * rest;
-    down = (down / ud) * rest;
-  }
-
-  return normalizeProbs(up, down, side);
+  const abs = Math.min(1, Math.abs(Number(score) || 0));
+  const side = 0.5 - 0.3 * abs;
+  const directional = 1 - side;
+  const win = directional * (0.5 + 0.4 * abs);
+  const lose = directional - win;
+  const up = score >= 0 ? win : lose;
+  const down = score >= 0 ? lose : win;
+  return { probUp: up, probDown: down, probSideways: side };
 }
 
 function normalizeProbs(up, down, side) {
@@ -202,99 +213,72 @@ function normalizeProbs(up, down, side) {
   };
 }
 
-/** Blend two probability sets (e.g. intraday + daily). */
-function blendProbs(a, b, weightA = 0.6) {
-  const wB = 1 - weightA;
-  return normalizeProbs(
-    a.probUp * weightA + b.probUp * wB,
-    a.probDown * weightA + b.probDown * wB,
-    a.probSideways * weightA + b.probSideways * wB,
-  );
-}
-
-function clampToBase(adjusted, base, maxDelta = ADJUST_MAX) {
-  const clamp = (v, b) => Math.max(b - maxDelta, Math.min(b + maxDelta, v));
-  return normalizeProbs(
-    clamp(adjusted.probUp, base.probUp),
-    clamp(adjusted.probDown, base.probDown),
-    clamp(adjusted.probSideways, base.probSideways),
-  );
-}
-
-function normalizeConfidence(c) {
-  if (typeof c === 'number' && !Number.isNaN(c)) {
-    return Math.max(0, Math.min(1, c > 1 ? c / 100 : c));
+/**
+ * Keep each leg within ±maxDelta of the base AND make the legs sum to 1.
+ * (Clamping then re-normalizing would push legs back past the cap.)
+ * Iteratively clamps and spreads the leftover over legs that still have room.
+ */
+export function clampToBase(adjusted, base, maxDelta = ADJUST_MAX) {
+  const keys = ['probUp', 'probDown', 'probSideways'];
+  const lo = keys.map((k) => Math.max(0, base[k] - maxDelta));
+  const hi = keys.map((k) => Math.min(1, base[k] + maxDelta));
+  let p = keys.map((k, i) => Math.min(hi[i], Math.max(lo[i], Number(adjusted[k]) || 0)));
+  for (let iter = 0; iter < 50; iter++) {
+    const diff = 1 - p.reduce((a, b) => a + b, 0);
+    if (Math.abs(diff) < 1e-12) break;
+    const free = p.map((v, i) => (diff > 0 ? v < hi[i] - 1e-12 : v > lo[i] + 1e-12));
+    const n = free.filter(Boolean).length;
+    if (!n) break;
+    p = p.map((v, i) => (free[i] ? Math.min(hi[i], Math.max(lo[i], v + diff / n)) : v));
   }
-  const s = String(c || '').toLowerCase();
-  if (s.includes('high') || s.includes('strong')) return 0.75;
-  if (s.includes('moderate') || s.includes('medium')) return 0.55;
-  if (s.includes('low') || s.includes('weak')) return 0.35;
-  const n = parseFloat(s);
-  if (!Number.isNaN(n)) return Math.max(0, Math.min(1, n > 1 ? n / 100 : n));
-  return 0.45;
+  return { probUp: p[0], probDown: p[1], probSideways: p[2] };
 }
 
-function parseProb(raw, base) {
-  let text = String(raw || '').trim();
-  text = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
-  const match = text.match(/\{[\s\S]*\}/);
-  if (match) {
-    try {
-      const p = JSON.parse(match[0]);
-      let up = Math.max(0, Number(p.probUp) || 0);
-      let down = Math.max(0, Number(p.probDown) || 0);
-      let side = Math.max(0, Number(p.probSideways) || 0);
-      if (up > 1 || down > 1 || side > 1) {
-        up /= 100;
-        down /= 100;
-        side /= 100;
-      }
-      let adj = normalizeProbs(up, down, side);
-      if (base) adj = clampToBase(adj, base);
+/** Which leg is largest. */
+export function topLabel(pr) {
+  if (pr.probUp >= pr.probDown && pr.probUp >= pr.probSideways) return 'UP';
+  if (pr.probDown >= pr.probSideways) return 'DOWN';
+  return 'SIDEWAYS';
+}
 
-      let bias = String(p.bias || '').toUpperCase();
-      if (bias.includes('UP') || bias.includes('BULL')) bias = 'UP';
-      else if (bias.includes('DOWN') || bias.includes('BEAR')) bias = 'DOWN';
-      else if (bias.includes('SIDE') || bias.includes('NEUTRAL')) bias = 'SIDEWAYS';
-      else {
-        bias =
-          adj.probUp >= adj.probDown && adj.probUp >= adj.probSideways
-            ? 'UP'
-            : adj.probDown >= adj.probSideways
-              ? 'DOWN'
-              : 'SIDEWAYS';
-      }
-
-      return {
-        ...adj,
-        bias,
-        confidence: normalizeConfidence(p.confidence),
-        horizon: String(p.horizon || 'next session').slice(0, 60),
-        summary: String(p.summary || '').slice(0, 900),
-        drivers: Array.isArray(p.drivers) ? p.drivers.map(String).slice(0, 6) : [],
-        risks: Array.isArray(p.risks) ? p.risks.map(String).slice(0, 6) : [],
-        adjustmentNote: String(p.adjustmentNote || '').slice(0, 300),
-      };
-    } catch {
-      /* fall through */
+export function parseProb(raw, base, llmError = null) {
+  const text = String(raw || '').trim();
+  const p = extractJson(text, (o) => 'probUp' in o || 'probDown' in o || 'probSideways' in o);
+  if (p) {
+    let up = Math.max(0, Number(p.probUp) || 0);
+    let down = Math.max(0, Number(p.probDown) || 0);
+    let side = Math.max(0, Number(p.probSideways) || 0);
+    if (up > 1 || down > 1 || side > 1) {
+      up /= 100;
+      down /= 100;
+      side /= 100;
     }
+    let adj = normalizeProbs(up, down, side);
+    if (base) adj = clampToBase(adj, base);
+    return {
+      ...adj,
+      // Bias is derived from the FINAL numbers, never trusted from the model,
+      // so the label can't contradict the probabilities shown next to it.
+      bias: topLabel(adj),
+      confidence: normalizeConfidence(p.confidence, 0.45),
+      summary: String(p.summary || '').slice(0, 900),
+      drivers: Array.isArray(p.drivers) ? p.drivers.map(String).slice(0, 6) : [],
+      risks: Array.isArray(p.risks) ? p.risks.map(String).slice(0, 6) : [],
+      adjustmentNote: String(p.adjustmentNote || '').slice(0, 300),
+    };
   }
   // Fallback: pure technical base
-  const b = base || { probUp: 0.33, probDown: 0.33, probSideways: 0.34 };
-  const bias =
-    b.probUp >= b.probDown && b.probUp >= b.probSideways
-      ? 'UP'
-      : b.probDown >= b.probSideways
-        ? 'DOWN'
-        : 'SIDEWAYS';
+  const b = base || { probUp: 1 / 3, probDown: 1 / 3, probSideways: 1 / 3 };
+  let why;
+  if (llmError && /OPENROUTER_API_KEY/.test(llmError)) why = 'AI adjustment skipped — OPENROUTER_API_KEY is not set on the server.';
+  else if (llmError) why = `AI adjustment unavailable (${llmError.slice(0, 120)}).`;
+  else if (text) why = `Model reply could not be parsed (${text.slice(0, 80)}).`;
+  else why = 'Model returned an empty reply.';
   return {
     ...b,
-    bias,
+    bias: topLabel(b),
     confidence: 0.4,
-    horizon: 'next session',
-    summary: text
-      ? `Model parse failed — showing technical base only. ${text.slice(0, 120)}`
-      : 'Model empty — showing technical base probabilities only.',
+    summary: `${why} Showing the technical base probabilities only.`,
     drivers: ['Technical base score (SMA / RSI / returns)'],
     risks: ['Ling adjustment unavailable'],
     adjustmentNote: 'No LLM adjustment applied',
@@ -310,10 +294,28 @@ const HORIZON_WEIGHTS = {
   m15: 0.15, // last ~15 minutes
 };
 
+/**
+ * Score for windows too short for SMA-20 / RSI-14 (e.g. the last hour or the
+ * last 15 minutes): net move across the window (0.5% ≈ full strength) plus
+ * where the last close sits in the window's high-low range.
+ */
+export function shortWindowScore(rows) {
+  if (!rows || rows.length < 2) return 0;
+  const first = Number(rows[0].open ?? rows[0].close);
+  const last = Number(rows[rows.length - 1].close);
+  if (!(first > 0)) return 0;
+  const hi = Math.max(...rows.map((r) => r.high));
+  const lo = Math.min(...rows.map((r) => r.low));
+  const retScore = Math.max(-1, Math.min(1, ((last / first - 1) * 100) / 0.5));
+  const pos = hi > lo ? ((last - lo) / (hi - lo)) * 2 - 1 : 0;
+  return Math.max(-1, Math.min(1, 0.6 * retScore + 0.4 * pos));
+}
+
 function scoreWindow(rows, label, minBars = 5) {
   if (!rows || rows.length < minBars) return null;
   const ind = computeIndicators(rows);
-  const score = techScore(ind);
+  // Full indicator score needs ~20 bars; shorter windows use price action only.
+  const score = rows.length >= 20 ? techScore(ind) : shortWindowScore(rows);
   const base = baseProbabilities(score);
   return {
     label,
@@ -397,7 +399,7 @@ function buildUserPayload(meta, rows, ind, base, score, horizons) {
  * Fetch multi-horizon windows and build combined base probabilities.
  */
 async function buildMultiHorizon(symbol) {
-  const yahooSym = String(symbol).includes('.') ? symbol : `${toGrowwSymbol(symbol)}.NS`;
+  const yahooSym = await resolveYahooSymbol(symbol);
   const horizons = [];
 
   // Daily: ~2 months and ~1 month
@@ -428,6 +430,7 @@ async function buildMultiHorizon(symbol) {
 
   if (intra.length >= 8) {
     // Today: bars from last calendar date in series
+    // Intraday bar dates are "YYYY-MM-DD HH:MM"; group by the day part.
     const lastDate = String(intra[intra.length - 1].date || '').slice(0, 10);
     const todayBars = intra.filter((r) => String(r.date || '').slice(0, 10) === lastDate);
     const todayWin = scoreWindow(todayBars.length >= 8 ? todayBars : intra.slice(-78), 'Today (session)');
@@ -456,7 +459,8 @@ async function buildMultiHorizon(symbol) {
  *   mode 'multi' = 2m + 1m + today + 1h + 15m weighted blend (default)
  */
 export async function growwProbability(symbol, opts = {}) {
-  const intervalMinutes = opts.intervalMinutes || 15;
+  if (!String(symbol || '').trim()) throw badRequest('symbol is required, e.g. HDFCBANK or RELIANCE.NS');
+  const intervalMinutes = [5, 15, 60, 1440].includes(Number(opts.intervalMinutes)) ? Number(opts.intervalMinutes) : 15;
   const mode = opts.mode === '15m' ? '15m' : 'multi';
   let meta;
   let usedFallback = false;
@@ -479,7 +483,8 @@ export async function growwProbability(symbol, opts = {}) {
   }
 
   if (!meta.rows?.length || meta.rows.length < 15) {
-    throw new Error(
+    throw new HttpError(
+      400,
       `Not enough candles from ${meta.source} for ${symbol} (${meta.rows?.length || 0} bars). ` +
         (meta.growwError ? `Groww: ${meta.growwError}` : ''),
     );
@@ -525,6 +530,7 @@ export async function growwProbability(symbol, opts = {}) {
   const user = buildUserPayload(meta, meta.rows, ind, base, score, horizons);
 
   let raw = '';
+  let llmError = null;
   try {
     raw = await chat(
       [
@@ -533,11 +539,14 @@ export async function growwProbability(symbol, opts = {}) {
       ],
       { temperature: 0.15, timeoutMs: 45_000 },
     );
-  } catch {
+  } catch (err) {
     raw = '';
+    llmError = err.message || String(err);
   }
 
-  if (!String(raw || '').trim() || !String(raw).match(/\{[\s\S]*\}/)) {
+  // Retry once with a compact prompt if the reply was empty / not JSON —
+  // but not when the key is missing (it would fail identically).
+  if (!/OPENROUTER_API_KEY/.test(llmError || '') && (!String(raw || '').trim() || !String(raw).match(/\{[\s\S]*\}/))) {
     try {
       raw = await chat(
         [
@@ -549,12 +558,13 @@ export async function growwProbability(symbol, opts = {}) {
         ],
         { temperature: 0.1, timeoutMs: 30_000 },
       );
-    } catch {
-      /* pure base */
+      llmError = null;
+    } catch (err) {
+      llmError = err.message || String(err);
     }
   }
 
-  const prediction = parseProb(raw, base);
+  const prediction = parseProb(raw, base, llmError);
   const last = meta.rows[meta.rows.length - 1];
   const move = expectedMoveEstimate({
     close: last.close,
@@ -563,6 +573,11 @@ export async function growwProbability(symbol, opts = {}) {
     intervalMinutes,
     bias: prediction.bias,
   });
+
+  // One horizon, stated once: the time window the ATR bands describe. The
+  // model's own horizon text is dropped so the two labels can't disagree.
+  prediction.horizon = move.horizonLabel;
+  delete move.horizonLabel;
 
   const out = {
     symbol: meta.symbol,
@@ -625,9 +640,16 @@ export async function growwProbability(symbol, opts = {}) {
 function expectedMoveEstimate({ close, atr, mode, intervalMinutes, bias }) {
   const px = Number(close) || 0;
   const a = Number(atr) || 0;
+  const horizonLabel =
+    mode === 'multi' ? 'next 1–3 sessions'
+      : intervalMinutes <= 5 ? 'next 15–45 minutes'
+        : intervalMinutes <= 15 ? 'next 30–90 minutes'
+          : intervalMinutes <= 60 ? 'next 2–6 hours'
+            : 'next 1–3 sessions';
   if (px <= 0 || a <= 0) {
     return {
       available: false,
+      horizonLabel,
       timeWindow: mode === 'multi' ? '1–3 sessions (mixed horizons)' : `next few ${intervalMinutes}m bars`,
       note: 'ATR unavailable — cannot size a range.',
     };
@@ -658,6 +680,7 @@ function expectedMoveEstimate({ close, atr, mode, intervalMinutes, bias }) {
 
   return {
     available: true,
+    horizonLabel,
     lastClose: px,
     atr: a,
     timeWindow,

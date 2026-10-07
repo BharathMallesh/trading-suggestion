@@ -27,6 +27,8 @@ import { signalAgent } from './agents/signal-agent.mjs';
 import { candlePredict } from './paper-bot/candle-predict.mjs';
 import { growwProbability } from './paper-bot/groww-predict.mjs';
 import { evaluatePending, computeStats, getHistory } from './paper-bot/prediction-log.mjs';
+import { runBacktest } from './paper-bot/backtest.mjs';
+import { HttpError, badRequest, parseSymbols, parseBool } from './util.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT) || 3000;
@@ -34,9 +36,11 @@ const PORT = Number(process.env.PORT) || 3000;
 // not something to expose on the network.
 const HOST = '127.0.0.1';
 
+// JSON can't represent Infinity (it becomes null); send it as the string
+// "Infinity" so e.g. a profit factor with no losing trades survives the trip.
 const json = (res, code, obj) => {
   res.writeHead(code, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify(obj));
+  res.end(JSON.stringify(obj, (_k, v) => (v === Infinity ? 'Infinity' : v === -Infinity ? '-Infinity' : v)));
 };
 
 const readBody = (req) =>
@@ -44,15 +48,80 @@ const readBody = (req) =>
     let data = '';
     req.on('data', (c) => {
       data += c;
-      if (data.length > 1e6) reject(new Error('Request body too large')); // ~1MB cap
+      if (data.length > 1e6) {
+        reject(new HttpError(413, 'Request body too large')); // ~1MB cap
+        req.destroy();
+      }
     });
     req.on('end', () => resolve(data));
     req.on('error', reject);
   });
 
-const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url, `http://${req.headers.host}`);
+/** Read a JSON object body. Empty → {}. Bad JSON / non-object → 400. */
+async function readJson(req) {
+  const raw = await readBody(req);
+  if (!raw.trim()) return {};
+  let body;
   try {
+    body = JSON.parse(raw);
+  } catch {
+    throw badRequest('Request body must be valid JSON.');
+  }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) throw badRequest('Request body must be a JSON object.');
+  return body;
+}
+
+// --- Local-only request guard ---------------------------------------------
+// The server holds a paid API key, so only this dashboard may call it:
+// - Host must be localhost / 127.0.0.1 / [::1] on our port (blocks DNS rebinding).
+// - Browsers label cross-site requests with Sec-Fetch-Site / Origin; reject
+//   any that don't come from this page (blocks CSRF from other tabs).
+// - POSTs must be application/json, which a foreign page can't send without
+//   a CORS preflight that this server never approves.
+const ALLOWED_HOSTS = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`, `[::1]:${PORT}`]);
+function guard(req, url) {
+  const host = String(req.headers.host || '').toLowerCase();
+  if (!ALLOWED_HOSTS.has(host)) throw new HttpError(421, 'Unknown Host header — open the dashboard via http://localhost:' + PORT);
+  if (!url.pathname.startsWith('/api/')) return;
+  const site = req.headers['sec-fetch-site'];
+  if (site && site !== 'same-origin' && site !== 'none') throw new HttpError(403, 'Cross-site requests are not allowed.');
+  const origin = req.headers.origin;
+  if (origin && !ALLOWED_HOSTS.has(origin.replace(/^https?:\/\//, '').toLowerCase())) {
+    throw new HttpError(403, 'Cross-origin requests are not allowed.');
+  }
+  if (req.method === 'POST' && !/^application\/json\b/i.test(req.headers['content-type'] || '')) {
+    throw new HttpError(415, 'POST requests must use Content-Type: application/json.');
+  }
+}
+
+const PAPER_INTERVALS = new Set(['1d', '15m', '5m', '1h']);
+
+/** Validate the paper-bot interval and resolve its data settings. */
+function paperData(interval = '1d') {
+  if (!PAPER_INTERVALS.has(interval)) throw badRequest(`Unsupported interval "${interval}". Use 1d, 15m, 5m, or 1h.`);
+  if (interval === '1d') return { range: PAPER.candleRange, candleInterval: '1d', lookbackBars: PAPER.lookbackBars };
+  const p = PAPER.intraday[interval];
+  return { range: p.range, candleInterval: p.interval, lookbackBars: p.lookbackBars };
+}
+
+/** Required finite number from a query string. */
+function num(params, key, label) {
+  const raw = params.get(key);
+  const n = Number(raw);
+  if (raw === null || raw.trim() === '' || !Number.isFinite(n)) throw badRequest(`${label} is required and must be a number.`);
+  return n;
+}
+
+const server = http.createServer(async (req, res) => {
+  let url;
+  try {
+    url = new URL(req.url, 'http://localhost');
+  } catch {
+    return json(res, 400, { error: 'Bad URL' });
+  }
+  try {
+    guard(req, url);
+
     // --- static page ---
     if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
       const html = await readFile(join(HERE, 'index.html'), 'utf8');
@@ -62,9 +131,7 @@ const server = http.createServer(async (req, res) => {
 
     // --- Ask Ling: research / explain / summarize (needs the API key) ---
     if (req.method === 'POST' && url.pathname === '/api/ask') {
-      const { mode = 'research', question = '', text = '', focus = '' } = JSON.parse(
-        (await readBody(req)) || '{}',
-      );
+      const { mode = 'research', question = '', text = '', focus = '' } = await readJson(req);
       let answer;
       if (mode === 'summarize') answer = await summarize(text, { focus });
       else if (mode === 'explain') answer = await explain(question);
@@ -106,14 +173,22 @@ const server = http.createServer(async (req, res) => {
     // --- offline option maths (no data, no key) ---
     if (req.method === 'GET' && url.pathname === '/api/option') {
       const p = url.searchParams;
-      const n = (k) => Number(p.get(k));
       const type = (p.get('type') || 'CE').toUpperCase();
-      const g = greeks({ spot: n('spot'), strike: n('strike'), tYears: n('days') / 365, iv: n('iv') / 100, type });
+      const strike = num(p, 'strike', 'Strike');
+      const g = greeks({
+        spot: num(p, 'spot', 'Spot'),
+        strike,
+        tYears: num(p, 'days', 'Days') / 365,
+        iv: num(p, 'iv', 'IV %') / 100,
+        type,
+      });
       const out = { greeks: g };
       const action = p.get('action');
-      if (action === 'buy' || action === 'sell') {
-        const premium = p.get('premium') ? n('premium') : g.price;
-        out.payoff = payoff({ action, type, strike: n('strike'), premium, lotSize: p.get('lot') ? n('lot') : 1 });
+      if (action) {
+        if (action !== 'buy' && action !== 'sell') throw badRequest('Action must be buy or sell.');
+        const premium = p.get('premium') ? num(p, 'premium', 'Premium') : g.price;
+        const lotSize = p.get('lot') ? num(p, 'lot', 'Lot size') : 1;
+        out.payoff = payoff({ action, type, strike, premium, lotSize });
         out.premiumUsed = premium;
       }
       return json(res, 200, out);
@@ -122,22 +197,12 @@ const server = http.createServer(async (req, res) => {
     // --- Paper-bot scan (experimental signals + paper snapshot) ---
     // POST /api/paper-scan  { symbols?: string[], techOnly?: boolean, interval?: string }
     if (req.method === 'POST' && url.pathname === '/api/paper-scan') {
-      const body = JSON.parse((await readBody(req)) || '{}');
-      const techOnly = Boolean(body.techOnly);
+      const body = await readJson(req);
+      const techOnly = parseBool(body.techOnly);
       const interval = body.interval || '1d';
-      let symbolList = Array.isArray(body.symbols) && body.symbols.length
-        ? body.symbols.map((s) => String(s).trim()).filter(Boolean)
-        : PAPER.symbols.slice(0, 6); // keep UI scans light by default
-
-      // Resolve data settings
-      let range = PAPER.candleRange;
-      let candleInterval = '1d';
-      let lookbackBars = PAPER.lookbackBars;
-      if (interval !== '1d' && PAPER.intraday[interval]) {
-        range = PAPER.intraday[interval].range;
-        candleInterval = PAPER.intraday[interval].interval;
-        lookbackBars = PAPER.intraday[interval].lookbackBars;
-      }
+      const { range, candleInterval, lookbackBars } = paperData(interval);
+      const given = parseSymbols(body.symbols);
+      const symbolList = given.length ? given : PAPER.symbols.slice(0, 6); // keep UI scans light by default
 
       const signals = [];
       for (const sym of symbolList) {
@@ -202,95 +267,37 @@ const server = http.createServer(async (req, res) => {
     // --- Paper-bot backtest (tech-only recommended for speed) ---
     // POST /api/paper-backtest { symbols?, techOnly?, interval? }
     if (req.method === 'POST' && url.pathname === '/api/paper-backtest') {
-      const body = JSON.parse((await readBody(req)) || '{}');
-      const techOnly = body.techOnly !== false; // default true for UI speed
+      const body = await readJson(req);
+      const techOnly = body.techOnly === undefined ? true : parseBool(body.techOnly); // default true for UI speed
       const interval = body.interval || '1d';
-      const symbolList = Array.isArray(body.symbols) && body.symbols.length
-        ? body.symbols.map((s) => String(s).trim()).filter(Boolean)
-        : PAPER.symbols.slice(0, 4);
+      const { range, candleInterval, lookbackBars } = paperData(interval);
+      const given = parseSymbols(body.symbols);
+      const symbolList = given.length ? given : PAPER.symbols.slice(0, 4);
 
-      let range = PAPER.candleRange;
-      let candleInterval = '1d';
-      let lookbackBars = PAPER.lookbackBars;
-      if (interval !== '1d' && PAPER.intraday[interval]) {
-        range = PAPER.intraday[interval].range;
-        candleInterval = PAPER.intraday[interval].interval;
-        lookbackBars = PAPER.intraday[interval].lookbackBars;
-      }
-
-      const engine = new PaperEngine();
       const history = {};
+      const loadErrors = [];
       for (const sym of symbolList) {
         try {
           history[sym] = await candles(sym, { range, interval: candleInterval });
-        } catch (_) {}
-      }
-      const available = Object.keys(history);
-      if (!available.length) {
-        return json(res, 400, { error: 'No market data loaded for requested symbols.' });
-      }
-
-      const minLen = Math.min(...available.map((s) => history[s].length));
-      const startIdx = Math.max(55, lookbackBars);
-      if (minLen <= startIdx + 2) {
-        return json(res, 400, { error: 'Not enough bars for backtest.' });
-      }
-
-      for (let i = startIdx; i < minLen - 1; i++) {
-        const marks = {};
-        engine.tickBar();
-        for (const sym of available) {
-          const bars = history[sym];
-          const bar = bars[i];
-          const nextBar = bars[i + 1];
-          marks[sym] = nextBar.open;
-
-          engine.checkStopsAndTargets(sym, bar);
-
-          const slice = bars.slice(0, i + 1);
-          const signal = await generateSignal(sym, slice, { techOnly, lookbackBars });
-          const hasPos = engine.positions.has(sym);
-          const fillPrice = nextBar.open;
-
-          if (!hasPos && signal.confidence >= PAPER.minConfidence) {
-            if (signal.signal === 'LONG') {
-              engine.openLong(sym, fillPrice, nextBar.date, signal.indicators?.atr14);
-            } else if (signal.signal === 'SHORT') {
-              engine.openShort(sym, fillPrice, nextBar.date, signal.indicators?.atr14);
-            }
-          } else if (hasPos && engine.canSignalExit(sym)) {
-            const pos = engine.positions.get(sym);
-            const shouldExit =
-              signal.signal === 'FLAT' ||
-              (pos.side === 'LONG' && signal.signal === 'SHORT') ||
-              (pos.side === 'SHORT' && signal.signal === 'LONG');
-            if (shouldExit) {
-              engine.closePosition(sym, fillPrice, nextBar.date, 'signal');
-            }
-          }
-        }
-        engine.mark(history[available[0]][i].date, marks);
-      }
-
-      // Close remaining
-      const lastMarks = {};
-      for (const sym of available) {
-        const last = history[sym][history[sym].length - 1];
-        lastMarks[sym] = last.close;
-        if (engine.positions.has(sym)) {
-          engine.closePosition(sym, last.close, last.date, 'end-of-test');
+        } catch (err) {
+          loadErrors.push(`${sym}: ${err.message}`);
         }
       }
-      engine.mark('end', lastMarks);
+      if (!Object.keys(history).length) {
+        throw badRequest(`No market data loaded for the requested symbols. ${loadErrors.join(' ')}`.trim());
+      }
 
-      const s = engine.summary();
+      const result = await runBacktest(history, { techOnly, lookbackBars });
+      const s = result.summary;
       // Downsample equity curve for UI
       const curve = s.equityCurve.filter((_, idx) => idx % 3 === 0 || idx === s.equityCurve.length - 1);
 
       return json(res, 200, {
         mode: techOnly ? 'tech-only' : 'hybrid',
         interval,
-        symbols: available,
+        symbols: result.symbols,
+        skipped: loadErrors,
+        period: { from: result.startDate, to: result.endDate, bars: result.bars },
         summary: {
           startingCapital: s.startingCapital,
           finalEquity: s.finalEquity,
@@ -312,30 +319,34 @@ const server = http.createServer(async (req, res) => {
     // --- Multi-agent run ---
     // POST /api/agents  { symbols?, question?, techOnly?, interval? }
     if (req.method === 'POST' && url.pathname === '/api/agents') {
-      const body = JSON.parse((await readBody(req)) || '{}');
+      const body = await readJson(req);
+      const interval = body.interval || '1d';
+      paperData(interval); // validate
       const out = await runAgents({
-        symbols: body.symbols,
+        symbols: parseSymbols(body.symbols),
         question: body.question,
-        techOnly: Boolean(body.techOnly),
-        interval: body.interval || '1d',
+        techOnly: parseBool(body.techOnly),
+        interval,
       });
       return json(res, 200, out);
     }
 
     // Individual agents
     if (req.method === 'POST' && url.pathname === '/api/agents/research') {
-      const body = JSON.parse((await readBody(req)) || '{}');
-      return json(res, 200, await researchAgent(body));
+      const body = await readJson(req);
+      return json(res, 200, await researchAgent({ symbol: body.symbol, question: body.question, mode: body.mode }));
     }
     if (req.method === 'POST' && url.pathname === '/api/agents/signal') {
-      const body = JSON.parse((await readBody(req)) || '{}');
-      return json(res, 200, await signalAgent(body));
+      const body = await readJson(req);
+      const interval = body.interval || '1d';
+      paperData(interval); // validate
+      return json(res, 200, await signalAgent({ symbols: parseSymbols(body.symbols), techOnly: parseBool(body.techOnly), interval }));
     }
 
     // --- Candle → Ling directional read (experimental prediction-style) ---
     // POST /api/candle-predict { symbol, range?, interval? }
     if (req.method === 'POST' && url.pathname === '/api/candle-predict') {
-      const body = JSON.parse((await readBody(req)) || '{}');
+      const body = await readJson(req);
       const symbol = String(body.symbol || '').trim();
       if (!symbol) return json(res, 400, { error: 'symbol is required, e.g. RELIANCE.NS' });
       const out = await candlePredict(symbol, {
@@ -348,13 +359,13 @@ const server = http.createServer(async (req, res) => {
     // --- Groww (or Yahoo fallback) → Ling up/down probabilities ---
     // POST /api/groww-predict { symbol, intervalMinutes?, lookbackDays?, preferYahoo?, mode? }
     if (req.method === 'POST' && url.pathname === '/api/groww-predict') {
-      const body = JSON.parse((await readBody(req)) || '{}');
+      const body = await readJson(req);
       const symbol = String(body.symbol || '').trim();
       if (!symbol) return json(res, 400, { error: 'symbol is required, e.g. HDFCBANK or RELIANCE.NS' });
       const out = await growwProbability(symbol, {
         intervalMinutes: body.intervalMinutes ? Number(body.intervalMinutes) : 15,
-        lookbackDays: body.lookbackDays ? Number(body.lookbackDays) : 10,
-        preferYahoo: Boolean(body.preferYahoo),
+        lookbackDays: Number(body.lookbackDays) > 0 ? Number(body.lookbackDays) : 10,
+        preferYahoo: parseBool(body.preferYahoo),
         mode: body.mode === '15m' ? '15m' : 'multi',
       });
       return json(res, 200, out);
@@ -371,9 +382,9 @@ const server = http.createServer(async (req, res) => {
 
     // POST /api/prediction-evaluate — score old predictions against later prices
     if (req.method === 'POST' && url.pathname === '/api/prediction-evaluate') {
-      const body = JSON.parse((await readBody(req)) || '{}');
+      const body = await readJson(req);
       const result = await evaluatePending({
-        minAgeMinutes: body.minAgeMinutes != null ? Number(body.minAgeMinutes) : 60,
+        minAgeMinutes: body.minAgeMinutes != null ? Number(body.minAgeMinutes) : 0,
         thresholdPct: body.thresholdPct != null ? Number(body.thresholdPct) : 0.15,
         limit: body.limit != null ? Number(body.limit) : 30,
       });
@@ -392,8 +403,10 @@ const server = http.createServer(async (req, res) => {
 
     json(res, 404, { error: 'Not found' });
   } catch (err) {
-    // Surface the module's own helpful messages (e.g. missing API key) to the UI.
-    json(res, 500, { error: err.message || String(err) });
+    // Surface the module's own helpful messages (e.g. missing API key) to the UI,
+    // with the status the module attached (400 bad input, 404 unknown symbol…).
+    const status = Number.isInteger(err.status) && err.status >= 400 && err.status < 600 ? err.status : 500;
+    if (!res.headersSent) json(res, status, { error: err.message || String(err) });
   }
 });
 

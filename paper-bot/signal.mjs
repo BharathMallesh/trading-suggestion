@@ -8,6 +8,7 @@
 import { chat } from '../ling-client.mjs';
 import { computeIndicators } from './indicators.mjs';
 import { PAPER, TECH } from './config.mjs';
+import { extractJson, normalizeConfidence } from './llm-json.mjs';
 
 /**
  * Build a compact, factual context string from candles + indicators.
@@ -145,22 +146,21 @@ async function askLing(context, techBias) {
     { temperature: 0.2 },
   );
 
-  const match = raw.match(/\{[\s\S]*\}/);
-  if (!match) {
-    return { signal: 'FLAT', confidence: 0, reasoning: 'Could not parse model response', raw };
+  const parsed = extractJson(raw, (o) => 'signal' in o);
+  if (!parsed) {
+    const looksLikeJson = /\{[\s\S]*\}/.test(raw);
+    return {
+      signal: 'FLAT',
+      confidence: 0,
+      reasoning: looksLikeJson ? 'Invalid JSON from model' : 'Could not parse model response',
+      raw,
+    };
   }
-
-  try {
-    const parsed = JSON.parse(match[0]);
-    const signal = ['LONG', 'SHORT', 'FLAT'].includes(parsed.signal)
-      ? parsed.signal
-      : 'FLAT';
-    const confidence = Math.max(0, Math.min(1, Number(parsed.confidence) || 0));
-    const reasoning = String(parsed.reasoning || '').slice(0, 300);
-    return { signal, confidence, reasoning, raw };
-  } catch {
-    return { signal: 'FLAT', confidence: 0, reasoning: 'Invalid JSON from model', raw };
-  }
+  const sigText = String(parsed.signal || '').trim().toUpperCase();
+  const signal = ['LONG', 'SHORT', 'FLAT'].includes(sigText) ? sigText : 'FLAT';
+  const confidence = normalizeConfidence(parsed.confidence, 0);
+  const reasoning = String(parsed.reasoning || '').slice(0, 300);
+  return { signal, confidence, reasoning, raw };
 }
 
 /**

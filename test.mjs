@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 
 import { chat } from './ling-client.mjs';
 import { RESEARCH_SYSTEM, research, summarize, explain } from './research.mjs';
-import { quote, candles, fetchChart, intraday } from './market-data.mjs';
+import { quote, candles, fetchChart, intraday, clearMarketCache } from './market-data.mjs';
 import { normCdf, greeks, payoff } from './blackscholes.mjs';
 import { computeStats, candleShape } from './describe-candles.mjs';
 import { historicalCandles, daySession } from './groww-data.mjs';
@@ -32,6 +32,7 @@ function mockFetch(payload, { ok = true, status = 200, statusText = 'OK' } = {})
 
 beforeEach(() => {
   lastRequest = undefined;
+  clearMarketCache();
   process.env.OPENROUTER_API_KEY = 'sk-or-test-key';
 });
 afterEach(() => {
@@ -169,6 +170,7 @@ test('candles() returns clean OHLC rows and drops the null (market-closed) row',
   assert.equal(rows.length, 2); // middle null row skipped
   assert.deepEqual(rows[0], {
     date: '2023-11-14',
+    ts: 1699996800,
     open: 100,
     high: 105,
     low: 99,

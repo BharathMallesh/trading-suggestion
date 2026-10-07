@@ -165,7 +165,10 @@ export OPENROUTER_API_KEY="sk-or-..."   # needed for Ask, Call/Put %, Hybrid
 node server.mjs                         # open http://localhost:3000
 ```
 
-Key stays **server-side**. Server binds to `127.0.0.1` only.
+Key stays **server-side**. Server binds to `127.0.0.1` only, accepts only a
+`localhost` / `127.0.0.1` Host header, and rejects cross-site requests (other
+browser tabs can't spend your OpenRouter credits). Script calls are fine — POSTs
+just need `Content-Type: application/json`.
 
 ### Call / Put % (experimental)
 
@@ -182,8 +185,16 @@ You get three percentages that sum to ~100%:
 | **PUT (down)** | Model weight that price leans down near term |
 | **SIDEWAYS** | Model weight for chop / no clear direction |
 
-Based on recent OHLC + indicators (SMA, RSI, ATR, volume) sent to Ling.  
+Based on recent OHLC + indicators (SMA, RSI, ATR, volume). A technical base
+mix is computed first (neutral score → 25/25/50); Ling may then move each leg by
+at most 15 points, and the **Bias** is always the largest of the three final
+numbers. Bare tickers are tried as NSE first (`HDFCBANK` → `HDFCBANK.NS`), then
+as-is (`AAPL`); indices/crypto (`^NSEI`, `BTC-USD`) work too.  
 **Not investment advice** and **not** real options pricing — research/paper only.
+
+Every run is logged to `paper-bot/prediction-history.json`. **Evaluate** scores a
+prediction only once its horizon has passed: ~4 bars for single-timeframe runs
+(15m → 1 hour), the next completed session for multi-horizon runs.
 
 API:
 
@@ -210,6 +221,12 @@ curl -X POST http://127.0.0.1:3000/api/groww-predict \
 | `/api/agents/signal` | POST | Signal agent only |
 | `/api/candle-predict` | POST | Candle AI directional read |
 | `/api/groww-predict` | POST | Call/Put/Sideways probabilities (Yahoo or Groww) |
+| `/api/prediction-stats` | GET | Hit-rate calibration stats |
+| `/api/prediction-evaluate` | POST | Score predictions whose horizon has passed |
+| `/api/prediction-history` | GET | Logged predictions (`?limit=1..500`) |
+
+Bad input returns **400** with a readable message, unknown symbols **404**,
+a missing API key **503**.
 
 ---
 
@@ -235,6 +252,11 @@ npm test
 ```bash
 npm test        # or: node --test
 ```
+
+`test.mjs` covers the core modules; `regression.test.mjs` pins the fixes from
+the 2026-10-07 QA pass (probability maths, hit-rate scoring, fees/gap fills,
+date-aligned backtests, input validation, and the server's request guard).
+Everything is offline — fetch is mocked.
 
 ## Files
 

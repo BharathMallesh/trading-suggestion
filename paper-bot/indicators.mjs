@@ -13,7 +13,7 @@ export function sma(values, period) {
 }
 
 /**
- * Relative Strength Index (Wilder-style)
+ * Relative Strength Index (simple-average variant over the last `period` changes)
  * @param {number[]} closes
  * @param {number} period
  */
@@ -32,6 +32,7 @@ export function rsi(closes, period = 14) {
   const avgGain = gains / period;
   const avgLoss = losses / period;
 
+  if (avgLoss === 0 && avgGain === 0) return 50; // flat series: no momentum either way
   if (avgLoss === 0) return 100;
   const rs = avgGain / avgLoss;
   return 100 - 100 / (1 + rs);

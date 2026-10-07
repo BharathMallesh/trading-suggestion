@@ -134,8 +134,14 @@ API: `POST /api/agents` (via `server.mjs`).
 
 ## Notes on intraday
 
-Yahoo only serves fine intervals for a short recent window.
-15m / 5m data is typically limited to the last few days.
-For longer history use daily (`1d`).
+Yahoo only serves fine intervals for a short recent window (~60 days for
+15m/5m, a few days for 1m). The 15m preset fetches 1 month (~500 bars) so a
+backtest has room after the 55-bar warm-up; 5m uses 5 days. Intraday bars are
+labelled `YYYY-MM-DD HH:MM`.
+
+Backtests walk only the bar dates **every** symbol shares, so mixing markets
+(e.g. `AAPL` + `RELIANCE.NS`) compares the same day — with less overlap.
+Stops/targets that the price gaps through fill at the bar's open, and trade
+PnL includes both legs of fees.
 
 Again: learning and research tool only — not a money-making system.

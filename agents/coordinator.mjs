@@ -8,6 +8,7 @@ import { researchAgent } from './research-agent.mjs';
 import { signalAgent } from './signal-agent.mjs';
 import { PaperEngine } from '../paper-bot/paper-engine.mjs';
 import { PAPER } from '../paper-bot/config.mjs';
+import { parseSymbols } from '../util.mjs';
 
 /**
  * Run both agents and produce a combined experimental brief.
@@ -20,12 +21,9 @@ import { PAPER } from '../paper-bot/config.mjs';
  * }} opts
  */
 export async function runAgents(opts = {}) {
-  const {
-    symbols = PAPER.symbols.slice(0, 4),
-    question = null,
-    techOnly = false,
-    interval = '1d',
-  } = opts;
+  const { question = null, techOnly = false, interval = '1d' } = opts;
+  const given = parseSymbols(opts.symbols);
+  const symbols = given.length ? given : PAPER.symbols.slice(0, 4);
 
   const startedAt = new Date().toISOString();
 

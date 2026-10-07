@@ -118,7 +118,7 @@ export class PaperEngine {
 
     this.cash -= totalCost;
     this.positions.set(symbol, {
-      symbol, side: 'LONG', qty, entryPrice: price, entryDate: date, stop, target, barsHeld: 0,
+      symbol, side: 'LONG', qty, entryPrice: price, entryDate: date, entryFees: fees, stop, target, barsHeld: 0,
     });
 
     return { ok: true, qty, cost: totalCost, stop, target, side: 'LONG' };
@@ -152,7 +152,7 @@ export class PaperEngine {
 
     this.cash -= totalReserved;
     this.positions.set(symbol, {
-      symbol, side: 'SHORT', qty, entryPrice: price, entryDate: date, stop, target, barsHeld: 0,
+      symbol, side: 'SHORT', qty, entryPrice: price, entryDate: date, entryFees: fees, stop, target, barsHeld: 0,
     });
 
     return { ok: true, qty, cost: totalReserved, stop, target, side: 'SHORT' };
@@ -165,19 +165,20 @@ export class PaperEngine {
     const notional = pos.qty * price;
     const fees = notional * ((PAPER.brokeragePct + PAPER.slippagePct) / 100);
 
+    const entryFees = pos.entryFees || 0;
+    const entryNotional = pos.qty * pos.entryPrice;
     let pnl;
     let cashBack;
 
     if (pos.side === 'LONG') {
-      // Sell: receive proceeds minus fees
+      // Sell: receive proceeds minus exit fees. PnL counts BOTH legs of fees.
       cashBack = notional - fees;
-      pnl = cashBack - (pos.qty * pos.entryPrice);
+      pnl = cashBack - entryNotional - entryFees;
     } else {
-      // Cover short: profit when price fell
-      // We reserved entry notional earlier; now settle
-      const entryNotional = pos.qty * pos.entryPrice;
-      pnl = (pos.entryPrice - price) * pos.qty - fees;
-      cashBack = entryNotional + pnl;
+      // Cover short: profit when price fell. Release the reserved notional
+      // (entry fees were already paid at open), adjusted by the move and exit fees.
+      cashBack = entryNotional + (pos.entryPrice - price) * pos.qty - fees;
+      pnl = (pos.entryPrice - price) * pos.qty - fees - entryFees;
     }
 
     this.cash += cashBack;
@@ -196,7 +197,7 @@ export class PaperEngine {
       exitPrice: price,
       exitDate: date,
       pnl,
-      pnlPct: (pnl / (pos.qty * pos.entryPrice)) * 100,
+      pnlPct: (pnl / entryNotional) * 100,
       reason,
       stop: pos.stop,
       target: pos.target,
@@ -217,25 +218,32 @@ export class PaperEngine {
 
     const closed = [];
 
+    // Fills are gap-aware: if the bar OPENS beyond the level, the realistic
+    // fill is the open (worse for stops, better for targets), not the level.
+    const open = Number.isFinite(bar.open) ? bar.open : null;
     if (pos.side === 'LONG') {
       if (pos.stop != null && bar.low <= pos.stop) {
-        const res = this.closePosition(symbol, pos.stop, bar.date, 'stop-loss');
+        const px = open != null && open < pos.stop ? open : pos.stop;
+        const res = this.closePosition(symbol, px, bar.date, 'stop-loss');
         if (res.ok) closed.push(res.trade);
         return closed;
       }
       if (pos.target != null && bar.high >= pos.target) {
-        const res = this.closePosition(symbol, pos.target, bar.date, 'take-profit');
+        const px = open != null && open > pos.target ? open : pos.target;
+        const res = this.closePosition(symbol, px, bar.date, 'take-profit');
         if (res.ok) closed.push(res.trade);
         return closed;
       }
     } else if (pos.side === 'SHORT') {
       if (pos.stop != null && bar.high >= pos.stop) {
-        const res = this.closePosition(symbol, pos.stop, bar.date, 'stop-loss');
+        const px = open != null && open > pos.stop ? open : pos.stop;
+        const res = this.closePosition(symbol, px, bar.date, 'stop-loss');
         if (res.ok) closed.push(res.trade);
         return closed;
       }
       if (pos.target != null && bar.low <= pos.target) {
-        const res = this.closePosition(symbol, pos.target, bar.date, 'take-profit');
+        const px = open != null && open < pos.target ? open : pos.target;
+        const res = this.closePosition(symbol, px, bar.date, 'take-profit');
         if (res.ok) closed.push(res.trade);
         return closed;
       }

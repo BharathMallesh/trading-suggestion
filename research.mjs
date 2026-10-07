@@ -7,6 +7,7 @@
 // Those are deliberately out of scope — see README.md for why.
 import { pathToFileURL } from 'node:url';
 import { chat } from './ling-client.mjs';
+import { badRequest } from './util.mjs';
 
 export const RESEARCH_SYSTEM = [
   'You are a finance RESEARCH assistant. Your job is to give factual, educational,',
@@ -30,10 +31,12 @@ export const RESEARCH_SYSTEM = [
  * @param {{ model?: string, temperature?: number, signal?: AbortSignal }} [opts]
  */
 export async function research(question, opts = {}) {
+  const q = String(question || '').trim();
+  if (!q) throw badRequest('Ask a question first, e.g. "What drives a bank\'s net interest margin?"');
   return chat(
     [
       { role: 'system', content: RESEARCH_SYSTEM },
-      { role: 'user', content: question },
+      { role: 'user', content: q },
     ],
     opts,
   );
@@ -49,7 +52,7 @@ export async function research(question, opts = {}) {
  */
 export async function summarize(text, opts = {}) {
   const body = String(text || '').trim();
-  if (!body) throw new Error('Nothing to summarize — pass the text of the filing/news.');
+  if (!body) throw badRequest('Nothing to summarize — pass the text of the filing/news.');
   const instruction = [
     'Summarize the following source text for a reader who wants the facts fast.',
     'Extract the key points, figures, and any stated risks or guidance verbatim',
@@ -82,7 +85,7 @@ export async function summarize(text, opts = {}) {
  */
 export async function explain(topic, opts = {}) {
   const t = String(topic || '').trim();
-  if (!t) throw new Error('Pass a topic to explain, e.g. "net interest margin".');
+  if (!t) throw badRequest('Pass a topic to explain, e.g. "net interest margin".');
   const instruction = [
     `Explain the following finance concept in plain English: ${t}.`,
     'Cover what it is, how it is calculated or identified, how it is typically',
