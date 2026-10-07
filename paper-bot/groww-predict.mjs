@@ -557,6 +557,10 @@ export async function growwProbability(symbol, opts = {}) {
     calibratedProbs(intervalKey(intervalMinutes), score, cal);
   let base = primaryCal ? primaryCal.probs : baseProbabilities(score);
   let horizons = [];
+  // ATR used for the expected-move bands; multi-horizon mode switches to the
+  // DAILY ATR because its window is "1–3 sessions" (a 15-min ATR would
+  // understate the range several-fold).
+  let moveAtr = ind.atr14;
 
   // Multi-horizon only when mode === 'multi'
   if (mode === 'multi') {
@@ -571,6 +575,7 @@ export async function growwProbability(symbol, opts = {}) {
       score = multi.score;
       horizons = multi.horizons;
     }
+    if (multi?.daily?.length >= 15) moveAtr = computeIndicators(multi.daily.slice(-60)).atr14 ?? moveAtr;
   } else {
     // Single-horizon label for UI transparency
     horizons = [
@@ -631,11 +636,32 @@ export async function growwProbability(symbol, opts = {}) {
   const last = meta.rows[meta.rows.length - 1];
   const move = expectedMoveEstimate({
     close: last.close,
-    atr: ind.atr14,
+    atr: moveAtr,
     mode,
     intervalMinutes,
     bias: prediction.bias,
   });
+
+  // Signal strength: how far the final numbers are from the historical base
+  // rates for this horizon. Near base rates = the model has nothing to add.
+  const climKey = mode === 'multi' ? '1d' : intervalKey(intervalMinutes);
+  const clim = cal[climKey]?.climatology || { probUp: 1 / 3, probDown: 1 / 3, probSideways: 1 / 3 };
+  const devPts = Math.max(
+    Math.abs(prediction.probUp - clim.probUp),
+    Math.abs(prediction.probDown - clim.probDown),
+    Math.abs(prediction.probSideways - clim.probSideways),
+  ) * 100;
+  const edge = {
+    level: devPts < 5 ? 'none' : devPts < 10 ? 'weak' : 'moderate',
+    maxDeviationPts: devPts,
+    baseRates: clim,
+    note:
+      devPts < 5
+        ? 'Close to historical base rates — no meaningful edge for this stock right now.'
+        : devPts < 10
+          ? 'Slightly different from base rates — a weak lean, treat with caution.'
+          : 'Noticeably different from base rates — still a probability, not a forecast.',
+  };
 
   // One horizon, stated once: the time window the ATR bands describe. The
   // model's own horizon text is dropped so the two labels can't disagree.
@@ -687,6 +713,7 @@ export async function growwProbability(symbol, opts = {}) {
     },
     /** ATR-based research range + time window — not a price target guarantee */
     expectedMove: move,
+    edge,
     prediction,
     disclaimer:
       mode === 'multi'

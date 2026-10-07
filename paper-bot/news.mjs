@@ -78,6 +78,21 @@ export function relevantHeadlines(items, tokens, { maxAgeDays = 7, now = Date.no
     .sort((a, b) => b.providerPublishTime - a.providerPublishTime);
 }
 
+const EVENT_WORDS = [
+  ['results', /\b(q[1-4]\s*(fy)?\d*\s*)?results?\b|earnings|quarterly numbers/i],
+  ['dividend', /dividend|record date|bonus issue|stock split|buyback/i],
+  ['corporate action', /\bipo\b|merger|demerger|acquisition|stake sale|block deal|open offer/i],
+  ['rating change', /upgrade|downgrade|target price|rating/i],
+  ['policy / regulatory', /\bsebi\b|\brbi\b|penalty|probe|tax demand|ban\b/i],
+];
+
+/** Event types mentioned in recent headlines — these usually mean bigger moves. */
+export function detectEvents(headlines) {
+  const found = new Set();
+  for (const h of headlines) for (const [name, re] of EVENT_WORDS) if (re.test(h.title)) found.add(name);
+  return [...found];
+}
+
 /**
  * Headlines + (if the key is set) a factual Ling brief with sentiment in [-1, 1].
  * @returns {Promise<{symbol, company, headlines, brief:string|null, sentiment:number|null, note?:string}>}
@@ -113,7 +128,7 @@ export async function newsBrief(symbol, { useLlm = true } = {}) {
     link: n.link,
   }));
 
-  const out = { symbol: q.symbol || sym, company, headlines, brief: null, sentiment: null };
+  const out = { symbol: q.symbol || sym, company, headlines, brief: null, sentiment: null, events: detectEvents(headlines) };
   if (!headlines.length) {
     out.note = 'No recent company-specific headlines found in the free news feed.';
   } else if (useLlm) {

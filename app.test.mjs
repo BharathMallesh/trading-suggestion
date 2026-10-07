@@ -16,7 +16,7 @@ after(() => rmSync(TMP, { recursive: true, force: true }));
 const portfolio = await import('./paper-bot/portfolio.mjs');
 const { currentSettings, saveSettings, resetSettings, validate } = await import('./paper-bot/settings.mjs');
 const { PAPER } = await import('./paper-bot/config.mjs');
-const { nameTokens, relevantHeadlines, parseRss } = await import('./paper-bot/news.mjs');
+const { nameTokens, relevantHeadlines, parseRss, detectEvents } = await import('./paper-bot/news.mjs');
 const { logPrediction, computeStats } = await import('./paper-bot/prediction-log.mjs');
 
 /** Steady uptrend daily bars ending today, so the tech signal goes LONG. */
@@ -125,4 +125,33 @@ test('news: Google News RSS parsing strips the publisher suffix; quote pages and
   assert.equal(items[3].title, 'Infosys wins deal & more');
   const kept = relevantHeadlines(items, ['tata'], { now, ticker: 'TCS' });
   assert.deepEqual(kept.map((k) => k.title), ['TCS Q2 results preview']);
+});
+
+test('news: event detection flags results, dividends, corporate actions, policy', () => {
+  const ev = detectEvents([
+    { title: 'TCS Q2 Results Preview: revenue in focus' },
+    { title: 'TCS dividend record date announced' },
+    { title: 'Reliance Jio IPO expected launch date' },
+    { title: 'RBI MPC meeting: banks may gain' },
+    { title: 'Company opens new office' },
+  ]);
+  assert.deepEqual(ev.sort(), ['corporate action', 'dividend', 'policy / regulatory', 'results']);
+  assert.deepEqual(detectEvents([{ title: 'Company opens new office' }]), []);
+});
+
+test('Call/Put output says how far it is from base rates (signal strength)', async () => {
+  const { growwProbability } = await import('./paper-bot/groww-predict.mjs');
+  const rows = uptrend(90);
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: true, status: 200, statusText: 'OK', text: async () => '',
+    json: async () => ({ chart: { error: null, result: [{ meta: { symbol: 'X.NS', gmtoffset: 19800 }, timestamp: rows.map((r) => r.ts),
+      indicators: { quote: [{ open: rows.map((r) => r.open), high: rows.map((r) => r.high), low: rows.map((r) => r.low), close: rows.map((r) => r.close), volume: rows.map((r) => r.volume) }] } }] } }) });
+  try {
+    const out = await growwProbability('X.NS', { mode: '15m', intervalMinutes: 15, preferYahoo: true });
+    assert.ok(['none', 'weak', 'moderate'].includes(out.edge.level));
+    assert.ok(Number.isFinite(out.edge.maxDeviationPts));
+    assert.ok(out.edge.note.length > 10);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
 });
