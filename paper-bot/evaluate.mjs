@@ -13,6 +13,8 @@
 //   persistence  frequencies conditioned on the previous move's label
 //   current      the hand-written formula (baseProbabilities)
 //   calibrated   score-bucket frequencies fitted on the training part
+//   context      logistic regression on technicals + market (NIFTY), India VIX,
+//                stock regime and session/calendar features (NSE/BSE symbols)
 //
 // Scores: Brier (lower is better; uniform ≈ 0.667), log loss, top-label
 // accuracy, skill vs climatology (% Brier improvement; > 0 means better than
@@ -32,6 +34,8 @@ import { techScore, baseProbabilities, shortWindowScore } from './groww-predict.
 import { PAPER } from './config.mjs';
 import { fitBuckets, frequencies, lookup, saveCalibration, SCORE_EDGES } from './calibration.mjs';
 import { badRequest } from '../util.mjs';
+import { prepare, featuresAt, FEATURE_GROUPS, ALL_FEATURES, MARKET_INDEX, VIX_INDEX, isIndianListing } from './features.mjs';
+import { fitLogistic, predictLogistic, toRow, moveOnly } from './context-model.mjs';
 
 /** Data window + horizon per interval (horizon matches live scoring). */
 export const EVAL_SETTINGS = {
@@ -40,6 +44,12 @@ export const EVAL_SETTINGS = {
   '15m': { range: '1mo', interval: '15m', horizon: 4, label: '15-min · next 4 bars (~1 hour)' },
   '5m': { range: '1mo', interval: '5m', horizon: 4, label: '5-min · next 4 bars (~20 min)' },
 };
+
+/** Default fitting universe: the paper-bot's 10 symbols plus 8 more NIFTY 50 names, so tables rest on more data. */
+export const EVAL_UNIVERSE = [
+  ...PAPER.symbols,
+  'MARUTI.NS', 'SUNPHARMA.NS', 'HINDUNILVR.NS', 'KOTAKBANK.NS', 'BAJFINANCE.NS', 'ASIANPAINT.NS', 'NTPC.NS', 'TITAN.NS',
+];
 
 const LOOKBACK = 60; // bars fed to the indicators, like the live model
 const WARMUP = 55; // SMA-50 + slack
@@ -60,7 +70,7 @@ export function labelMove(retPct, atr, close) {
  * known at bar i, the label of the move from close[i] to close[i+h], and the
  * label of the previous h-bar move (for the persistence baseline).
  */
-export function buildSamples(rows, horizon) {
+export function buildSamples(rows, horizon, prep = null) {
   const out = [];
   for (let i = Math.max(WARMUP, horizon); i < rows.length - horizon; i++) {
     const window = rows.slice(Math.max(0, i - LOOKBACK + 1), i + 1);
@@ -77,6 +87,7 @@ export function buildSamples(rows, horizon) {
       short3: shortWindowScore(rows.slice(i - 2, i + 1)),
       label: labelMove(((future - close) / close) * 100, ind.atr14, close),
       prevLabel: labelMove(((close - past) / past) * 100, ind.atr14, close),
+      f: prep ? featuresAt(prep, i) : null,
     });
   }
   return out;
@@ -139,8 +150,26 @@ export async function evaluateModels(opts = {}) {
   const key = opts.interval || '1d';
   const cfg = EVAL_SETTINGS[key];
   if (!cfg) throw badRequest(`Unsupported interval "${key}". Use ${Object.keys(EVAL_SETTINGS).join(', ')}.`);
-  const symbols = opts.symbols?.length ? opts.symbols : PAPER.symbols;
+  const symbols = opts.symbols?.length ? opts.symbols : EVAL_UNIVERSE;
   const load = opts.loadCandles || candles;
+
+  // Market context (NIFTY 50 + India VIX at the same interval). The context
+  // model is evaluated only when every symbol is an Indian listing, so all
+  // models are scored on exactly the same bars.
+  let ctx = null;
+  let contextNote = null;
+  if (symbols.every(isIndianListing)) {
+    try {
+      ctx = {
+        index: await load(MARKET_INDEX, { range: cfg.range, interval: cfg.interval }),
+        vix: await load(VIX_INDEX, { range: cfg.range, interval: cfg.interval }),
+      };
+    } catch (err) {
+      contextNote = `Market context unavailable (${err.message}) — context model skipped.`;
+    }
+  } else {
+    contextNote = 'Context model needs NSE/BSE symbols only (it uses NIFTY and India VIX) — skipped for this list.';
+  }
 
   const train = [];
   const test = [];
@@ -149,7 +178,8 @@ export async function evaluateModels(opts = {}) {
   for (const sym of symbols) {
     try {
       const rows = await load(sym, { range: cfg.range, interval: cfg.interval });
-      const samples = buildSamples(rows, cfg.horizon);
+      let samples = buildSamples(rows, cfg.horizon, ctx ? prepare(rows, ctx) : null);
+      if (ctx) samples = samples.filter((x) => x.f); // same bars for every model
       if (samples.length < 30) {
         skipped.push(`${sym}: only ${samples.length} samples`);
         continue;
@@ -167,6 +197,7 @@ export async function evaluateModels(opts = {}) {
     throw badRequest(`Not enough history to evaluate (${train.length} train / ${test.length} test samples). ${skipped.join(' ')}`.trim());
   }
 
+  const all0 = () => [...train, ...test];
   const clim = frequencies(train);
   const persistence = fitPersistence(train);
   const fitted = fitBuckets(train);
@@ -178,8 +209,47 @@ export async function evaluateModels(opts = {}) {
     calibrated: (s) => lookup(fitted, s.score),
   };
 
+  // Context model + ablation: add one feature group at a time.
+  const models = [...MODELS];
+  const ablation = [];
+  if (ctx) {
+    let names = [];
+    for (const [group, feats] of Object.entries(FEATURE_GROUPS)) {
+      names = [...names, ...feats];
+      const cols = [...names];
+      const model = fitLogistic(train.map((x) => toRow(x.f, cols)), train.map((x) => x.label));
+      const pred = (x) => predictLogistic(model, toRow(x.f, cols));
+      let b = 0;
+      for (const x of test) b += brier(pred(x), x.label);
+      ablation.push({ group, features: cols.length, brier: b / test.length, predict: pred });
+    }
+    predictors.context = ablation[ablation.length - 1].predict;
+    // "Move" model: keep the context model's chance of a real move (its
+    // sideways probability) but split up vs down by the calibrated table —
+    // for when context predicts volatility but not direction.
+    predictors.contextMove = (x) => moveOnly(predictors.context(x), predictors.calibrated(x));
+    models.push('context', 'contextMove');
+  }
+
+  // Direction-only diagnostic: on bars that actually moved (UP or DOWN), does
+  // the model's up-vs-down split beat the base-rate split? This separates
+  // "predicts whether it moves" (volatility) from "predicts which way".
+  const trainDir = train.filter((x) => x.label !== 'SIDEWAYS');
+  const upShare = trainDir.length ? trainDir.filter((x) => x.label === 'UP').length / trainDir.length : 0.5;
+  const testDir = test.filter((x) => x.label !== 'SIDEWAYS');
+  const dirBrier = (pred) => {
+    let b = 0;
+    for (const x of testDir) {
+      const p = pred(x);
+      const pu = p.probUp + p.probDown > 0 ? p.probUp / (p.probUp + p.probDown) : 0.5;
+      b += (pu - (x.label === 'UP' ? 1 : 0)) ** 2;
+    }
+    return testDir.length ? b / testDir.length : NaN;
+  };
+  const dirBase = dirBrier(() => ({ probUp: upShare, probDown: 1 - upShare, probSideways: 0 }));
+
   const metrics = {};
-  for (const m of MODELS) {
+  for (const m of models) {
     let b = 0;
     let ll = 0;
     let acc = 0;
@@ -189,10 +259,35 @@ export async function evaluateModels(opts = {}) {
       ll += -Math.log(Math.max(1e-6, p[KEYS[s.label]]));
       if (topLabel(p) === s.label) acc++;
     }
-    metrics[m] = { brier: b / test.length, logLoss: ll / test.length, accuracyPct: (acc / test.length) * 100 };
+    metrics[m] = {
+      brier: b / test.length,
+      logLoss: ll / test.length,
+      accuracyPct: (acc / test.length) * 100,
+      directionSkillPct: (1 - dirBrier(predictors[m]) / dirBase) * 100,
+    };
   }
   const climBrier = metrics.climatology.brier;
-  for (const m of MODELS) metrics[m].skillPct = (1 - metrics[m].brier / climBrier) * 100;
+  for (const m of models) metrics[m].skillPct = (1 - metrics[m].brier / climBrier) * 100;
+  const ablationReport = ablation.map(({ group, features, brier: b }) => ({ group, features, brier: b, skillPct: (1 - b / climBrier) * 100 }));
+  // Use the context model live only if it beats calibration by a margin that
+  // isn't just noise (≥ 0.2 points of skill on held-out bars).
+  // Pick which context variant (if any) to use live: it must beat calibration
+  // by ≥ 0.2 points of skill on held-out bars — otherwise noise.
+  // It must also win in BOTH halves of the held-out period (stability), so a
+  // lucky stretch can't switch it on.
+  let contextMode = null;
+  let stability = null;
+  if (ctx) {
+    const best = metrics.contextMove.brier <= metrics.context.brier ? 'contextMove' : 'context';
+    const sorted = [...test].sort((a, b) => (a.date < b.date ? -1 : 1));
+    const halves = [sorted.slice(0, sorted.length >> 1), sorted.slice(sorted.length >> 1)];
+    const gain = (part) => part.reduce((a, x) => a + brier(predictors.calibrated(x), x.label) - brier(predictors[best](x), x.label), 0) / part.length;
+    stability = { model: best, gainFirstHalf: gain(halves[0]), gainSecondHalf: gain(halves[1]) };
+    const stable = stability.gainFirstHalf > 0 && stability.gainSecondHalf > 0;
+    if (stable && metrics[best].skillPct - metrics.calibrated.skillPct >= 0.2) contextMode = best === 'contextMove' ? 'move' : 'full';
+  }
+  const useContext = Boolean(contextMode);
+  const contextModel = ctx ? fitLogistic(all0().map((x) => toRow(x.f, ALL_FEATURES)), all0().map((x) => x.label)) : null;
 
   // Final table for live use: refit on ALL samples once validated.
   const all = [...train, ...test];
@@ -234,9 +329,20 @@ export async function evaluateModels(opts = {}) {
     },
     testBaseRates: frequencies(test),
     metrics,
-    best: MODELS.reduce((a, m) => (metrics[m].brier < metrics[a].brier ? m : a), MODELS[0]),
+    best: models.reduce((a, m) => (metrics[m].brier < metrics[a].brier ? m : a), models[0]),
     useCalibrated,
-    reliability: { current: reliability(test, predictors.current), calibrated: reliability(test, predictors.calibrated) },
+    contextEnabled: Boolean(ctx),
+    contextNote,
+    ablation: ablationReport,
+    useContext,
+    contextMode,
+    stability,
+    contextModel: contextModel && { features: ALL_FEATURES, ...contextModel },
+    reliability: {
+      current: reliability(test, predictors.current),
+      calibrated: reliability(test, predictors.calibrated),
+      ...(ctx ? { context: reliability(test, predictors.context), contextMove: reliability(test, predictors.contextMove) } : {}),
+    },
     calibrationTable: { edges: SCORE_EDGES, ...finalFit },
     variants,
     disclaimer:
@@ -262,6 +368,9 @@ export function saveReport(report) {
         { useCalibrated: x.useCalibrated, buckets: x.table.buckets, climatology: x.table.climatology, test: { brier: x.brier, skillPct: x.skillPct } },
       ]),
     ),
+    context: report.contextModel
+      ? { useContext: report.useContext, mode: report.contextMode, ...report.contextModel, ablation: report.ablation }
+      : null,
     test: {
       brier: Object.fromEntries(Object.entries(report.metrics).map(([m, v]) => [m, v.brier])),
       skillPct: Object.fromEntries(Object.entries(report.metrics).map(([m, v]) => [m, v.skillPct])),
@@ -284,11 +393,19 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       console.log(`Samples: ${r.samples.train} fit / ${r.samples.test} scored`);
       const b = r.testBaseRates;
       console.log(`Actual outcomes in the scored part: UP ${(b.probUp * 100).toFixed(0)}% · DOWN ${(b.probDown * 100).toFixed(0)}% · SIDEWAYS ${(b.probSideways * 100).toFixed(0)}%\n`);
-      console.log('model         Brier   logLoss  accuracy  skill vs base rates');
+      console.log('model         Brier   logLoss  accuracy  skill vs base rates  direction skill');
       for (const [m, v] of Object.entries(r.metrics)) {
-        console.log(`${m.padEnd(12)}  ${v.brier.toFixed(4)}  ${v.logLoss.toFixed(4)}   ${v.accuracyPct.toFixed(1).padStart(5)}%   ${pct(v.skillPct)}${m === r.best ? '   ← best' : ''}`);
+        console.log(`${m.padEnd(12)}  ${v.brier.toFixed(4)}  ${v.logLoss.toFixed(4)}   ${v.accuracyPct.toFixed(1).padStart(5)}%   ${pct(v.skillPct).padStart(7)}              ${pct(v.directionSkillPct).padStart(7)}${m === r.best ? '   ← best' : ''}`);
       }
       console.log(`\nCalibrated table ${r.useCalibrated ? 'BEATS' : 'does NOT beat'} the current formula on held-out bars.`);
+      if (r.ablation?.length) {
+        console.log('\nAblation (context model, adding one feature group at a time):');
+        for (const a of r.ablation) console.log(`  + ${a.group.padEnd(8)} ${String(a.features).padStart(2)} features  Brier ${a.brier.toFixed(4)}  skill ${pct(a.skillPct)}`);
+        if (r.stability) console.log(`Stability (Brier gain vs calibration, ${r.stability.model}): first half ${r.stability.gainFirstHalf.toFixed(4)} · second half ${r.stability.gainSecondHalf.toFixed(4)}`);
+        console.log(r.useContext
+          ? `Context model BEATS calibration (≥0.2 pts) → live would use it in "${r.contextMode}" mode${r.contextMode === 'move' ? ' (move-vs-sideways from context, up/down split from calibration)' : ''}.`
+          : 'Context model does NOT beat calibration by ≥0.2 pts → live keeps calibration.');
+      } else if (r.contextNote) console.log(`\n${r.contextNote}`);
       console.log('\nFitted table (score bucket → UP / DOWN / SIDEWAYS, n):');
       for (const k of r.calibrationTable.buckets) {
         console.log(`  [${k.lo.toFixed(2)}, ${k.hi.toFixed(2)})  ${(k.probUp * 100).toFixed(0).padStart(3)}% / ${(k.probDown * 100).toFixed(0).padStart(3)}% / ${(k.probSideways * 100).toFixed(0).padStart(3)}%   n=${k.n}`);

@@ -280,7 +280,7 @@
             </select>
           </div>
           <div style="flex:2">
-            <label>Symbols (blank = the 10 defaults)</label>
+            <label>Symbols (blank = 18 NIFTY 50 stocks)</label>
             <input id="evSyms" placeholder="RELIANCE.NS, TCS.NS, …" />
           </div>
         </div>
@@ -1176,6 +1176,8 @@
         persistence: 'Last move repeats',
         current: 'Formula (uncalibrated)',
         calibrated: 'Calibrated to data',
+        context: 'Context model (full)',
+        contextMove: 'Context: move vs sideways',
       };
 
       // Reliability diagram: predicted probability (x) vs how often it happened (y).
@@ -1205,12 +1207,13 @@
         let html = `<div class="note" style="margin-bottom:8px">${esc(d.settings.label)} · ${d.symbols.length} symbols · ${esc(d.period.from)} → ${esc(d.period.to)} ·
           ${d.samples.train.toLocaleString()} bars to fit, ${d.samples.test.toLocaleString()} scored · actual outcomes: UP ${(b.probUp * 100).toFixed(0)}% / DOWN ${(b.probDown * 100).toFixed(0)}% / SIDEWAYS ${(b.probSideways * 100).toFixed(0)}%</div>`;
         if (d.skipped?.length) html += `<div class="err" style="margin-bottom:8px">Skipped: ${esc(d.skipped.join(' · '))}</div>`;
-        html += `<table><thead><tr><th style="text-align:left">Model</th><th>Brier ↓</th><th>Log loss ↓</th><th>Top-label accuracy</th><th>Skill vs base rates</th></tr></thead><tbody>`;
+        html += `<table><thead><tr><th style="text-align:left">Model</th><th>Brier ↓</th><th>Log loss ↓</th><th>Top-label accuracy</th><th>Skill vs base rates</th><th title="On bars that moved: does the up-vs-down split beat base rates?">Direction skill</th></tr></thead><tbody>`;
         for (const [m, v] of Object.entries(d.metrics)) {
           const best = m === d.best;
           const col = v.skillPct > 0.5 ? 'var(--up)' : v.skillPct < -0.5 ? 'var(--down)' : 'var(--muted)';
           html += `<tr${best ? ' style="font-weight:700"' : ''}><td style="text-align:left">${esc(MODEL_NAMES[m] || m)}${best ? ' ★' : ''}</td>
-            <td>${v.brier.toFixed(4)}</td><td>${v.logLoss.toFixed(4)}</td><td>${v.accuracyPct.toFixed(1)}%</td><td style="color:${col}">${pct(v.skillPct)}</td></tr>`;
+            <td>${v.brier.toFixed(4)}</td><td>${v.logLoss.toFixed(4)}</td><td>${v.accuracyPct.toFixed(1)}%</td><td style="color:${col}">${pct(v.skillPct)}</td>
+            <td style="color:${v.directionSkillPct > 0.5 ? 'var(--up)' : v.directionSkillPct < -0.5 ? 'var(--down)' : 'var(--muted)'}">${pct(v.directionSkillPct)}</td></tr>`;
         }
         html += '</tbody></table>';
         const m = d.metrics;
@@ -1218,12 +1221,26 @@
           ? `The technical score carries some information here: calibrated probabilities beat base rates by ${pct(m.calibrated.skillPct)} on unseen bars.`
           : `The technical score carries little or no predictive information at this horizon: calibrated probabilities are about as good as quoting base rates (${pct(m.calibrated.skillPct)}).`;
         html += `<div style="margin-top:10px;font-size:14px">${verdict} The uncalibrated formula scores ${pct(m.current.skillPct)}; calibration ${d.useCalibrated ? `<b>fixes that</b>${d.saved ? ' and is now used live.' : ' — click <b>Fit &amp; use calibration</b> to apply it live.'}` : 'did not beat it, so live keeps the formula.'}</div>`;
+        if (d.ablation?.length) {
+          html += `<div style="margin-top:12px;font-size:13px"><b>Context features</b> — added one group at a time (skill vs base rates on unseen bars)</div>
+            <table><thead><tr><th style="text-align:left">Adds</th><th>Features</th><th>Brier</th><th>Skill</th></tr></thead><tbody>`;
+          const GROUP = { tech: 'Technical score', stock: 'Stock regime (RSI, returns, volatility, trend, volume)', market: 'Market: NIFTY trend + relative strength', vix: 'India VIX level + change', session: 'Session: gap, first/last half hour, results season' };
+          for (const a of d.ablation) html += `<tr><td style="text-align:left">+ ${esc(GROUP[a.group] || a.group)}</td><td>${a.features}</td><td>${a.brier.toFixed(4)}</td><td>${pct(a.skillPct)}</td></tr>`;
+          html += '</tbody></table>';
+          const st = d.stability;
+          html += `<div style="margin-top:8px;font-size:14px">${d.useContext
+            ? `Context model <b>wins</b> (${d.contextMode === 'move' ? 'move-vs-sideways only — up/down still from calibration, because context showed no direction skill' : 'full'}), stable in both halves of the test period${d.saved ? ' and is now used live for Indian listings.' : ' — <b>Fit &amp; use</b> to apply it live.'}`
+            : `Context model does not beat calibration reliably (needs ≥0.2 pts and a win in both halves${st ? `; halves: ${st.gainFirstHalf.toFixed(4)} / ${st.gainSecondHalf.toFixed(4)}` : ''}) — live keeps calibration.`}</div>`;
+        } else if (d.contextNote) {
+          html += `<div class="note" style="margin-top:8px">${esc(d.contextNote)}</div>`;
+        }
         for (const [v, x] of Object.entries(d.variants || {})) {
           html += `<div class="note">Short window "${v === 'short12' ? 'last hour' : 'last 15 min'}": formula ${pct(x.skillPct.current)} · calibrated ${pct(x.skillPct.calibrated)} → ${x.useCalibrated ? 'calibrated used' : 'formula kept'}</div>`;
         }
         html += `<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:12px">
           ${renderReliability(d.reliability.current, 'Formula: predicted vs actual')}
-          ${renderReliability(d.reliability.calibrated, 'Calibrated: predicted vs actual')}</div>
+          ${renderReliability(d.reliability.calibrated, 'Calibrated: predicted vs actual')}
+          ${d.reliability.contextMove ? renderReliability(d.reliability.contextMove, 'Context (move): predicted vs actual') : ''}</div>
           <div class="note">Points on the dashed diagonal = honest probabilities. <span style="color:var(--up)">●</span> UP <span style="color:var(--down)">●</span> DOWN <span style="color:var(--muted)">●</span> SIDEWAYS (bins with ≥15 bars).</div>`;
         html += `<div style="margin-top:12px;font-size:13px"><b>Fitted table</b> (technical score → what followed)</div>
           <table><thead><tr><th>Score</th><th>UP</th><th>DOWN</th><th>SIDEWAYS</th><th>bars</th></tr></thead><tbody>`;
@@ -1269,12 +1286,12 @@
             out.innerHTML = '<div class="note">No calibration saved yet — live Call / Put uses the formula. Run <b>Fit &amp; use calibration</b>.</div>';
             return;
           }
-          let html = '<table><thead><tr><th>Interval</th><th>Fitted</th><th>Bars</th><th>Formula skill</th><th>Calibrated skill</th><th>Live uses</th></tr></thead><tbody>';
+          let html = '<table><thead><tr><th>Interval</th><th>Fitted</th><th>Bars</th><th>Formula skill</th><th>Calibrated skill</th><th>Context skill</th><th>Live uses</th></tr></thead><tbody>';
           for (const k of keys) {
             const c = calibration[k];
             const sk = c.test?.skillPct || {};
             const f = (v) => (v == null ? '–' : `${v >= 0 ? '+' : ''}${Number(v).toFixed(1)}%`);
-            html += `<tr><td>${esc(k)}</td><td>${esc((c.fittedAt || '').slice(0, 16).replace('T', ' '))}</td><td>${c.samples}</td><td>${f(sk.current)}</td><td>${f(sk.calibrated)}</td><td>${c.useCalibrated ? 'calibrated' : 'formula'}</td></tr>`;
+            html += `<tr><td>${esc(k)}</td><td>${esc((c.fittedAt || '').slice(0, 16).replace('T', ' '))}</td><td>${c.samples}</td><td>${f(sk.current)}</td><td>${f(sk.calibrated)}</td><td>${f(c.context?.useContext ? sk[c.context.mode === 'move' ? 'contextMove' : 'context'] : sk.contextMove)}</td><td>${c.context?.useContext ? `context (${esc(c.context.mode)}) + calibrated` : c.useCalibrated ? 'calibrated' : 'formula'}</td></tr>`;
           }
           html += '</tbody></table><div class="note">Refit regularly (e.g. weekly) — market behaviour drifts.</div>';
           out.innerHTML = html;

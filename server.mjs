@@ -417,6 +417,7 @@ const server = http.createServer(async (req, res) => {
         Object.entries(cal).map(([k, v]) => [
           k,
           { fittedAt: v.fittedAt, samples: v.samples, period: v.period, useCalibrated: v.useCalibrated, test: v.test,
+            context: v.context ? { useContext: v.context.useContext, mode: v.context.mode, ablation: v.context.ablation } : null,
             variants: Object.fromEntries(Object.entries(v.variants || {}).map(([n, x]) => [n, { useCalibrated: x.useCalibrated, test: x.test }])) },
         ]),
       );

@@ -8,6 +8,8 @@ import { computeIndicators } from './indicators.mjs';
 import { logPrediction } from './prediction-log.mjs';
 import { extractJson, normalizeConfidence } from './llm-json.mjs';
 import { calibratedProbs, intervalKey, loadCalibration } from './calibration.mjs';
+import { prepare, featuresAt, isIndianListing, MARKET_INDEX, VIX_INDEX } from './features.mjs';
+import { predictLogistic, toRow, moveOnly } from './context-model.mjs';
 import { HttpError, badRequest } from '../util.mjs';
 
 const ADJUST_MAX = 0.15; // Ling may move each leg by at most ±15 percentage points (as fraction)
@@ -123,7 +125,43 @@ async function fetchYahooRecent(symbol, opts = {}) {
     intervalMinutes,
     rows,
     rawCount: rows.length,
+    range,
+    interval,
   };
+}
+
+/**
+ * Context-model probabilities for the LAST bar of `rows`, when a validated
+ * context model exists for `key` (see evaluate.mjs) and the symbol is an
+ * Indian listing. Fetches NIFTY + India VIX at the same interval/range.
+ * In "move" mode the model supplies only the chance of a real move; up vs
+ * down comes from the calibrated table (context showed no direction skill).
+ * @returns {Promise<{probs:object, meta:object}|null>}
+ */
+export async function contextProbs(key, rows, yahooSym, { range, interval }, cal = loadCalibration()) {
+  const model = cal[key]?.context;
+  if (!model?.useContext || !isIndianListing(yahooSym) || !rows?.length || rows[0].ts == null) return null;
+  try {
+    const [index, vix] = await Promise.all([
+      yahooCandles(MARKET_INDEX, { range, interval }),
+      yahooCandles(VIX_INDEX, { range, interval }),
+    ]);
+    const f = featuresAt(prepare(rows, { index, vix }), rows.length - 1);
+    if (!f) return null;
+    const ctxP = predictLogistic(model, toRow(f, model.features));
+    const dir = calibratedProbs(key, f.score, cal)?.probs ?? baseProbabilities(f.score);
+    return {
+      probs: model.mode === 'move' ? moveOnly(ctxP, dir) : ctxP,
+      meta: {
+        key: `${key}/context-${model.mode}`,
+        fittedAt: cal[key].fittedAt,
+        samples: cal[key].samples,
+        skillPct: cal[key].test?.skillPct?.[model.mode === 'move' ? 'contextMove' : 'context'] ?? null,
+      },
+    };
+  } catch {
+    return null; // context is an enhancement; fall back to calibration
+  }
 }
 
 /**
@@ -422,6 +460,10 @@ async function buildMultiHorizon(symbol, cal = loadCalibration()) {
   if (daily.length >= 20) {
     const m2 = scoreWindow(daily.slice(-45), '2-month (daily)', 5, '1d', cal);
     const m1 = scoreWindow(daily.slice(-22), '1-month (daily)', 5, '1d', cal);
+    // Context model (next-session horizon) scores the latest daily bar once;
+    // it applies to both daily windows.
+    const dctx = await contextProbs('1d', daily, yahooSym, { range: '3mo', interval: '1d' }, cal);
+    for (const w of [m2, m1]) if (w && dctx) Object.assign(w, { base: dctx.probs, calibrated: dctx.meta });
     if (m2) horizons.push({ key: 'm2', weight: HORIZON_WEIGHTS.m2, ...m2 });
     if (m1) horizons.push({ key: 'm1', weight: HORIZON_WEIGHTS.m1, ...m1 });
   }
@@ -446,6 +488,8 @@ async function buildMultiHorizon(symbol, cal = loadCalibration()) {
     const lastDate = String(intra[intra.length - 1].date || '').slice(0, 10);
     const todayBars = intra.filter((r) => String(r.date || '').slice(0, 10) === lastDate);
     const todayWin = scoreWindow(todayBars.length >= 8 ? todayBars : intra.slice(-78), 'Today (session)', 5, intraKey, cal);
+    const tctx = todayWin ? await contextProbs(intraKey, intra, yahooSym, { range: '5d', interval: intraKey }, cal) : null;
+    if (tctx) Object.assign(todayWin, { base: tctx.probs, calibrated: tctx.meta });
     if (todayWin) horizons.push({ key: 'today', weight: HORIZON_WEIGHTS.today, ...todayWin });
 
     // Last ~1 hour: 12 x 5m or 4 x 15m
@@ -507,7 +551,9 @@ export async function growwProbability(symbol, opts = {}) {
 
   const cal = loadCalibration();
   let score = techScore(ind);
-  const primaryCal = calibratedProbs(intervalKey(intervalMinutes), score, cal);
+  const primaryCal =
+    (meta.range && (await contextProbs(intervalKey(intervalMinutes), meta.rows, meta.symbol, meta, cal))) ||
+    calibratedProbs(intervalKey(intervalMinutes), score, cal);
   let base = primaryCal ? primaryCal.probs : baseProbabilities(score);
   let horizons = [];
 

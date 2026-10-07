@@ -233,6 +233,28 @@ First results (Oct 2026, 10 NSE large caps): the uncalibrated formula scored
 horizons, and calibration makes the numbers honest rather than predictive.
 Refit regularly (`npm run calibrate`) — behaviour drifts.
 
+#### Context model (market, VIX, regime, session)
+
+For NSE/BSE symbols the harness also fits a small logistic regression on 18
+features, all known at the bar's close: the technical score; stock regime (RSI,
+5/20-bar returns, ATR %, ATR rank vs last 100 bars, trend strength, volume);
+market (NIFTY 50 returns and score, relative strength vs NIFTY); India VIX
+(level z-score, 5-bar change); and session/calendar (opening gap, first / last
+half hour, Indian results season — a calendar proxy, since free earnings dates
+aren't available). An **ablation** adds one group at a time so you can see what
+helps, and a **direction skill** column checks whether a model knows *which
+way* (on bars that moved) rather than just *whether* it moves.
+
+Live use needs ≥ 0.2 points of skill over calibration **and** a win in both
+halves of the held-out period. In "move" mode the context model supplies only
+the chance of a real move; up vs down still comes from calibration.
+
+Findings (Oct 2026, 18 NIFTY 50 stocks): context predicts **volatility, not
+direction**. 5-min: +3.9% skill (stable; replicated on a separate set of
+stocks), driven by stock regime and time of day. Daily +0.3%, 15-min +0.4%
+(marginal), 60-min none. Direction skill is ≤ 0 everywhere — none of these
+inputs tell which way the price will go.
+
 ### API endpoints
 
 | Endpoint | Method | Purpose |
@@ -298,6 +320,9 @@ Everything is offline — fetch is mocked.
 - `ling-client.mjs` — minimal chat client
 - `research.mjs` — guardrailed research / summarize / explain
 - `market-data.mjs` — read-only Yahoo quotes + candles
+- `paper-bot/evaluate.mjs` — replay harness (models vs baselines, ablation)
+- `paper-bot/calibration.mjs` / `calibration.json` — fitted probability tables
+- `paper-bot/features.mjs` / `context-model.mjs` — context features + logistic model
 - `groww-data.mjs` — optional Groww candles (token from env)
 - `describe-candles.mjs` — factual candle stats + optional narration
 - `blackscholes.mjs` — offline option maths
