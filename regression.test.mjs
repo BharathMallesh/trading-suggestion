@@ -174,23 +174,59 @@ test('getHistory clamps silly limits', () => {
 });
 
 // --- #6 #8 #10 #11 #14 #30 paper engine / backtest ----------------------------
-test('trade PnL includes entry AND exit fees (long and short)', () => {
+test('trade PnL includes entry AND exit charges (long and short)', () => {
   for (const side of ['openLong', 'openShort']) {
-    const e = new PaperEngine();
+    const e = new PaperEngine({ product: 'intraday', costs: { slippagePct: 0 } });
     e[side]('A', 100, 'd1', 2);
     const { trade } = e.closePosition('A', 100, 'd2');
-    const fees = trade.qty * 100 * ((PAPER.brokeragePct + PAPER.slippagePct) / 100) * 2;
-    assert.ok(Math.abs(trade.pnl + fees) < 1e-9, `${side}: pnl ${trade.pnl} vs -${fees}`);
-    assert.ok(Math.abs(e.cash - (PAPER.startingCapital - fees)) < 1e-6);
+    assert.ok(trade.charges > 0);
+    assert.ok(Math.abs(trade.pnl + trade.charges) < 1e-9, `${side}: pnl ${trade.pnl} vs -${trade.charges}`);
+    assert.ok(Math.abs(e.cash - (PAPER.startingCapital - trade.charges)) < 1e-6);
+  }
+});
+
+test('Indian cost model: delivery round trip ≈ 0.2% + DP; intraday far cheaper', async () => {
+  const { orderCharges } = await import('./paper-bot/costs.mjs');
+  const v = 100000;
+  const del = orderCharges({ side: 'buy', value: v, product: 'delivery' }).total + orderCharges({ side: 'sell', value: v, product: 'delivery' }).total;
+  const intra = orderCharges({ side: 'buy', value: v, product: 'intraday' }).total + orderCharges({ side: 'sell', value: v, product: 'intraday' }).total;
+  // delivery: STT 0.1%×2 = ₹200, stamp ₹15, exchange ~₹5.9, GST, DP ₹15.93
+  assert.ok(del > 235 && del < 240, `delivery ${del}`);
+  // intraday: STT ₹25, stamp ₹3, brokerage ₹20×2, exchange, GST
+  assert.ok(intra > 75 && intra < 85, `intraday ${intra}`);
+});
+
+test('no overnight shorts in delivery mode', () => {
+  const e = new PaperEngine({ product: 'delivery' });
+  const r = e.openShort('A', 100, 'd1', 2);
+  assert.equal(r.ok, false);
+  assert.match(r.reason, /intraday only/);
+});
+
+test('intraday backtest squares off every position at the session end', async () => {
+  const bars = [];
+  for (let d = 0; d < 6; d++) {
+    for (let k = 0; k < 25; k++) {
+      const i = d * 25 + k;
+      const c = 100 + i * 0.3 + Math.sin(i) * 1.5;
+      const hh = String(9 + Math.floor((15 + k * 15) / 60)).padStart(2, '0');
+      const mm = String((15 + k * 15) % 60).padStart(2, '0');
+      bars.push({ date: `2026-01-0${d + 1} ${hh}:${mm}`, open: c, high: c * 1.01, low: c * 0.99, close: c, volume: 1000 + (i % 5) * 100 });
+    }
+  }
+  const r = await runBacktest({ A: bars }, { techOnly: true, product: 'intraday' });
+  for (const t of r.summary.trades) {
+    if (t.reason === 'end-of-test') continue;
+    assert.equal(t.entryDate.slice(0, 10), t.exitDate.slice(0, 10), `held overnight: ${t.entryDate} → ${t.exitDate}`);
   }
 });
 
 test('a gap through the stop fills at the open, not the stop', () => {
-  const e = new PaperEngine();
+  const e = new PaperEngine({ product: 'intraday', costs: { slippagePct: 0 } });
   e.openLong('A', 100, 'd1', 2); // stop 97
   const [t] = e.checkStopsAndTargets('A', { date: 'd2', open: 90, high: 91, low: 89 });
   assert.equal(t.exitPrice, 90);
-  const s = new PaperEngine();
+  const s = new PaperEngine({ product: 'intraday', costs: { slippagePct: 0 } });
   s.openShort('B', 100, 'd1', 2); // stop 103
   const [u] = s.checkStopsAndTargets('B', { date: 'd2', open: 110, high: 111, low: 109 });
   assert.equal(u.exitPrice, 110);
@@ -374,7 +410,7 @@ test('intraday(date: "previous") returns the session before the exchange\'s toda
 
 // --- #5 #19 server guard & validation (no network needed) ----------------------
 const PORT = 3900 + Math.floor(Math.random() * 90);
-const server = spawn(process.execPath, [join(HERE, 'server.mjs')], { env: { ...process.env, PORT: String(PORT) }, stdio: 'pipe' });
+const server = spawn(process.execPath, [join(HERE, 'server.mjs')], { env: { ...process.env, PORT: String(PORT), AUTO_EVALUATE: '0', SETTINGS_PATH: join(TMP, 'settings.json'), PORTFOLIO_PATH: join(TMP, 'portfolio.json') }, stdio: 'pipe' });
 after(() => server.kill());
 await new Promise((resolve) => server.stdout.once('data', resolve));
 

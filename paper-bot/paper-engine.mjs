@@ -2,6 +2,7 @@
 // No real orders. Pure simulation.
 
 import { PAPER } from './config.mjs';
+import { orderCharges, slippedPrice, DEFAULT_COSTS } from './costs.mjs';
 
 /**
  * @typedef {{
@@ -33,6 +34,18 @@ export class PaperEngine {
     this.cooldownBarsAfterLoss = opts.cooldownBarsAfterLoss ?? PAPER.cooldownBarsAfterLoss ?? 0;
     /** @type {Map<string, number>} symbol → bars remaining in cooldown */
     this.cooldownBars = new Map();
+    // 'delivery' (positions held overnight, no shorts) or 'intraday'
+    // (squared off same day, shorts allowed). Drives Indian cost rates.
+    this.product = opts.product ?? 'delivery';
+    this.costs = { ...DEFAULT_COSTS, ...(PAPER.costs || {}), ...(opts.costs || {}) };
+    this.totalCharges = 0;
+  }
+
+  /** Statutory + brokerage charges for one order. */
+  _charges(side, value) {
+    const c = orderCharges({ side, value, product: this.product, costs: this.costs }).total;
+    this.totalCharges += c;
+    return c;
   }
 
   /** Current total equity (cash + mark-to-market of open positions) */
@@ -103,11 +116,14 @@ export class PaperEngine {
     const qty = this.sizePosition(price, atr);
     if (qty <= 0) return { ok: false, reason: 'Size too small' };
 
-    const notional = qty * price;
-    const fees = notional * ((PAPER.brokeragePct + PAPER.slippagePct) / 100);
+    const fill = slippedPrice(price, 'buy', this.costs);
+    const notional = qty * fill;
+    const fees = orderCharges({ side: 'buy', value: notional, product: this.product, costs: this.costs }).total;
     const totalCost = notional + fees;
 
     if (totalCost > this.cash) return { ok: false, reason: 'Insufficient cash' };
+    this.totalCharges += fees;
+    price = fill;
 
     let stop = null;
     let target = null;
@@ -130,6 +146,10 @@ export class PaperEngine {
    */
   openShort(symbol, price, date, atr = null) {
     if (!this.allowShort) return { ok: false, reason: 'Short selling disabled' };
+    if (this.product === 'delivery') {
+      // Retail can't carry a short overnight in the NSE cash segment (that needs futures).
+      return { ok: false, reason: 'Overnight shorts are not allowed in the cash segment (intraday only)' };
+    }
 
     const gate = this._canOpen(symbol);
     if (!gate.ok) return gate;
@@ -137,11 +157,14 @@ export class PaperEngine {
     const qty = this.sizePosition(price, atr);
     if (qty <= 0) return { ok: false, reason: 'Size too small' };
 
-    const notional = qty * price;
-    const fees = notional * ((PAPER.brokeragePct + PAPER.slippagePct) / 100);
+    const fill = slippedPrice(price, 'sell', this.costs);
+    const notional = qty * fill;
+    const fees = orderCharges({ side: 'sell', value: notional, product: this.product, costs: this.costs }).total;
     const totalReserved = notional + fees;
 
     if (totalReserved > this.cash) return { ok: false, reason: 'Insufficient cash/margin' };
+    this.totalCharges += fees;
+    price = fill;
 
     let stop = null;
     let target = null;
@@ -162,8 +185,11 @@ export class PaperEngine {
     const pos = this.positions.get(symbol);
     if (!pos) return { ok: false, reason: 'No position' };
 
+    // Exit: a long sells (receives less after slippage), a short buys back (pays more).
+    const exitSide = pos.side === 'LONG' ? 'sell' : 'buy';
+    price = slippedPrice(price, exitSide, this.costs);
     const notional = pos.qty * price;
-    const fees = notional * ((PAPER.brokeragePct + PAPER.slippagePct) / 100);
+    const fees = this._charges(exitSide, notional);
 
     const entryFees = pos.entryFees || 0;
     const entryNotional = pos.qty * pos.entryPrice;
@@ -198,6 +224,7 @@ export class PaperEngine {
       exitDate: date,
       pnl,
       pnlPct: (pnl / entryNotional) * 100,
+      charges: entryFees + fees,
       reason,
       stop: pos.stop,
       target: pos.target,
@@ -294,6 +321,8 @@ export class PaperEngine {
       profitFactor,
       maxDrawdownPct: maxDd,
       cash: this.cash,
+      totalCharges: this.totalCharges,
+      product: this.product,
       exitReasons: reasons,
       sideBreakdown: sides,
       trades: this.closedTrades,

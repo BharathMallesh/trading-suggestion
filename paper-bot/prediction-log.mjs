@@ -57,6 +57,13 @@ export function logPrediction(result) {
     probSideways: p.probSideways,
     confidence: p.confidence,
     techScore: result.hybrid?.techScore ?? null,
+    // Probabilities BEFORE Ling's adjustment, so evaluation can measure
+    // whether the adjustment helps (Brier final vs base).
+    base: result.hybrid?.baseProbabilities
+      ? { probUp: result.hybrid.baseProbabilities.probUp, probDown: result.hybrid.baseProbabilities.probDown, probSideways: result.hybrid.baseProbabilities.probSideways }
+      : null,
+    llmAdjusted: Boolean(p.adjustmentNote && p.adjustmentNote !== 'No LLM adjustment applied'),
+    newsSentiment: result.news?.sentiment ?? null,
     atr: result.indicators?.atr14 ?? result.expectedMove?.atr ?? null,
     timeWindow: result.expectedMove?.timeWindow || null,
     horizonMinutes: horizonFor(result.mode, result.intervalMinutes),
@@ -234,9 +241,38 @@ export function computeStats(entries) {
       hits: b.hits,
       hitRate: b.n ? b.hits / b.n : null,
     })),
+    ...valueOfAdditions(evaluated),
     recentEvaluated: evaluated.slice(-10).reverse(),
     recentPending: pending.slice(-10).reverse(),
   };
+}
+
+const KEYS = { UP: 'probUp', DOWN: 'probDown', SIDEWAYS: 'probSideways' };
+const brierOf = (p, label) => ['UP', 'DOWN', 'SIDEWAYS'].reduce((a, l) => a + ((Number(p?.[KEYS[l]]) || 0) - (l === label ? 1 : 0)) ** 2, 0);
+
+/**
+ * Does Ling's adjustment help, and does news sentiment carry information?
+ * Measured on evaluated entries only.
+ */
+function valueOfAdditions(evaluated) {
+  const adj = evaluated.filter((e) => e.llmAdjusted && e.base);
+  const llm = adj.length
+    ? {
+        n: adj.length,
+        brierAdjusted: adj.reduce((a, e) => a + brierOf(e, e.realizedLabel), 0) / adj.length,
+        brierBase: adj.reduce((a, e) => a + brierOf(e.base, e.realizedLabel), 0) / adj.length,
+      }
+    : { n: 0 };
+  if (llm.n) llm.verdict = llm.brierAdjusted < llm.brierBase ? 'helps' : 'does not help';
+  // News: on entries that moved, how often did the sentiment sign match the direction?
+  const moved = evaluated.filter((e) => e.newsSentiment != null && Math.abs(e.newsSentiment) >= 0.2 && e.realizedLabel !== 'SIDEWAYS');
+  const news = {
+    n: moved.length,
+    directionHitRate: moved.length
+      ? moved.filter((e) => (e.newsSentiment > 0 ? 'UP' : 'DOWN') === e.realizedLabel).length / moved.length
+      : null,
+  };
+  return { llmValue: llm, newsValue: news };
 }
 
 export function getHistory(limit = 50) {

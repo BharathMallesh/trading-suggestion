@@ -10,6 +10,7 @@ import { extractJson, normalizeConfidence } from './llm-json.mjs';
 import { calibratedProbs, intervalKey, loadCalibration } from './calibration.mjs';
 import { prepare, featuresAt, isIndianListing, MARKET_INDEX, VIX_INDEX } from './features.mjs';
 import { predictLogistic, toRow, moveOnly } from './context-model.mjs';
+import { newsBrief } from './news.mjs';
 import { HttpError, badRequest } from '../util.mjs';
 
 const ADJUST_MAX = 0.15; // Ling may move each leg by at most ±15 percentage points (as fraction)
@@ -692,6 +693,16 @@ export async function growwProbability(symbol, opts = {}) {
         ? 'Multi-horizon hybrid + ATR range estimate. Experimental research only. Not investment advice. Ranges are volatility bands, not promises.'
         : 'Single-timeframe hybrid + ATR range estimate. Experimental research only. Not investment advice. Ranges are volatility bands, not promises.',
   };
+
+  // Optional news brief: shown and logged (so its value can be measured), but
+  // it does not change the probabilities.
+  if (opts.includeNews && /\.(NS|BO)$/i.test(out.symbol)) {
+    try {
+      out.news = await newsBrief(out.symbol);
+    } catch (err) {
+      out.news = { headlines: [], brief: null, sentiment: null, note: `News unavailable: ${err.message.slice(0, 100)}` };
+    }
+  }
 
   // Auto-log for hit-rate calibration (research)
   try {

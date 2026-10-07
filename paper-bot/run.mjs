@@ -10,7 +10,8 @@
 //   node paper-bot/run.mjs RELIANCE.NS HDFCBANK.NS  # specific symbols
 
 import { candles } from '../market-data.mjs';
-import { PAPER } from './config.mjs';
+import { PAPER, productFor } from './config.mjs';
+import './settings.mjs'; // apply dashboard-saved settings
 import { generateSignal } from './signal.mjs';
 import { PaperEngine } from './paper-engine.mjs';
 import { runBacktest as walkForward } from './backtest.mjs';
@@ -83,9 +84,9 @@ function printSignal(s) {
   console.log();
 }
 
-async function fetchCandles(sym) {
+async function fetchCandles(sym, { backtest = false } = {}) {
   return candles(sym, {
-    range: dataSettings.range,
+    range: backtest ? PAPER.backtestRange[intervalFlag] || dataSettings.range : dataSettings.range,
     interval: dataSettings.interval,
   });
 }
@@ -115,7 +116,7 @@ async function scanOnce() {
 
   // Paper snapshot — supports both LONG and SHORT
   console.log('── Paper account snapshot (if we acted on these signals) ──');
-  const engine = new PaperEngine();
+  const engine = new PaperEngine({ product: productFor(intervalFlag) });
   const marks = {};
 
   for (const s of results) {
@@ -167,7 +168,7 @@ async function runBacktest() {
   for (const sym of targetSymbols) {
     process.stdout.write(`  Loading ${sym}… `);
     try {
-      const data = await fetchCandles(sym);
+      const data = await fetchCandles(sym, { backtest: true });
       history[sym] = data;
       console.log(`${data.length} bars`);
     } catch (err) {
@@ -180,11 +181,19 @@ async function runBacktest() {
   }
 
   const pnlStr = (t) => `${t.pnl >= 0 ? '+' : ''}₹${t.pnl.toFixed(0)} (${t.pnl >= 0 ? '+' : ''}${t.pnlPct.toFixed(1)}%)`;
+  let benchmarkRows = null;
+  try {
+    benchmarkRows = await candles('^NSEI', { range: PAPER.backtestRange[intervalFlag] || dataSettings.range, interval: dataSettings.interval });
+  } catch {
+    /* optional */
+  }
   let result;
   try {
     result = await walkForward(history, {
+      benchmarkRows,
       techOnly,
       lookbackBars: dataSettings.lookbackBars,
+      product: productFor(intervalFlag),
       onEvent(e) {
         if (e.type === 'stop') console.log(`${e.date}  ${e.trade.reason.padEnd(12)} ${e.trade.side.padEnd(5)} ${e.trade.symbol.padEnd(14)} PnL ${pnlStr(e.trade)}`);
         else if (e.type === 'open') console.log(`${e.date}  ${e.side.padEnd(12)} ${e.symbol.padEnd(14)} qty=${e.qty} @ ${e.price.toFixed(2)}  stop=${e.stop?.toFixed(1) ?? '–'} tgt=${e.target?.toFixed(1) ?? '–'}`);
@@ -212,6 +221,10 @@ async function runBacktest() {
   console.log(`Win rate          : ${s.winRatePct.toFixed(1)}%`);
   console.log(`Profit factor     : ${s.profitFactor === Infinity ? '∞' : s.profitFactor.toFixed(2)}`);
   console.log(`Max drawdown      : ${s.maxDrawdownPct.toFixed(1)}%`);
+  const bm = result.benchmark || {};
+  console.log(`Buy & hold same   : ${bm.buyHoldPct >= 0 ? '+' : ''}${bm.buyHoldPct?.toFixed(1)}% (equal weight, after one round trip of costs)`);
+  if (bm.indexPct != null) console.log(`NIFTY 50          : ${bm.indexPct >= 0 ? '+' : ''}${bm.indexPct.toFixed(1)}% (index, no costs)`);
+  console.log(`Charges paid      : ₹${s.totalCharges.toFixed(0)} (${s.product}: STT, exchange, SEBI, stamp, GST${s.product === 'delivery' ? ', DP' : ', brokerage'} + slippage in fills)`);
   if (Object.keys(s.exitReasons).length) {
     console.log(`Exit reasons      : ${JSON.stringify(s.exitReasons)}`);
   }

@@ -20,7 +20,7 @@ import { greeks, payoff } from './blackscholes.mjs';
 import { describeCandles } from './describe-candles.mjs';
 import { generateSignal } from './paper-bot/signal.mjs';
 import { PaperEngine } from './paper-bot/paper-engine.mjs';
-import { PAPER } from './paper-bot/config.mjs';
+import { PAPER, productFor } from './paper-bot/config.mjs';
 import { runAgents } from './agents/coordinator.mjs';
 import { researchAgent } from './agents/research-agent.mjs';
 import { signalAgent } from './agents/signal-agent.mjs';
@@ -30,6 +30,9 @@ import { evaluatePending, computeStats, getHistory } from './paper-bot/predictio
 import { runBacktest } from './paper-bot/backtest.mjs';
 import { evaluateModels, saveReport } from './paper-bot/evaluate.mjs';
 import { loadCalibration } from './paper-bot/calibration.mjs';
+import { newsBrief } from './paper-bot/news.mjs';
+import { currentSettings, saveSettings, resetSettings } from './paper-bot/settings.mjs';
+import * as portfolio from './paper-bot/portfolio.mjs';
 import { HttpError, badRequest, parseSymbols, parseBool } from './util.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -229,7 +232,7 @@ const server = http.createServer(async (req, res) => {
       }
 
       // Paper snapshot
-      const engine = new PaperEngine();
+      const engine = new PaperEngine({ product: productFor(interval) });
       const opened = [];
       for (const s of signals) {
         if (s.confidence < PAPER.minConfidence || !s.indicators?.close) continue;
@@ -275,7 +278,8 @@ const server = http.createServer(async (req, res) => {
       const body = await readJson(req);
       const techOnly = body.techOnly === undefined ? true : parseBool(body.techOnly); // default true for UI speed
       const interval = body.interval || '1d';
-      const { range, candleInterval, lookbackBars } = paperData(interval);
+      const { candleInterval, lookbackBars } = paperData(interval);
+      const range = PAPER.backtestRange[interval] || paperData(interval).range;
       const given = parseSymbols(body.symbols);
       const symbolList = given.length ? given : PAPER.symbols.slice(0, 4);
 
@@ -292,7 +296,14 @@ const server = http.createServer(async (req, res) => {
         throw badRequest(`No market data loaded for the requested symbols. ${loadErrors.join(' ')}`.trim());
       }
 
-      const result = await runBacktest(history, { techOnly, lookbackBars });
+      const product = productFor(interval);
+      let benchmarkRows = null;
+      try {
+        benchmarkRows = await candles('^NSEI', { range, interval: candleInterval });
+      } catch {
+        /* benchmark is optional */
+      }
+      const result = await runBacktest(history, { techOnly, lookbackBars, product, benchmarkRows });
       const s = result.summary;
       // Downsample equity curve for UI
       const curve = s.equityCurve.filter((_, idx) => idx % 3 === 0 || idx === s.equityCurve.length - 1);
@@ -303,6 +314,7 @@ const server = http.createServer(async (req, res) => {
         symbols: result.symbols,
         skipped: loadErrors,
         period: { from: result.startDate, to: result.endDate, bars: result.bars },
+        benchmark: result.benchmark,
         summary: {
           startingCapital: s.startingCapital,
           finalEquity: s.finalEquity,
@@ -313,6 +325,8 @@ const server = http.createServer(async (req, res) => {
           profitFactor: s.profitFactor,
           maxDrawdownPct: s.maxDrawdownPct,
           exitReasons: s.exitReasons,
+          totalCharges: s.totalCharges,
+          product,
         },
         trades: s.trades.slice(-40), // last 40 trades
         equityCurve: curve,
@@ -371,6 +385,7 @@ const server = http.createServer(async (req, res) => {
         intervalMinutes: body.intervalMinutes ? Number(body.intervalMinutes) : 15,
         lookbackDays: Number(body.lookbackDays) > 0 ? Number(body.lookbackDays) : 10,
         preferYahoo: parseBool(body.preferYahoo),
+        includeNews: parseBool(body.includeNews),
         mode: body.mode === '15m' ? '15m' : 'multi',
       });
       return json(res, 200, out);
@@ -410,6 +425,39 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { ...report, saved: parseBool(body.save) });
     }
 
+    // --- Persistent paper portfolio (delivery, long-only) ---
+    if (req.method === 'GET' && url.pathname === '/api/portfolio') {
+      return json(res, 200, await portfolio.refresh());
+    }
+    if (req.method === 'POST' && url.pathname === '/api/portfolio/rebalance') {
+      const body = await readJson(req);
+      return json(res, 200, await portfolio.rebalance({ techOnly: body.techOnly === undefined ? true : parseBool(body.techOnly), symbols: parseSymbols(body.symbols) }));
+    }
+    if (req.method === 'POST' && url.pathname === '/api/portfolio/close') {
+      const body = await readJson(req);
+      const symbol = String(body.symbol || '').trim();
+      if (!symbol) throw badRequest('symbol is required');
+      return json(res, 200, await portfolio.closeOne(symbol));
+    }
+    if (req.method === 'POST' && url.pathname === '/api/portfolio/reset') {
+      const body = await readJson(req);
+      return json(res, 200, portfolio.reset(body.capital ?? PAPER.startingCapital));
+    }
+
+    // --- Settings (validated subset of config, saved to settings.json) ---
+    if (req.method === 'GET' && url.pathname === '/api/settings') {
+      return json(res, 200, { settings: currentSettings() });
+    }
+    if (req.method === 'POST' && url.pathname === '/api/settings') {
+      const body = await readJson(req);
+      return json(res, 200, { settings: body.reset ? resetSettings() : saveSettings(body.settings || {}) });
+    }
+
+    // GET /api/news?symbol= — recent headlines + factual Ling brief (sentiment shown, not used in numbers)
+    if (req.method === 'GET' && url.pathname === '/api/news') {
+      return json(res, 200, await newsBrief(url.searchParams.get('symbol')));
+    }
+
     // GET /api/calibration — fitted tables currently stored
     if (req.method === 'GET' && url.pathname === '/api/calibration') {
       const cal = loadCalibration();
@@ -441,6 +489,12 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, HOST, () => {
   console.log(`Trading research dashboard: http://${HOST}:${PORT}`);
+  // Score due predictions automatically (every 15 min) so hit-rates stay current.
+  if (process.env.AUTO_EVALUATE !== '0') {
+    const tick = () => evaluatePending({}).catch(() => {});
+    setTimeout(tick, 10_000).unref();
+    setInterval(tick, 15 * 60_000).unref();
+  }
   if (!process.env.OPENROUTER_API_KEY) {
     console.log('(Ask panel needs OPENROUTER_API_KEY — market data and the option calculator work without it.)');
   }

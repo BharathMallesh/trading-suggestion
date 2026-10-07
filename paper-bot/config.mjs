@@ -49,8 +49,13 @@ export const PAPER = {
   // (1) Confidence threshold — only act at/above this
   minConfidence: 0.60,
 
-  brokeragePct: 0.03,
-  slippagePct: 0.05,
+  // Indian cash-segment costs (see costs.mjs for the statutory rates). Override
+  // brokerage / DP charge / slippage here to match your broker.
+  costs: {},
+
+  // Longer history for backtests (signals still use lookbackBars). Yahoo
+  // limits: 60m ≈ 730 days, 15m/5m ≈ 60 days.
+  backtestRange: { '1d': '2y', '1h': '6mo', '15m': '1mo', '5m': '1mo' },
 };
 
 // Technical filters — stricter for higher-quality setups
@@ -66,3 +71,6 @@ export const TECH = {
   // (3) Trend alignment: LONG only above SMA-50, SHORT only below
   requireTrendAlign: true,
 };
+
+/** Daily bars → delivery (overnight, long-only); minute/hour bars → intraday (same-day, shorts allowed). */
+export const productFor = (interval) => (interval === '1d' ? 'delivery' : 'intraday');

@@ -7,7 +7,7 @@
 import { researchAgent } from './research-agent.mjs';
 import { signalAgent } from './signal-agent.mjs';
 import { PaperEngine } from '../paper-bot/paper-engine.mjs';
-import { PAPER } from '../paper-bot/config.mjs';
+import { PAPER, productFor } from '../paper-bot/config.mjs';
 import { parseSymbols } from '../util.mjs';
 
 /**
@@ -46,7 +46,7 @@ export async function runAgents(opts = {}) {
   });
 
   // 3. Paper snapshot from signals
-  const engine = new PaperEngine();
+  const engine = new PaperEngine({ product: productFor(interval) });
   const opened = [];
   for (const s of signalResult.signals) {
     if (s.confidence < PAPER.minConfidence || !s.indicators?.close) continue;

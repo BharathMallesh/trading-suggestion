@@ -107,11 +107,13 @@
           <button id="mktBtn" style="margin-top:0">Fetch</button>
           <button id="descBtn" style="margin-top:0;background:#0d1320;color:var(--ink);border:1px solid var(--line)">Describe the data</button>
           <button id="probBtn" style="margin-top:0;background:var(--accent);color:#071019;font-weight:700">Call / Put %</button>
+          <button id="newsBtn" style="margin-top:0;background:#0d1320;color:var(--ink);border:1px solid var(--line)">News</button>
         </div>
         <div id="chartOut" style="margin-top: 12px"></div>
         <div class="out" id="mktOut"></div>
         <div class="out" id="descOut"></div>
         <div class="out" id="probOut"></div>
+        <div class="out" id="newsOut"></div>
       </section>
 
       <!-- Option calculator panel -->
@@ -241,6 +243,9 @@
             </select>
           </div>
         </div>
+        <label style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:13px">
+          <input type="checkbox" id="gpNews" style="width:auto" /> Include news brief (NSE/BSE; shown + logged, not used in the numbers)
+        </label>
         <button id="gpBtn">Fetch + get probabilities</button>
         <div id="gpStatus" class="note" style="display:none"></div>
         <div id="gpOut" style="margin-top:12px"></div>
@@ -258,6 +263,36 @@
           <button id="hrStatsBtn" type="button" style="background:#0d1320;color:var(--ink);border:1px solid var(--line)">Refresh stats</button>
         </div>
         <div id="hrOut" style="margin-top:12px"></div>
+      </section>
+
+      <!-- Persistent paper portfolio -->
+      <section class="card span2">
+        <h2>Paper portfolio <span style="font-size:12px;color:var(--warn);font-weight:500">SIMULATED · PERSISTENT</span></h2>
+        <p class="hint">
+          A simulated delivery account that remembers its positions between sessions. <b>Apply today's signals</b> buys on daily LONG signals
+          (confidence, position and risk limits from Settings) and exits held names on FLAT signals after the minimum hold; stops and targets are
+          checked against the daily bars since entry. Long-only (retail can't hold cash-market shorts overnight), Indian charges applied.
+          No orders are ever sent. Not investment advice.
+        </p>
+        <div class="row" style="gap:8px">
+          <button id="pfRefreshBtn" type="button">Refresh</button>
+          <button id="pfApplyBtn" type="button" style="background:#0d1320;color:var(--ink);border:1px solid var(--line)">Apply today's signals</button>
+          <button id="pfResetBtn" type="button" style="background:#0d1320;color:var(--ink);border:1px solid var(--line)">Reset account</button>
+        </div>
+        <div id="pfStatus" class="note" style="display:none"></div>
+        <div id="pfOut" style="margin-top:12px"></div>
+      </section>
+
+      <!-- Settings -->
+      <section class="card span2">
+        <h2>Settings</h2>
+        <p class="hint">Saved to <code>paper-bot/settings.json</code> and used by scans, backtests and the paper portfolio. Match brokerage / DP charge to your broker.</p>
+        <div id="stForm" class="row"></div>
+        <div class="row" style="gap:8px">
+          <button id="stSaveBtn" type="button">Save settings</button>
+          <button id="stResetBtn" type="button" style="background:#0d1320;color:var(--ink);border:1px solid var(--line)">Restore defaults</button>
+        </div>
+        <div id="stOut" class="note" style="margin-top:8px"></div>
       </section>
 
       <!-- Model evaluation: replay history + calibration -->
@@ -756,7 +791,11 @@
             <div>Profit factor</div><div>${s.profitFactor === 'Infinity' ? '∞' : Number(s.profitFactor || 0).toFixed(2)}</div>
             <div>Max drawdown</div><div>${Number(s.maxDrawdownPct || 0).toFixed(1)}%</div>
             <div>Exit reasons</div><div>${esc(JSON.stringify(s.exitReasons || {}))}</div>
-          </div>`;
+            <div>Charges paid</div><div>₹${Number(s.totalCharges || 0).toFixed(0)} <span style="color:var(--muted)">(${esc(s.product || '')}: STT, exchange, SEBI, stamp, GST${s.product === 'delivery' ? ', DP' : ', brokerage'} · slippage in fills)</span></div>
+            ${d.benchmark ? `<div>Buy &amp; hold same stocks</div><div>${Number(d.benchmark.buyHoldPct).toFixed(1)}%</div>` : ''}
+            ${d.benchmark?.indexPct != null ? `<div>NIFTY 50</div><div>${Number(d.benchmark.indexPct).toFixed(1)}%</div>` : ''}
+          </div>
+          ${d.benchmark ? `<div class="note">${Number(s.totalReturnPct) > Number(d.benchmark.buyHoldPct) ? 'Beat' : 'Lagged'} buy-and-hold of the same stocks by ${Math.abs(Number(s.totalReturnPct) - Number(d.benchmark.buyHoldPct)).toFixed(1)} pts. ${s.product === 'delivery' ? 'Daily mode is long-only: retail can’t hold cash-segment shorts overnight.' : 'Intraday mode squares off every position at the session end.'}</div>` : ''}`;
           html += renderEquityCurve(d.equityCurve || []);
           if (d.trades?.length) {
             html += `<div style="margin-top:14px;font-size:13px"><b>Recent trades</b></div>
@@ -963,6 +1002,7 @@
               symbol,
               intervalMinutes: Number($('gpInterval').value),
               preferYahoo: $('gpSource').value === 'yahoo',
+              includeNews: $('gpNews').checked,
               mode,
             }),
           });
@@ -1069,6 +1109,7 @@
           </div>`;
 
           html += `<div style="margin-top:14px;white-space:pre-wrap;font-size:14px">${esc(p.summary || '')}</div>`;
+          if (d.news) html += renderNews(d.news);
           if (p.adjustmentNote) {
             html += `<div class="note" style="margin-top:8px"><b>Ling adjustment:</b> ${esc(p.adjustmentNote)}</div>`;
           }
@@ -1109,6 +1150,15 @@
           <div>Hit-rate (bias)</div><div><b>${pct(stats.hitRateBias)}</b></div>
           <div>Hit-rate (top prob)</div><div>${pct(stats.hitRateTopProb)}</div>
         </div>`;
+        if (stats.llmValue?.n) {
+          const v = stats.llmValue;
+          html += `<div class="note" style="margin-top:8px">Ling adjustment <b>${esc(v.verdict)}</b> so far: Brier ${v.brierAdjusted.toFixed(4)} adjusted vs ${v.brierBase.toFixed(4)} before Ling (n=${v.n}, lower is better).</div>`;
+        } else {
+          html += '<div class="note" style="margin-top:8px">Ling adjustment value: no evaluated AI-adjusted predictions yet.</div>';
+        }
+        if (stats.newsValue?.n) {
+          html += `<div class="note">News sentiment matched the direction ${(stats.newsValue.directionHitRate * 100).toFixed(0)}% of the time on moves (n=${stats.newsValue.n}; 50% = no information).</div>`;
+        }
         if (stats.byBias) {
           html += '<div style="margin-top:10px;font-size:13px"><b>By bias</b><ul style="margin:6px 0 0 18px">';
           for (const [k, v] of Object.entries(stats.byBias)) {
@@ -1166,6 +1216,156 @@
           );
         } catch (e) {
           $('hrOut').innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
+        }
+      });
+
+
+
+      // --- Paper portfolio ---
+      function renderPortfolio(d) {
+        const money = (v) => '₹' + Number(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 });
+        const col = (v) => (v >= 0 ? 'var(--up)' : 'var(--down)');
+        let html = '';
+        if (d.actions?.length) {
+          html += '<div style="font-size:13px;margin-bottom:8px"><b>Today\'s actions</b><ul style="margin:6px 0 0 18px">';
+          for (const a of d.actions) {
+            const tag = a.action === 'buy' ? `<b style="color:var(--up)">BUY</b> ${a.qty} @ ${Number(a.price).toFixed(2)} (stop ${a.stop?.toFixed(2) ?? '–'}, target ${a.target?.toFixed(2) ?? '–'})`
+              : a.action === 'close' ? `<b style="color:var(--down)">SELL</b> @ ${Number(a.price).toFixed(2)} · PnL <span style="color:${col(a.pnl)}">${money(a.pnl)}</span>`
+              : esc(a.action);
+            html += `<li>${esc(a.symbol)} — ${tag} <span style="color:var(--muted)">${esc((a.reason || '').slice(0, 90))}</span></li>`;
+          }
+          html += '</ul></div>';
+        }
+        html += `<div class="kv">
+          <div>Equity</div><div><b>${money(d.equity)}</b> <span style="color:${col(d.returnPct)}">(${d.returnPct >= 0 ? '+' : ''}${Number(d.returnPct).toFixed(2)}%)</span></div>
+          <div>Cash</div><div>${money(d.cash)}</div>
+          <div>Realised P&amp;L</div><div style="color:${col(d.realizedPnl)}">${money(d.realizedPnl)}</div>
+          <div>Charges paid</div><div>${money(d.totalCharges)}</div>
+          <div>Since</div><div>${esc((d.createdAt || '').slice(0, 10))} · refreshed ${d.lastRefresh ? esc(new Date(d.lastRefresh).toLocaleString()) : '–'}</div>
+        </div>`;
+        if (d.positions?.length) {
+          html += '<table><thead><tr><th>Symbol</th><th>Qty</th><th>Entry</th><th>Last</th><th>Unrealised</th><th>Stop</th><th>Target</th><th></th></tr></thead><tbody>';
+          for (const p of d.positions) {
+            html += `<tr><td>${esc(p.symbol)}</td><td>${p.qty}</td><td>${Number(p.entryPrice).toFixed(2)}</td><td>${Number(p.mark).toFixed(2)}</td>
+              <td style="color:${col(p.unrealized)}">${money(p.unrealized)} (${p.unrealizedPct.toFixed(1)}%)</td>
+              <td>${p.stop != null ? Number(p.stop).toFixed(2) : '–'}</td><td>${p.target != null ? Number(p.target).toFixed(2) : '–'}</td>
+              <td><button type="button" data-close="${esc(p.symbol)}" style="margin:0;padding:4px 10px;font-size:12px;background:#0d1320;color:var(--ink);border:1px solid var(--line)">Close</button></td></tr>`;
+          }
+          html += '</tbody></table>';
+        } else {
+          html += '<div class="note">No open positions.</div>';
+        }
+        if (d.closedTrades?.length) {
+          html += '<div style="margin-top:10px;font-size:13px"><b>Recent closed trades</b></div><table><thead><tr><th>Symbol</th><th>Entry</th><th>Exit</th><th>PnL</th><th>Reason</th></tr></thead><tbody>';
+          for (const t of d.closedTrades.slice(0, 10)) html += `<tr><td>${esc(t.symbol)}</td><td>${esc(t.entryDate)}</td><td>${esc(t.exitDate)}</td><td style="color:${col(t.pnl)}">${money(t.pnl)}</td><td>${esc(t.reason)}</td></tr>`;
+          html += '</tbody></table>';
+        }
+        if ((d.equityHistory || []).length >= 2) html += renderEquityCurve(d.equityHistory);
+        html += `<div class="note" style="margin-top:8px">${esc(d.disclaimer || '')}</div>`;
+        return html;
+      }
+      async function pfCall(path, body, msg) {
+        const out = $('pfOut');
+        const status = $('pfStatus');
+        status.style.display = 'block';
+        status.textContent = msg;
+        try {
+          const d = body === undefined ? await api(path) : await api(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+          out.innerHTML = renderPortfolio(d);
+        } catch (e) {
+          out.innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
+        } finally {
+          status.style.display = 'none';
+        }
+      }
+      $('pfRefreshBtn').addEventListener('click', () => pfCall('/api/portfolio', undefined, 'Checking stops/targets and marking to market…'));
+      $('pfApplyBtn').addEventListener('click', () => pfCall('/api/portfolio/rebalance', { techOnly: true }, 'Scanning daily signals and applying them…'));
+      $('pfResetBtn').addEventListener('click', () => {
+        if (confirm('Reset the paper portfolio? All simulated positions and history are cleared.')) pfCall('/api/portfolio/reset', {}, 'Resetting…');
+      });
+      $('pfOut').addEventListener('click', (e) => {
+        const sym = e.target?.dataset?.close;
+        if (sym) pfCall('/api/portfolio/close', { symbol: sym }, `Closing ${sym}…`);
+      });
+
+      // --- Settings ---
+      const ST_FIELDS = [
+        ['startingCapital', 'Starting capital (₹)'],
+        ['riskPerTradePct', 'Risk per trade (%)'],
+        ['maxPositionPct', 'Max per position (%)'],
+        ['maxOpenPositions', 'Max open positions'],
+        ['minConfidence', 'Min signal confidence (0.5–0.95)'],
+        ['costs.brokerageIntradayCap', 'Intraday brokerage cap (₹/order)'],
+        ['costs.brokerageDeliveryPct', 'Delivery brokerage (%)'],
+        ['costs.dpChargePerSell', 'DP charge per delivery sell (₹)'],
+        ['costs.slippagePct', 'Slippage per fill (%)'],
+      ];
+      function renderSettings(st) {
+        let html = '';
+        for (const [k, label] of ST_FIELDS) html += `<div><label>${esc(label)}</label><input data-st="${esc(k)}" type="number" step="any" value="${esc(st[k])}" /></div>`;
+        html += `<div style="flex:3;min-width:260px"><label>Symbols (comma-separated)</label><input data-st="symbols" value="${esc((st.symbols || []).join(', '))}" /></div>`;
+        $('stForm').innerHTML = html;
+      }
+      async function loadSettings() {
+        try {
+          renderSettings((await api('/api/settings')).settings);
+        } catch (e) {
+          $('stOut').textContent = 'Error: ' + e.message;
+        }
+      }
+      $('stSaveBtn').addEventListener('click', async () => {
+        const patch = {};
+        for (const el of document.querySelectorAll('[data-st]')) patch[el.dataset.st] = el.value;
+        try {
+          renderSettings((await api('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ settings: patch }) })).settings);
+          $('stOut').textContent = 'Saved.';
+        } catch (e) {
+          $('stOut').textContent = 'Error: ' + e.message;
+        }
+      });
+      $('stResetBtn').addEventListener('click', async () => {
+        try {
+          renderSettings((await api('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reset: true }) })).settings);
+          $('stOut').textContent = 'Defaults restored.';
+        } catch (e) {
+          $('stOut').textContent = 'Error: ' + e.message;
+        }
+      });
+      loadSettings();
+
+      // --- News brief ---
+      function renderNews(n) {
+        let html = `<div style="margin-top:12px;padding:12px;border:1px solid var(--line);border-radius:10px;background:#0d1320">
+          <div style="font-weight:700;margin-bottom:6px">News · ${esc(n.company || n.symbol || '')}</div>`;
+        if (n.brief) {
+          const sc = Number(n.sentiment);
+          const col = sc > 0.2 ? 'var(--up)' : sc < -0.2 ? 'var(--down)' : 'var(--muted)';
+          html += `<div style="font-size:13px">${esc(n.brief)}</div>
+            <div class="note">Headline sentiment: <b style="color:${col}">${Number.isFinite(sc) ? (sc > 0 ? '+' : '') + sc.toFixed(2) : '–'}</b> (−1 negative … +1 positive). Shown for context and logged so its value can be measured — it does not change the probabilities.</div>`;
+        }
+        if (n.headlines?.length) {
+          html += '<ul style="margin:8px 0 0 18px;font-size:12px">';
+          for (const h of n.headlines) html += `<li>${esc(h.title)} <span style="color:var(--muted)">— ${esc(h.publisher || '')}, ${esc((h.time || '').slice(0, 10))}</span></li>`;
+          html += '</ul>';
+        }
+        if (n.note) html += `<div class="note">${esc(n.note)}</div>`;
+        return html + '</div>';
+      }
+      $('newsBtn').addEventListener('click', async () => {
+        const out = $('newsOut');
+        const sym = $('sym').value.trim();
+        out.className = 'out';
+        if (!sym) {
+          out.className = 'out err';
+          out.textContent = 'Enter a symbol first, e.g. RELIANCE.NS';
+          return;
+        }
+        out.textContent = 'Fetching headlines…';
+        try {
+          out.innerHTML = renderNews(await api('/api/news?symbol=' + encodeURIComponent(sym)));
+        } catch (e) {
+          out.className = 'out err';
+          out.textContent = 'Error: ' + e.message;
         }
       });
 

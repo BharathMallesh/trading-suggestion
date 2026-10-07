@@ -19,3 +19,7 @@ paper-bot/last-backtest.json
 *.swp
 
 paper-bot/prediction-history.json
+
+# per-user state
+paper-bot/portfolio.json
+paper-bot/settings.json

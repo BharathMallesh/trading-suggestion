@@ -255,6 +255,34 @@ stocks), driven by stock regime and time of day. Daily +0.3%, 15-min +0.4%
 (marginal), 60-min none. Direction skill is ≤ 0 everywhere — none of these
 inputs tell which way the price will go.
 
+### Realistic paper trading (India)
+
+- **Costs** (`paper-bot/costs.mjs`): STT (delivery 0.1% both sides; intraday
+  0.025% sell), NSE transaction 0.00297%, SEBI ₹10/crore, stamp duty (0.015% /
+  0.003% buy), 18% GST on brokerage + exchange + SEBI, DP charge per delivery
+  sell, discount-broker brokerage, and 0.05% slippage in every fill. Override
+  brokerage / DP / slippage in **Settings**.
+- **Daily = delivery, long-only**: retail can't hold cash-segment shorts
+  overnight. **Intraday = shorts allowed, squared off at the session end.**
+- Backtests use longer history (daily 2 years) and report **buy-and-hold of
+  the same stocks** and **NIFTY 50** over the same period, plus charges paid.
+
+### Paper portfolio, news, settings
+
+- **Paper portfolio**: a persistent simulated delivery account
+  (`paper-bot/portfolio.json`). *Apply today's signals* buys on daily LONG
+  signals and exits on FLAT after the minimum hold; stops/targets are checked
+  against daily bars since entry.
+- **News**: recent headlines (Google News RSS India edition for NSE/BSE;
+  Yahoo for others) and, with the key, a factual Ling brief with a sentiment
+  score. Sentiment is shown and logged, **not** used in the numbers — the
+  hit-rate panel measures whether it (and Ling's probability adjustment)
+  actually helps.
+- **Auto-evaluation**: the server scores due predictions every 15 minutes
+  (`AUTO_EVALUATE=0` to disable).
+- **Settings**: capital, risk, limits, confidence threshold, symbols and cost
+  overrides, saved to `paper-bot/settings.json`.
+
 ### API endpoints
 
 | Endpoint | Method | Purpose |
@@ -277,6 +305,12 @@ inputs tell which way the price will go.
 | `/api/prediction-history` | GET | Logged predictions (`?limit=1..500`) |
 | `/api/model-eval` | POST | Replay + score models `{interval, symbols?, save?}` |
 | `/api/calibration` | GET | Saved calibration tables + their validation scores |
+| `/api/news` | GET | Headlines + factual brief `?symbol=` |
+| `/api/portfolio` | GET | Refresh + summary of the paper portfolio |
+| `/api/portfolio/rebalance` | POST | Apply today's daily signals |
+| `/api/portfolio/close` | POST | Close one paper position `{symbol}` |
+| `/api/portfolio/reset` | POST | Fresh paper account `{capital?}` |
+| `/api/settings` | GET/POST | Read / save settings `{settings}` or `{reset:true}` |
 
 Bad input returns **400** with a readable message, unknown symbols **404**,
 a missing API key **503**.
