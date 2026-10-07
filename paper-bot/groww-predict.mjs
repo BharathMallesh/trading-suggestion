@@ -537,7 +537,7 @@ export async function growwProbability(symbol, opts = {}) {
         { role: 'system', content: SYSTEM },
         { role: 'user', content: user },
       ],
-      { temperature: 0.15, timeoutMs: 45_000 },
+      { temperature: 0.15, timeoutMs: 45_000, jsonKeys: ['probUp', 'probDown'], retryEmpty: 0 },
     );
   } catch (err) {
     raw = '';
@@ -556,7 +556,7 @@ export async function growwProbability(symbol, opts = {}) {
             content: `${meta.symbol} multiHorizonScore=${score.toFixed(2)} base up=${base.probUp.toFixed(2)} down=${base.probDown.toFixed(2)} side=${base.probSideways.toFixed(2)} RSI=${ind.rsi14?.toFixed(1)}. Adjust ≤0.15 and return JSON.`,
           },
         ],
-        { temperature: 0.1, timeoutMs: 30_000 },
+        { temperature: 0.1, timeoutMs: 30_000, jsonKeys: ['probUp', 'probDown'], retryEmpty: 0 },
       );
       llmError = null;
     } catch (err) {

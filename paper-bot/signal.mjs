@@ -143,7 +143,7 @@ async function askLing(context, techBias) {
       { role: 'system', content: SIGNAL_SYSTEM },
       { role: 'user', content: userMsg },
     ],
-    { temperature: 0.2 },
+    { temperature: 0.2, jsonKeys: ['signal'] },
   );
 
   const parsed = extractJson(raw, (o) => 'signal' in o);

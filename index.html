@@ -698,7 +698,7 @@
         const status = $('pbStatus');
         out.innerHTML = '';
         status.style.display = 'block';
-        status.textContent = 'Running backtest… may take 20–60s.';
+        status.textContent = $('pbMode').value === 'hybrid' ? 'Running hybrid backtest (asks Ling on each setup)… may take 1–2 minutes.' : 'Running backtest… may take 10–30s.';
         $('pbBacktestBtn').disabled = true;
         try {
           const d = await api('/api/paper-backtest', {

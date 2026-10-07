@@ -235,6 +235,36 @@ test('extractJson skips braces in leading prose and strips fences', () => {
   assert.equal(extractJson('no json here'), null);
 });
 
+test('extractJson repairs a reply that is missing its closing brace (seen live from Ling)', () => {
+  const live = '```json\n{\n  "signal": "FLAT",\n  "confidence": 0.55,\n  "reasoning": "mixed signals."\n```';
+  assert.deepEqual(extractJson(live, (o) => 'signal' in o), { signal: 'FLAT', confidence: 0.55, reasoning: 'mixed signals.' });
+});
+
+test('chat() recovers the JSON answer from message.reasoning when content is null (seen live from Ling)', async () => {
+  process.env.OPENROUTER_API_KEY = 'sk-or-test';
+  const { chat } = await import('./ling-client.mjs');
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls++;
+    return res({ choices: [{ message: { content: null, reasoning: 'Schema {"signal": "LONG" | "SHORT"}… final answer: {"signal":"SHORT","confidence":0.65,"reasoning":"x"}' } }] });
+  };
+  const out = await chat([{ role: 'user', content: 'x' }], { jsonKeys: ['signal'] });
+  assert.deepEqual(JSON.parse(out), { signal: 'SHORT', confidence: 0.65, reasoning: 'x' });
+  assert.equal(calls, 1);
+});
+
+test('chat() retries once on an empty reply, then returns ""', async () => {
+  process.env.OPENROUTER_API_KEY = 'sk-or-test';
+  const { chat } = await import('./ling-client.mjs');
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls++;
+    return res({ choices: [{ message: { content: calls === 1 ? null : 'second try' } }] });
+  };
+  assert.equal(await chat([{ role: 'user', content: 'x' }]), 'second try');
+  assert.equal(calls, 2);
+});
+
 test('normalizeConfidence handles percent, words, and junk', () => {
   assert.equal(normalizeConfidence(75), 0.75);
   assert.equal(normalizeConfidence('70%'), 0.7);

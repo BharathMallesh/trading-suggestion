@@ -10,8 +10,9 @@
  * @param {(obj: object) => boolean} [accept]  optional filter (e.g. must have a key)
  * @returns {object|null}
  */
-export function extractJson(text, accept = () => true) {
+export function extractJson(text, accept = () => true, { last = false } = {}) {
   const s = String(text || '').replace(/```(?:json)?/gi, '');
+  let found = null;
   for (let start = s.indexOf('{'); start !== -1; start = s.indexOf('{', start + 1)) {
     let depth = 0;
     let inStr = false;
@@ -29,11 +30,28 @@ export function extractJson(text, accept = () => true) {
       else if (ch === '}' && --depth === 0) {
         try {
           const obj = JSON.parse(s.slice(start, i + 1));
-          if (obj && typeof obj === 'object' && !Array.isArray(obj) && accept(obj)) return obj;
+          if (obj && typeof obj === 'object' && !Array.isArray(obj) && accept(obj)) {
+            if (!last) return obj;
+            found = obj;
+          }
         } catch {
           /* not JSON — try the next '{' */
         }
         break;
+      }
+    }
+  }
+  if (found) return found;
+  // Repair: models sometimes stop right before the final brace(s), e.g.
+  // '{"signal":"FLAT","reasoning":"…"' + fence. Try closing it ourselves.
+  const tail = s.slice(s.indexOf('{')).trim();
+  if (tail.startsWith('{')) {
+    for (const suffix of ['}', '"}', ']}', '}}', '"]}']) {
+      try {
+        const obj = JSON.parse(tail + suffix);
+        if (obj && typeof obj === 'object' && !Array.isArray(obj) && accept(obj)) return obj;
+      } catch {
+        /* try the next repair */
       }
     }
   }

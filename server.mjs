@@ -132,10 +132,12 @@ const server = http.createServer(async (req, res) => {
     // --- Ask Ling: research / explain / summarize (needs the API key) ---
     if (req.method === 'POST' && url.pathname === '/api/ask') {
       const { mode = 'research', question = '', text = '', focus = '' } = await readJson(req);
+      // Long-form answers can take 15–30s; allow more than the 25s default.
+      const llm = { timeoutMs: 90_000 };
       let answer;
-      if (mode === 'summarize') answer = await summarize(text, { focus });
-      else if (mode === 'explain') answer = await explain(question);
-      else answer = await research(question);
+      if (mode === 'summarize') answer = await summarize(text, { focus, ...llm });
+      else if (mode === 'explain') answer = await explain(question, llm);
+      else answer = await research(question, llm);
       return json(res, 200, { answer });
     }
 
@@ -166,6 +168,7 @@ const server = http.createServer(async (req, res) => {
         range: url.searchParams.get('range') || '3mo',
         interval: url.searchParams.get('interval') || '1d',
         narrate: url.searchParams.get('narrate') === '1',
+        timeoutMs: 90_000,
       });
       return json(res, 200, out);
     }

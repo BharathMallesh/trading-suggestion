@@ -140,7 +140,7 @@ export async function candlePredict(symbol, opts = {}) {
         { role: 'system', content: SYSTEM },
         { role: 'user', content: user },
       ],
-      { temperature: 0.15, timeoutMs: 45_000 },
+      { temperature: 0.15, timeoutMs: 45_000, jsonKeys: ['bias'], retryEmpty: 0 },
     );
   } catch (err) {
     throw new HttpError(err.status || 502, `Ling request failed: ${err.message || err}`);
@@ -161,7 +161,7 @@ export async function candlePredict(symbol, opts = {}) {
             content: `${symbol} close=${ind.close} RSI=${ind.rsi14?.toFixed(1)} SMA20=${ind.sma20?.toFixed(2)} SMA50=${ind.sma50?.toFixed(2)} volRatio=${ind.volRatio?.toFixed(2)}. JSON now.`,
           },
         ],
-        { temperature: 0.1, timeoutMs: 30_000 },
+        { temperature: 0.1, timeoutMs: 30_000, jsonKeys: ['bias'], retryEmpty: 0 },
       );
     } catch {
       /* keep empty */
