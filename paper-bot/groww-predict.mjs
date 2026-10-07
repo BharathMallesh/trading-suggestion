@@ -7,6 +7,7 @@ import { candles as yahooCandles } from '../market-data.mjs';
 import { computeIndicators } from './indicators.mjs';
 import { logPrediction } from './prediction-log.mjs';
 import { extractJson, normalizeConfidence } from './llm-json.mjs';
+import { calibratedProbs, intervalKey, loadCalibration } from './calibration.mjs';
 import { HttpError, badRequest } from '../util.mjs';
 
 const ADJUST_MAX = 0.15; // Ling may move each leg by at most ±15 percentage points (as fraction)
@@ -311,17 +312,26 @@ export function shortWindowScore(rows) {
   return Math.max(-1, Math.min(1, 0.6 * retScore + 0.4 * pos));
 }
 
-function scoreWindow(rows, label, minBars = 5) {
+/**
+ * Score one window and turn it into probabilities. Windows long enough for the
+ * full indicator score use the fitted calibration table for `calKey` when one
+ * exists and beat the formula in replay (see evaluate.mjs); otherwise the
+ * formula. Short price-action windows always use the formula.
+ */
+function scoreWindow(rows, label, minBars = 5, calKey = null, cal = {}, shortVariant = null) {
   if (!rows || rows.length < minBars) return null;
   const ind = computeIndicators(rows);
   // Full indicator score needs ~20 bars; shorter windows use price action only.
-  const score = rows.length >= 20 ? techScore(ind) : shortWindowScore(rows);
-  const base = baseProbabilities(score);
+  const full = rows.length >= 20;
+  const score = full ? techScore(ind) : shortWindowScore(rows);
+  const fitted = !calKey ? null : full ? calibratedProbs(calKey, score, cal) : shortVariant ? calibratedProbs(calKey, score, cal, shortVariant) : null;
+  const base = fitted ? fitted.probs : baseProbabilities(score);
   return {
     label,
     bars: rows.length,
     score,
     base,
+    calibrated: fitted ? fitted.meta : null,
     rsi: ind.rsi14,
     close: ind.close,
     ret5: ind.ret5,
@@ -398,7 +408,7 @@ function buildUserPayload(meta, rows, ind, base, score, horizons) {
 /**
  * Fetch multi-horizon windows and build combined base probabilities.
  */
-async function buildMultiHorizon(symbol) {
+async function buildMultiHorizon(symbol, cal = loadCalibration()) {
   const yahooSym = await resolveYahooSymbol(symbol);
   const horizons = [];
 
@@ -410,18 +420,20 @@ async function buildMultiHorizon(symbol) {
     daily = [];
   }
   if (daily.length >= 20) {
-    const m2 = scoreWindow(daily.slice(-45), '2-month (daily)');
-    const m1 = scoreWindow(daily.slice(-22), '1-month (daily)');
+    const m2 = scoreWindow(daily.slice(-45), '2-month (daily)', 5, '1d', cal);
+    const m1 = scoreWindow(daily.slice(-22), '1-month (daily)', 5, '1d', cal);
     if (m2) horizons.push({ key: 'm2', weight: HORIZON_WEIGHTS.m2, ...m2 });
     if (m1) horizons.push({ key: 'm1', weight: HORIZON_WEIGHTS.m1, ...m1 });
   }
 
   // Intraday 5m for today / 1h / 15m (more bars)
   let intra = [];
+  let intraKey = '5m';
   try {
     intra = await yahooCandles(yahooSym, { range: '5d', interval: '5m' });
   } catch {
     try {
+      intraKey = '15m';
       intra = await yahooCandles(yahooSym, { range: '5d', interval: '15m' });
     } catch {
       intra = [];
@@ -433,17 +445,18 @@ async function buildMultiHorizon(symbol) {
     // Intraday bar dates are "YYYY-MM-DD HH:MM"; group by the day part.
     const lastDate = String(intra[intra.length - 1].date || '').slice(0, 10);
     const todayBars = intra.filter((r) => String(r.date || '').slice(0, 10) === lastDate);
-    const todayWin = scoreWindow(todayBars.length >= 8 ? todayBars : intra.slice(-78), 'Today (session)');
+    const todayWin = scoreWindow(todayBars.length >= 8 ? todayBars : intra.slice(-78), 'Today (session)', 5, intraKey, cal);
     if (todayWin) horizons.push({ key: 'today', weight: HORIZON_WEIGHTS.today, ...todayWin });
 
     // Last ~1 hour: 12 x 5m or 4 x 15m
     const h1Bars = intra.slice(-12);
-    const h1 = scoreWindow(h1Bars, 'Last ~1 hour');
+    // Short-window tables are fitted on 5m bars only.
+    const h1 = scoreWindow(h1Bars, 'Last ~1 hour', 5, intraKey === '5m' ? '5m' : null, cal, 'short12');
     if (h1) horizons.push({ key: 'h1', weight: HORIZON_WEIGHTS.h1, ...h1 });
 
     // Last ~15 min: 3 x 5m (allow short window)
     const m15Bars = intra.slice(-3);
-    const m15 = scoreWindow(m15Bars, 'Last ~15 min', 2);
+    const m15 = scoreWindow(m15Bars, 'Last ~15 min', 2, intraKey === '5m' ? '5m' : null, cal, 'short3');
     if (m15) horizons.push({ key: 'm15', weight: HORIZON_WEIGHTS.m15, ...m15 });
   }
 
@@ -492,15 +505,17 @@ export async function growwProbability(symbol, opts = {}) {
 
   const ind = computeIndicators(meta.rows);
 
+  const cal = loadCalibration();
   let score = techScore(ind);
-  let base = baseProbabilities(score);
+  const primaryCal = calibratedProbs(intervalKey(intervalMinutes), score, cal);
+  let base = primaryCal ? primaryCal.probs : baseProbabilities(score);
   let horizons = [];
 
   // Multi-horizon only when mode === 'multi'
   if (mode === 'multi') {
     let multi;
     try {
-      multi = await buildMultiHorizon(symbol);
+      multi = await buildMultiHorizon(symbol, cal);
     } catch {
       multi = null;
     }
@@ -523,6 +538,7 @@ export async function growwProbability(symbol, opts = {}) {
         probDown: base.probDown,
         probSideways: base.probSideways,
         rsi: ind.rsi14,
+        calibrated: primaryCal ? primaryCal.meta : null,
       },
     ];
   }
@@ -605,7 +621,15 @@ export async function growwProbability(symbol, opts = {}) {
         probDown: (h.base || h).probDown,
         probSideways: (h.base || h).probSideways,
         rsi: h.rsi,
+        calibrated: h.calibrated || null,
       })),
+      // How many of the windows used probabilities fitted on past data
+      // (paper-bot/evaluate.mjs) rather than the hand-written formula.
+      calibration: {
+        windowsCalibrated: horizons.filter((h) => h.calibrated).length,
+        windows: horizons.length,
+        fittedAt: horizons.find((h) => h.calibrated)?.calibrated.fittedAt || null,
+      },
     },
     indicators: {
       sma20: ind.sma20,

@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "Isolated finance-research module (OpenRouter + Ling 3.0 Flash Fin). Research and analysis only — no market predictions, no trade execution.",
+  "description": "Isolated finance-research module (OpenRouter + Ling 3.0 Flash Fin). Research and analysis only \u2014 no market predictions, no trade execution.",
   "scripts": {
     "research": "node research.mjs",
     "market": "node market-data.mjs",
@@ -16,6 +16,8 @@
     "paper:backtest": "node paper-bot/run.mjs --backtest",
     "paper:backtest:tech": "node paper-bot/run.mjs --backtest --tech-only",
     "paper:15m": "node paper-bot/run.mjs --tech-only --interval 15m",
-    "test": "node --test"
+    "test": "node --test",
+    "eval": "node paper-bot/evaluate.mjs",
+    "calibrate": "node paper-bot/evaluate.mjs --interval 1d --save && node paper-bot/evaluate.mjs --interval 60m --save && node paper-bot/evaluate.mjs --interval 15m --save && node paper-bot/evaluate.mjs --interval 5m --save"
   }
 }

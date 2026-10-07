@@ -28,6 +28,8 @@ import { candlePredict } from './paper-bot/candle-predict.mjs';
 import { growwProbability } from './paper-bot/groww-predict.mjs';
 import { evaluatePending, computeStats, getHistory } from './paper-bot/prediction-log.mjs';
 import { runBacktest } from './paper-bot/backtest.mjs';
+import { evaluateModels, saveReport } from './paper-bot/evaluate.mjs';
+import { loadCalibration } from './paper-bot/calibration.mjs';
 import { HttpError, badRequest, parseSymbols, parseBool } from './util.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -396,6 +398,29 @@ const server = http.createServer(async (req, res) => {
         disclaimer:
           'Evaluation compares logged bias to later Yahoo price. Research calibration only — not investment advice.',
       });
+    }
+
+    // POST /api/model-eval { interval?, symbols?, save? } — replay history and
+    // score the probability model vs baselines; save=true stores the fitted
+    // calibration table for live predictions.
+    if (req.method === 'POST' && url.pathname === '/api/model-eval') {
+      const body = await readJson(req);
+      const report = await evaluateModels({ interval: body.interval || '1d', symbols: parseSymbols(body.symbols) });
+      if (parseBool(body.save)) saveReport(report);
+      return json(res, 200, { ...report, saved: parseBool(body.save) });
+    }
+
+    // GET /api/calibration — fitted tables currently stored
+    if (req.method === 'GET' && url.pathname === '/api/calibration') {
+      const cal = loadCalibration();
+      const summary = Object.fromEntries(
+        Object.entries(cal).map(([k, v]) => [
+          k,
+          { fittedAt: v.fittedAt, samples: v.samples, period: v.period, useCalibrated: v.useCalibrated, test: v.test,
+            variants: Object.fromEntries(Object.entries(v.variants || {}).map(([n, x]) => [n, { useCalibrated: x.useCalibrated, test: x.test }])) },
+        ]),
+      );
+      return json(res, 200, { calibration: summary });
     }
 
     // GET /api/prediction-history

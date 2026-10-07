@@ -204,6 +204,35 @@ curl -X POST http://127.0.0.1:3000/api/groww-predict \
   -d '{"symbol":"RELIANCE.NS","intervalMinutes":15,"preferYahoo":true}'
 ```
 
+### Model evaluation & calibration
+
+How good are the Call / Put / Sideways numbers? The replay harness answers that
+without waiting for live predictions: it walks past bars, makes the model's
+prediction at each one, and scores it against what happened next — next session
+for daily bars, next 4 bars intraday (same rule as live hit-rate scoring).
+
+```bash
+npm run eval -- --interval 1d        # report: daily, 10 default symbols
+node paper-bot/evaluate.mjs --interval 15m TCS.NS INFY.NS
+npm run calibrate                    # fit + save all intervals (1d, 60m, 15m, 5m)
+```
+
+It compares five models on a chronological split (fit on the first 60%, score
+on the last 40%): uniform 33/33/33, historical base rates, "last move repeats",
+the hand-written formula, and probabilities **calibrated** to past data (score
+bucket → observed frequencies, shrunk toward base rates). Metrics: Brier score,
+log loss, accuracy, skill vs base rates, and a reliability chart.
+
+Fitted tables live in `paper-bot/calibration.json`; live Call / Put uses them
+per interval **only if** they beat the formula on held-out bars. The dashboard's
+**Model evaluation** section runs the same replay and shows the charts.
+
+First results (Oct 2026, 10 NSE large caps): the uncalibrated formula scored
+−11% to −17% vs base rates (overconfident); calibrated probabilities score about
+0% — i.e. the technical score has little predictive information at these
+horizons, and calibration makes the numbers honest rather than predictive.
+Refit regularly (`npm run calibrate`) — behaviour drifts.
+
 ### API endpoints
 
 | Endpoint | Method | Purpose |
@@ -224,6 +253,8 @@ curl -X POST http://127.0.0.1:3000/api/groww-predict \
 | `/api/prediction-stats` | GET | Hit-rate calibration stats |
 | `/api/prediction-evaluate` | POST | Score predictions whose horizon has passed |
 | `/api/prediction-history` | GET | Logged predictions (`?limit=1..500`) |
+| `/api/model-eval` | POST | Replay + score models `{interval, symbols?, save?}` |
+| `/api/calibration` | GET | Saved calibration tables + their validation scores |
 
 Bad input returns **400** with a readable message, unknown symbols **404**,
 a missing API key **503**.
@@ -244,6 +275,8 @@ npm run paper:tech
 npm run paper:backtest
 npm run paper:backtest:tech
 npm run paper:15m
+npm run eval            # replay & score the probability model
+npm run calibrate       # fit + save calibration for all intervals
 npm test
 ```
 

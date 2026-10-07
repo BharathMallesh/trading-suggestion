@@ -259,6 +259,39 @@
         </div>
         <div id="hrOut" style="margin-top:12px"></div>
       </section>
+
+      <!-- Model evaluation: replay history + calibration -->
+      <section class="card span2">
+        <h2>Model evaluation <span style="font-size:12px;color:var(--warn);font-weight:500">REPLAY · CALIBRATION</span></h2>
+        <p class="hint">
+          Replays past bars: at each bar the Call / Put / Sideways model makes its prediction, which is scored against what happened next,
+          side by side with simple baselines. <b>Brier</b>: lower is better (33/33/33 scores 0.667). <b>Skill</b>: improvement over just quoting
+          historical base rates; above 0 means real information. <b>Fit &amp; use</b> stores probabilities fitted to the data; live Call/Put uses them
+          only if they beat the formula on bars they weren't fitted on. Research only — past skill is no promise of future accuracy.
+        </p>
+        <div class="row">
+          <div>
+            <label>Interval · horizon</label>
+            <select id="evInterval">
+              <option value="1d" selected>Daily · next session</option>
+              <option value="60m">60-min · next 4 bars</option>
+              <option value="15m">15-min · next 4 bars</option>
+              <option value="5m">5-min · next 4 bars</option>
+            </select>
+          </div>
+          <div style="flex:2">
+            <label>Symbols (blank = the 10 defaults)</label>
+            <input id="evSyms" placeholder="RELIANCE.NS, TCS.NS, …" />
+          </div>
+        </div>
+        <div class="row" style="gap:8px">
+          <button id="evRunBtn" type="button">Run replay</button>
+          <button id="evFitBtn" type="button" style="background:#0d1320;color:var(--ink);border:1px solid var(--line)">Fit &amp; use calibration</button>
+          <button id="evShowBtn" type="button" style="background:#0d1320;color:var(--ink);border:1px solid var(--line)">Saved calibration</button>
+        </div>
+        <div id="evStatus" class="note" style="display:none"></div>
+        <div id="evOut" style="margin-top:12px"></div>
+      </section>
     </main>
 
     <script>
@@ -538,7 +571,8 @@
               <div>Confidence</div><div>${confPct}%</div>
               <div>As of</div><div>${esc(d.asOf || '')} · last ${Number(d.lastClose || 0).toFixed(2)}</div>
             </div>
-            <div style="margin-top:10px;white-space:pre-wrap;font-size:13px">${esc(p.summary || '')}</div>`;
+            <div style="margin-top:10px;white-space:pre-wrap;font-size:13px">${esc(p.summary || '')}</div>
+            <div class="note">${d.hybrid?.calibration?.windowsCalibrated ? `Calibrated to past data (${d.hybrid.calibration.windowsCalibrated}/${d.hybrid.calibration.windows} windows).` : 'Uncalibrated formula — see Model evaluation below.'}</div>`;
         } catch (e) {
           out.className = 'out err';
           out.textContent = 'Error: ' + e.message;
@@ -987,6 +1021,12 @@
 
           // Hybrid / multi-horizon breakdown
           const h = d.hybrid || {};
+          if (h.calibration) {
+            const c = h.calibration;
+            html += c.windowsCalibrated
+              ? `<div class="note" style="margin-top:10px">Probabilities calibrated to past data for ${c.windowsCalibrated} of ${c.windows} window(s) · fitted ${esc((c.fittedAt || '').slice(0, 10))}</div>`
+              : `<div class="note" style="margin-top:10px;color:var(--warn)">Uncalibrated formula — run <b>Model evaluation → Fit &amp; use calibration</b> for honest probabilities.</div>`;
+          }
           if (h.baseProbabilities) {
             const b = h.baseProbabilities;
             const modeLabel = (h.multiHorizon || h.mode === 'multi') ? 'Multi-horizon hybrid' : 'Single timeframe (primary interval)';
@@ -1126,6 +1166,120 @@
           );
         } catch (e) {
           $('hrOut').innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
+        }
+      });
+
+      // --- Model evaluation (replay + calibration) ---
+      const MODEL_NAMES = {
+        uniform: 'Uniform 33/33/33',
+        climatology: 'Base rates (history)',
+        persistence: 'Last move repeats',
+        current: 'Formula (uncalibrated)',
+        calibrated: 'Calibrated to data',
+      };
+
+      // Reliability diagram: predicted probability (x) vs how often it happened (y).
+      function renderReliability(rel, title) {
+        const W = 300, H = 230, pl = 36, pr = 10, pt = 22, pb = 30;
+        const x = (v) => pl + v * (W - pl - pr);
+        const y = (v) => H - pb - v * (H - pt - pb);
+        const colors = { UP: 'var(--up)', DOWN: 'var(--down)', SIDEWAYS: 'var(--muted)' };
+        let g = `<line x1="${x(0)}" y1="${y(0)}" x2="${x(1)}" y2="${y(1)}" stroke="var(--line)" stroke-dasharray="4 3"/>`;
+        for (const t of [0, 0.5, 1]) {
+          g += `<text x="${x(t)}" y="${H - 12}" text-anchor="middle" font-size="10" fill="var(--muted)">${t * 100}%</text>`;
+          g += `<text x="${pl - 6}" y="${y(t) + 3}" text-anchor="end" font-size="10" fill="var(--muted)">${t * 100}%</text>`;
+        }
+        for (const [label, bins] of Object.entries(rel || {})) {
+          const pts = bins.filter((b) => b.n >= 15);
+          if (pts.length > 1) g += `<polyline fill="none" stroke="${colors[label]}" stroke-width="1.5" points="${pts.map((b) => `${x(b.meanPredicted).toFixed(1)},${y(b.observed).toFixed(1)}`).join(' ')}"/>`;
+          for (const b of pts) g += `<circle cx="${x(b.meanPredicted).toFixed(1)}" cy="${y(b.observed).toFixed(1)}" r="${Math.min(6, 2 + Math.sqrt(b.n) / 8).toFixed(1)}" fill="${colors[label]}"><title>${label}: predicted ${(b.meanPredicted * 100).toFixed(0)}% → happened ${(b.observed * 100).toFixed(0)}% (n=${b.n})</title></circle>`;
+        }
+        return `<div style="flex:1;min-width:260px"><div style="font-size:12px;color:var(--muted);margin-bottom:2px">${esc(title)}</div>
+          <svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${esc(title)} reliability diagram" style="display:block;background:#0d1320;border-radius:8px">${g}
+          <text x="${W / 2}" y="${H - 1}" text-anchor="middle" font-size="9" fill="var(--muted)">predicted</text></svg></div>`;
+      }
+
+      function renderEval(d) {
+        const pct = (v) => `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`;
+        const b = d.testBaseRates;
+        let html = `<div class="note" style="margin-bottom:8px">${esc(d.settings.label)} · ${d.symbols.length} symbols · ${esc(d.period.from)} → ${esc(d.period.to)} ·
+          ${d.samples.train.toLocaleString()} bars to fit, ${d.samples.test.toLocaleString()} scored · actual outcomes: UP ${(b.probUp * 100).toFixed(0)}% / DOWN ${(b.probDown * 100).toFixed(0)}% / SIDEWAYS ${(b.probSideways * 100).toFixed(0)}%</div>`;
+        if (d.skipped?.length) html += `<div class="err" style="margin-bottom:8px">Skipped: ${esc(d.skipped.join(' · '))}</div>`;
+        html += `<table><thead><tr><th style="text-align:left">Model</th><th>Brier ↓</th><th>Log loss ↓</th><th>Top-label accuracy</th><th>Skill vs base rates</th></tr></thead><tbody>`;
+        for (const [m, v] of Object.entries(d.metrics)) {
+          const best = m === d.best;
+          const col = v.skillPct > 0.5 ? 'var(--up)' : v.skillPct < -0.5 ? 'var(--down)' : 'var(--muted)';
+          html += `<tr${best ? ' style="font-weight:700"' : ''}><td style="text-align:left">${esc(MODEL_NAMES[m] || m)}${best ? ' ★' : ''}</td>
+            <td>${v.brier.toFixed(4)}</td><td>${v.logLoss.toFixed(4)}</td><td>${v.accuracyPct.toFixed(1)}%</td><td style="color:${col}">${pct(v.skillPct)}</td></tr>`;
+        }
+        html += '</tbody></table>';
+        const m = d.metrics;
+        const verdict = m.calibrated.skillPct > 1
+          ? `The technical score carries some information here: calibrated probabilities beat base rates by ${pct(m.calibrated.skillPct)} on unseen bars.`
+          : `The technical score carries little or no predictive information at this horizon: calibrated probabilities are about as good as quoting base rates (${pct(m.calibrated.skillPct)}).`;
+        html += `<div style="margin-top:10px;font-size:14px">${verdict} The uncalibrated formula scores ${pct(m.current.skillPct)}; calibration ${d.useCalibrated ? `<b>fixes that</b>${d.saved ? ' and is now used live.' : ' — click <b>Fit &amp; use calibration</b> to apply it live.'}` : 'did not beat it, so live keeps the formula.'}</div>`;
+        for (const [v, x] of Object.entries(d.variants || {})) {
+          html += `<div class="note">Short window "${v === 'short12' ? 'last hour' : 'last 15 min'}": formula ${pct(x.skillPct.current)} · calibrated ${pct(x.skillPct.calibrated)} → ${x.useCalibrated ? 'calibrated used' : 'formula kept'}</div>`;
+        }
+        html += `<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:12px">
+          ${renderReliability(d.reliability.current, 'Formula: predicted vs actual')}
+          ${renderReliability(d.reliability.calibrated, 'Calibrated: predicted vs actual')}</div>
+          <div class="note">Points on the dashed diagonal = honest probabilities. <span style="color:var(--up)">●</span> UP <span style="color:var(--down)">●</span> DOWN <span style="color:var(--muted)">●</span> SIDEWAYS (bins with ≥15 bars).</div>`;
+        html += `<div style="margin-top:12px;font-size:13px"><b>Fitted table</b> (technical score → what followed)</div>
+          <table><thead><tr><th>Score</th><th>UP</th><th>DOWN</th><th>SIDEWAYS</th><th>bars</th></tr></thead><tbody>`;
+        for (const k of d.calibrationTable.buckets) {
+          html += `<tr><td>${k.lo.toFixed(2)} … ${k.hi.toFixed(2)}</td><td>${(k.probUp * 100).toFixed(0)}%</td><td>${(k.probDown * 100).toFixed(0)}%</td><td>${(k.probSideways * 100).toFixed(0)}%</td><td>${k.n}</td></tr>`;
+        }
+        html += '</tbody></table>';
+        if (d.saved) html += `<div class="note" style="margin-top:8px;color:var(--warn)">Saved. ${d.useCalibrated ? 'Live Call / Put now uses these probabilities for this interval.' : 'Stored, but live keeps the formula (calibration did not beat it).'}</div>`;
+        html += `<div class="note" style="margin-top:8px">${esc(d.disclaimer)}</div>`;
+        return html;
+      }
+
+      async function runEval(save) {
+        const out = $('evOut');
+        const status = $('evStatus');
+        out.innerHTML = '';
+        status.style.display = 'block';
+        status.textContent = save ? 'Replaying history and fitting calibration…' : 'Replaying history…';
+        $('evRunBtn').disabled = $('evFitBtn').disabled = true;
+        try {
+          const raw = $('evSyms').value.trim();
+          const d = await api('/api/model-eval', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ interval: $('evInterval').value, symbols: raw || undefined, save }),
+          });
+          out.innerHTML = renderEval(d);
+        } catch (e) {
+          out.innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
+        } finally {
+          status.style.display = 'none';
+          $('evRunBtn').disabled = $('evFitBtn').disabled = false;
+        }
+      }
+      $('evRunBtn').addEventListener('click', () => runEval(false));
+      $('evFitBtn').addEventListener('click', () => runEval(true));
+      $('evShowBtn').addEventListener('click', async () => {
+        const out = $('evOut');
+        try {
+          const { calibration } = await api('/api/calibration');
+          const keys = Object.keys(calibration);
+          if (!keys.length) {
+            out.innerHTML = '<div class="note">No calibration saved yet — live Call / Put uses the formula. Run <b>Fit &amp; use calibration</b>.</div>';
+            return;
+          }
+          let html = '<table><thead><tr><th>Interval</th><th>Fitted</th><th>Bars</th><th>Formula skill</th><th>Calibrated skill</th><th>Live uses</th></tr></thead><tbody>';
+          for (const k of keys) {
+            const c = calibration[k];
+            const sk = c.test?.skillPct || {};
+            const f = (v) => (v == null ? '–' : `${v >= 0 ? '+' : ''}${Number(v).toFixed(1)}%`);
+            html += `<tr><td>${esc(k)}</td><td>${esc((c.fittedAt || '').slice(0, 16).replace('T', ' '))}</td><td>${c.samples}</td><td>${f(sk.current)}</td><td>${f(sk.calibrated)}</td><td>${c.useCalibrated ? 'calibrated' : 'formula'}</td></tr>`;
+          }
+          html += '</tbody></table><div class="note">Refit regularly (e.g. weekly) — market behaviour drifts.</div>';
+          out.innerHTML = html;
+        } catch (e) {
+          out.innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
         }
       });
     </script>
