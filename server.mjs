@@ -39,6 +39,8 @@ import { healthChecks } from './paper-bot/health.mjs';
 import { scanEvents, updateEventReturns, eventStats, loadEvents } from './paper-bot/events.mjs';
 import { runMonitor, latestReport } from './paper-bot/monitor.mjs';
 import { loadIndexList } from './paper-bot/ranking.mjs';
+import { runStrategyTests } from './paper-bot/strategies.mjs';
+import { rebalanceAccounts, resetAccounts, loadAccounts, summarize as summarizeAccounts } from './paper-bot/strategy-accounts.mjs';
 import { HttpError, badRequest, parseSymbols, parseBool, mapLimit } from './util.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -465,6 +467,24 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, await evaluateRanking({ horizon: Number(body.horizon) || 20, symbols: parseSymbols(body.symbols), universe: body.universe || undefined }));
     }
 
+    // --- Strategy backtests + forward-test accounts ---
+    if (req.method === 'POST' && url.pathname === '/api/strategy-tests') {
+      const body = await readJson(req);
+      return json(res, 200, await runStrategyTests({ capital: Number(body.capital) || 1e6, universe: body.universe || 'nifty200' }));
+    }
+    if (req.method === 'GET' && url.pathname === '/api/strategy-accounts') {
+      const st = loadAccounts();
+      return json(res, 200, st ? summarizeAccounts(st) : { accounts: [], note: 'Not started yet — run Rebalance (or wait for the monitor).' });
+    }
+    if (req.method === 'POST' && url.pathname === '/api/strategy-accounts/rebalance') {
+      return json(res, 200, await rebalanceAccounts());
+    }
+    if (req.method === 'POST' && url.pathname === '/api/strategy-accounts/reset') {
+      const body = await readJson(req);
+      resetAccounts(body.capital ?? 1e6);
+      return json(res, 200, await rebalanceAccounts());
+    }
+
     // --- Health, events, Today ---
     if (req.method === 'GET' && url.pathname === '/api/health') {
       return json(res, 200, await healthChecks());
@@ -491,7 +511,17 @@ const server = http.createServer(async (req, res) => {
     // --- Volatility: implied vs forecast ---
     if (req.method === 'GET' && url.pathname === '/api/vol-check') {
       const p = url.searchParams;
-      return json(res, 200, await volCheck({ symbol: p.get('symbol') || '^NSEI', iv: p.get('iv') || undefined, days: Number(p.get('days') || 7), expiry: p.get('expiry') || undefined }));
+      const symbol = p.get('symbol') || '^NSEI';
+      // Results due for a stock? (headline-based, no AI call) → event add-on.
+      let eventPending = false;
+      if (/\.(NS|BO)$/i.test(symbol)) {
+        try {
+          eventPending = (await newsBrief(symbol, { useLlm: false })).events?.includes('results') || false;
+        } catch {
+          /* no news → no add-on */
+        }
+      }
+      return json(res, 200, await volCheck({ symbol, iv: p.get('iv') || undefined, days: Number(p.get('days') || 7), expiry: p.get('expiry') || undefined, eventPending }));
     }
     if (req.method === 'POST' && url.pathname === '/api/vol-eval') {
       const body = await readJson(req);

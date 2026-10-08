@@ -2,7 +2,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-const { qlike, FORECASTERS, volCheck, evaluateVolForecasts } = await import('./paper-bot/volatility.mjs');
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+const TMP = mkdtempSync(join(tmpdir(), 'trading-vol-'));
+process.env.VOL_MODEL_PATH = join(TMP, 'vol-model.json');
+const { after } = await import('node:test');
+after(() => rmSync(TMP, { recursive: true, force: true }));
+const { qlike, FORECASTERS, volCheck, evaluateVolForecasts, garchForecast, harForecast, saveVolModel } = await import('./paper-bot/volatility.mjs');
 
 /** Closes with constant daily vol `s` (alternating ±s log moves). */
 const series = (n, s, start = 100) => {
@@ -44,11 +51,45 @@ test('volCheck: India VIX for NIFTY, user IV for stocks, and a reading', async (
 });
 
 test('replay scores forecasters and the NIFTY implied-vs-realised gap', async () => {
-  const nifty = series(400, 0.01);
+  const nifty = series(700, 0.01);
   const vix = nifty.map((r) => ({ date: r.date, close: 20 })); // implied 20% > realised ~15.9%
   const load = async (s) => (s === '^INDIAVIX' ? vix : nifty);
   const r = await evaluateVolForecasts({ symbols: ['^NSEI'], loadCandles: load });
   assert.ok(r.summary.ewma.meanQlike < 0.05);
   assert.ok(r.niftyHeadToHead.indiaVix.n > 0);
   assert.equal(r.niftyImpliedVsRealised.pctTimeImpliedAbove, 100);
+});
+
+test('GARCH and HAR recover a constant daily vol', () => {
+  // Random returns with a true daily sd of 1% (sum of 12 uniforms ≈ normal).
+  let seed = 11;
+  const u = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const r = Array.from({ length: 800 }, () => 0.01 * (Array.from({ length: 12 }, u).reduce((a, b) => a + b, 0) - 6));
+  assert.ok(Math.abs(garchForecast(r, 5) - 0.01) < 0.0015, `garch ${garchForecast(r, 5)}`);
+  assert.ok(Math.abs(harForecast(r, 5) - 0.01) < 0.002, `har ${harForecast(r, 5)}`);
+  assert.equal(harForecast(r.slice(0, 100), 5), null);
+});
+
+test('GARCH forecast mean-reverts after a volatility burst', () => {
+  const calm = Array.from({ length: 600 }, (_, i) => (i % 2 ? 0.01 : -0.01));
+  const burst = [...calm, 0.05, -0.05, 0.04];
+  assert.ok(garchForecast(burst, 1) > garchForecast(burst, 60), 'short-horizon vol above long-horizon after a shock');
+});
+
+test('saved model drives live choice; NIFTY reading uses VIX\'s usual premium; results add-on widens', async () => {
+  saveVolModel({
+    horizon: 5,
+    summary: { ewma: { meanQlike: 0.6 }, har: { meanQlike: 0.5 } },
+    niftyHeadToHead: { ewma: { meanQlike: 0.4 }, blend: { meanQlike: 0.45 } },
+    niftyImpliedVsRealised: { avgImpliedPct: 15, avgRealisedPct: 12 },
+  });
+  const load = async (s) => (s === '^INDIAVIX' ? [{ date: '2026-10-08', close: 19.5 }] : series(900, 0.01));
+  const n = await volCheck({ symbol: '^NSEI', days: 7, loadCandles: load });
+  assert.equal(n.model, 'ewma');
+  assert.ok(Math.abs(n.typicalRatio - 1.25) < 1e-9);
+  assert.match(n.reading, /in line with its usual premium/); // ~19.5 vs ~15.9 → ×1.23
+  const plain = await volCheck({ symbol: 'TCS.NS', iv: 30, days: 7, loadCandles: load });
+  const event = await volCheck({ symbol: 'TCS.NS', iv: 30, days: 7, eventPending: true, loadCandles: load });
+  assert.equal(plain.model, 'har');
+  assert.ok(event.forecastPct > plain.forecastPct && event.eventAddOnPct > 0);
 });

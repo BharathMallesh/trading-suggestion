@@ -1,0 +1,376 @@
+#!/usr/bin/env node
+// Strategy tests (library + CLI): low-turnover, cost-aware strategies judged
+// against simply holding NIFTY. Every rule is fixed IN ADVANCE (no tuning on
+// the test data); results are reported for both halves of the period.
+//
+// A. NIFTY trend: hold NIFTY (via an index ETF) while NIFTY is above its
+//    200-day average (±1% band to avoid flip-flopping), else a liquid fund.
+//    Variants: daily check, and month-end check only.
+// B. Momentum portfolio (NIFTY 200, monthly): top 20 by 12-1 month momentum,
+//    built up step by step so each component's effect is visible:
+//      B0 plain · B1 + buffer (keep holdings while rank ≤ 40)
+//      B2 + market filter (cash when NIFTY < 200-day average)
+//      B3 + volatility targeting (15% annual; remainder in liquid fund)
+//
+// Costs: Indian delivery charges per order (STT, exchange, SEBI, stamp, GST,
+// DP charge per sale) + slippage; ETF trades use ETF rates. Cash earns a
+// liquid-fund rate. Dividends: ~1.2%/yr added while invested in equities
+// (both strategy and benchmark), since Yahoo index prices exclude them.
+// Not modelled: taxes (short-term capital gains on every switch/rebalance
+// would reduce strategy returns further vs buy-and-hold), impact cost of
+// large orders. Universe for B is TODAY's NIFTY 200 → survivorship bias.
+// Research only — not investment advice.
+//
+//   node paper-bot/strategies.mjs            # both, ₹10 lakh
+//   node paper-bot/strategies.mjs --capital 100000
+
+import { pathToFileURL } from 'node:url';
+import { candles } from '../market-data.mjs';
+import { orderCharges, DEFAULT_COSTS } from './costs.mjs';
+import { loadIndexList, SIGNALS } from './ranking.mjs';
+import { mapLimit, badRequest } from '../util.mjs';
+
+const TD = 252;
+export const ASSUMPTIONS = {
+  liquidYield: 0.06, // annual, cash / liquid fund
+  dividendYield: 0.012, // annual, added while in equities
+  stockSlippagePct: 0.1, // per fill, NIFTY 200 names
+  etfRoundTripPct: 0.1, // ETF: tiny STT + exchange + stamp + spread, per round trip
+  etfExpense: 0.0005, // annual, index ETF
+  smaDays: 200,
+  bandPct: 1,
+  topN: 20,
+  bufferRank: 40,
+  volTarget: 0.15,
+  rebalanceDays: 21,
+};
+
+/** Performance stats for a daily equity curve [{date, equity}]. */
+export function stats(curve, { rf = ASSUMPTIONS.liquidYield } = {}) {
+  if (curve.length < 3) return null;
+  const rets = [];
+  for (let i = 1; i < curve.length; i++) rets.push(curve[i].equity / curve[i - 1].equity - 1);
+  const years = rets.length / TD;
+  const total = curve[curve.length - 1].equity / curve[0].equity;
+  const cagr = total ** (1 / years) - 1;
+  const m = rets.reduce((a, b) => a + b, 0) / rets.length;
+  const vol = Math.sqrt(rets.reduce((a, b) => a + (b - m) ** 2, 0) / rets.length) * Math.sqrt(TD);
+  let peak = curve[0].equity;
+  let maxDD = 0;
+  for (const p of curve) {
+    peak = Math.max(peak, p.equity);
+    maxDD = Math.max(maxDD, 1 - p.equity / peak);
+  }
+  return {
+    from: curve[0].date,
+    to: curve[curve.length - 1].date,
+    years,
+    cagrPct: cagr * 100,
+    volPct: vol * 100,
+    sharpe: vol ? (cagr - rf) / vol : null,
+    maxDrawdownPct: maxDD * 100,
+    calmar: maxDD ? cagr / maxDD : null,
+  };
+}
+
+/** Stats for the whole period and each half (stability check). */
+function withHalves(curve) {
+  const mid = Math.floor(curve.length / 2);
+  return { all: stats(curve), firstHalf: stats(curve.slice(0, mid + 1)), secondHalf: stats(curve.slice(mid)) };
+}
+
+const sma = (a, i, n) => {
+  if (i + 1 < n) return null;
+  let s = 0;
+  for (let k = i - n + 1; k <= i; k++) s += a[k];
+  return s / n;
+};
+
+/**
+ * Strategy A on an index series. `monthEnd`: only re-check the signal on the
+ * last trading day of each month. Signal at close, switch at the next close.
+ */
+export function trendStrategy(index, { monthEnd = false, a = ASSUMPTIONS } = {}) {
+  const close = index.map((r) => r.close);
+  const start = a.smaDays;
+  let invested = close[start] > sma(close, start, a.smaDays);
+  let equity = 1;
+  let bh = 1;
+  let switches = 0;
+  let daysIn = 0;
+  const curve = [{ date: index[start].date, equity }];
+  const bench = [{ date: index[start].date, equity: bh }];
+  const dailyLiquid = (1 + a.liquidYield) ** (1 / TD) - 1;
+  const dailyDiv = a.dividendYield / TD;
+  for (let i = start + 1; i < index.length; i++) {
+    const r = close[i] / close[i - 1] - 1;
+    bh *= 1 + r + dailyDiv;
+    equity *= invested ? 1 + r + dailyDiv - a.etfExpense / TD : 1 + dailyLiquid;
+    if (invested) daysIn++;
+    // decide at today's close (applies from tomorrow)
+    const isMonthEnd = i + 1 >= index.length || index[i + 1].date.slice(0, 7) !== index[i].date.slice(0, 7);
+    if (!monthEnd || isMonthEnd) {
+      const m = sma(close, i, a.smaDays);
+      const want = invested ? close[i] > m * (1 - a.bandPct / 100) : close[i] > m * (1 + a.bandPct / 100);
+      if (want !== invested) {
+        invested = want;
+        switches++;
+        equity *= 1 - a.etfRoundTripPct / 200; // half a round trip per switch
+      }
+    }
+    curve.push({ date: index[i].date, equity });
+    bench.push({ date: index[i].date, equity: bh });
+  }
+  const years = (index.length - start - 1) / TD;
+  return {
+    name: monthEnd ? 'A · NIFTY trend (month-end check)' : 'A · NIFTY trend (daily check)',
+    ...withHalves(curve),
+    benchmark: withHalves(bench),
+    switchesPerYear: switches / years,
+    pctTimeInvested: (daysIn / (index.length - start - 1)) * 100,
+    curve,
+    benchCurve: bench,
+  };
+}
+
+/**
+ * Strategy B variants on a stock universe.
+ * @param {{symbol, dates:string[], closes:number[], at:Map}[]} series
+ * @param {{date, close}[]} index NIFTY
+ */
+export function momentumStrategy(series, index, { variant = 'B3', capital = 1e6, a = ASSUMPTIONS } = {}) {
+  const equalWeight = variant === 'EW'; // same universe, same costs — isolates survivorship bias
+  const useBuffer = variant !== 'B0' && !equalWeight;
+  const useFilter = variant === 'B2' || variant === 'B3';
+  const useVol = variant === 'B3';
+  const costs = { ...DEFAULT_COSTS, slippagePct: a.stockSlippagePct };
+  const dates = index.map((r) => r.date);
+  const idxClose = index.map((r) => r.close);
+  const dailyLiquid = (1 + a.liquidYield) ** (1 / TD) - 1;
+  const dailyDiv = a.dividendYield / TD;
+  const priceAt = (s, d) => {
+    const i = s.at.get(d);
+    return i == null ? null : s.closes[i];
+  };
+  const start = dates.findIndex((d) => series.filter((s) => (s.at.get(d) ?? -1) >= 260).length >= 50);
+  if (start < 0 || start + a.rebalanceDays * 6 >= dates.length) throw badRequest('Not enough history for the momentum test.');
+
+  let cash = capital;
+  const pos = new Map(); // symbol → rupee value
+  let charges = 0;
+  let turnover = 0;
+  const curve = [];
+  let lastRebalance = -Infinity;
+  for (let i = start; i < dates.length; i++) {
+    const d = dates[i];
+    // 1. mark to market (yesterday → today)
+    if (i > start) {
+      for (const [sym, v] of pos) {
+        const s = series.find((x) => x.symbol === sym);
+        const p0 = priceAt(s, dates[i - 1]);
+        const p1 = priceAt(s, d);
+        if (p0 && p1) pos.set(sym, v * (p1 / p0) * (1 + dailyDiv));
+      }
+      cash *= 1 + dailyLiquid;
+    }
+    // 2. rebalance every N trading days
+    if (i - lastRebalance >= a.rebalanceDays) {
+      lastRebalance = i;
+      const equity = cash + [...pos.values()].reduce((x, y) => x + y, 0);
+      let exposure = 1;
+      if (useFilter) {
+        const m = sma(idxClose, i, a.smaDays);
+        if (m && idxClose[i] < m) exposure = 0;
+      }
+      // rank by 12-1 month momentum
+      const ranked = series
+        .map((s) => {
+          const k = s.at.get(d);
+          return k != null && k >= 260 ? { s, score: SIGNALS.mom12_1(s.closes.slice(0, k + 1)) } : null;
+        })
+        .filter((x) => x && x.score != null)
+        .sort((x, y) => y.score - x.score);
+      const rankOf = new Map(ranked.map((x, r) => [x.s.symbol, r + 1]));
+      let target = [];
+      if (exposure > 0 && equalWeight) {
+        target = ranked.map((x) => x.s.symbol);
+      } else if (exposure > 0) {
+        if (useBuffer) target = [...pos.keys()].filter((sym) => (rankOf.get(sym) ?? Infinity) <= a.bufferRank);
+        for (const x of ranked) {
+          if (target.length >= a.topN) break;
+          if (!target.includes(x.s.symbol)) target.push(x.s.symbol);
+        }
+        target = target.slice(0, a.topN);
+        if (useVol && target.length) {
+          // forecast vol of the equal-weight target basket from its last 60 days
+          const rets = [];
+          for (let k = i - 59; k <= i; k++) {
+            let sum = 0;
+            let n = 0;
+            for (const sym of target) {
+              const s = series.find((x) => x.symbol === sym);
+              const p0 = priceAt(s, dates[k - 1]);
+              const p1 = priceAt(s, dates[k]);
+              if (p0 && p1) {
+                sum += p1 / p0 - 1;
+                n++;
+              }
+            }
+            if (n) rets.push(sum / n);
+          }
+          const m = rets.reduce((x, y) => x + y, 0) / rets.length;
+          const vol = Math.sqrt(rets.reduce((x, y) => x + (y - m) ** 2, 0) / rets.length) * Math.sqrt(TD);
+          exposure = Math.min(1, a.volTarget / (vol || a.volTarget));
+        }
+      }
+      const each = target.length ? (equity * exposure) / target.length : 0;
+      const want = new Map(target.map((sym) => [sym, each]));
+      for (const sym of new Set([...pos.keys(), ...want.keys()])) {
+        const cur = pos.get(sym) || 0;
+        const tgt = want.get(sym) || 0;
+        const delta = tgt - cur;
+        // ignore tiny top-ups (< 1% of the position) — they cost more than they help
+        if (Math.abs(delta) < Math.max(500, 0.01 * Math.max(cur, tgt))) continue;
+        const side = delta > 0 ? 'buy' : 'sell';
+        const value = Math.abs(delta);
+        const c = orderCharges({ side, value, product: 'delivery', costs }).total + (value * costs.slippagePct) / 100;
+        charges += c;
+        turnover += value;
+        cash -= delta + c;
+        if (tgt > 0) pos.set(sym, tgt);
+        else pos.delete(sym);
+      }
+    }
+    curve.push({ date: d, equity: cash + [...pos.values()].reduce((x, y) => x + y, 0) });
+  }
+  const years = (curve.length - 1) / TD;
+  return {
+    name: {
+      B0: 'B0 · momentum top 20, monthly',
+      B1: 'B1 · + buffer (hold while rank ≤ 40)',
+      B2: 'B2 · + market filter (NIFTY > 200-day avg)',
+      B3: 'B3 · + volatility target 15%',
+      EW: 'Equal-weight same universe (survivorship control)',
+    }[variant],
+    variant,
+    ...withHalves(curve),
+    chargesPctPerYear: (charges / capital / years) * 100,
+    turnoverPerYear: turnover / capital / years,
+    curve,
+  };
+}
+
+/** Run everything: A (10y NIFTY) and B0–B3 (10y NIFTY 200) vs benchmarks. */
+export async function runStrategyTests({ capital = 1e6, universe = 'nifty200', loadCandles = candles } = {}) {
+  const index = await loadCandles('^NSEI', { range: '10y', interval: '1d' });
+  const A = [trendStrategy(index), trendStrategy(index, { monthEnd: true })];
+
+  const list = await loadIndexList(universe);
+  const loaded = await mapLimit(list.symbols, 4, async (sym) => {
+    try {
+      const rows = await loadCandles(sym, { range: '10y', interval: '1d' });
+      return rows.length > 300 ? { symbol: sym, dates: rows.map((r) => r.date), closes: rows.map((r) => r.close), at: new Map(rows.map((r, k) => [r.date, k])) } : null;
+    } catch {
+      return null;
+    }
+  });
+  const series = loaded.filter(Boolean);
+  const B = ['B0', 'B1', 'B2', 'B3'].map((v) => momentumStrategy(series, index, { variant: v, capital }));
+  const EW = momentumStrategy(series, index, { variant: 'EW', capital });
+  // NIFTY buy-and-hold over B's window (with dividends)
+  const from = B[0].curve[0].date;
+  const idxWin = index.filter((r) => r.date >= from);
+  const bhCurve = [];
+  let eq = 1;
+  idxWin.forEach((r, k) => {
+    if (k) eq *= r.close / idxWin[k - 1].close + ASSUMPTIONS.dividendYield / TD;
+    bhCurve.push({ date: r.date, equity: eq });
+  });
+  const verdict = (s, bench) => {
+    const better = (x, y) => x.sharpe > y.sharpe && x.maxDrawdownPct <= y.maxDrawdownPct * 1.1;
+    return better(s.firstHalf, bench.firstHalf) && better(s.secondHalf, bench.secondHalf)
+      ? 'beats NIFTY on risk-adjusted return in both halves'
+      : s.all.sharpe > bench.all.sharpe
+        ? 'better overall, but not in both halves'
+        : 'does not beat NIFTY';
+  };
+  const bBench = withHalves(bhCurve);
+  // Reality check without survivorship bias: a real momentum ETF vs a real NIFTY ETF.
+  let realEtf = null;
+  try {
+    const mo = await loadCandles('MOMENTUM.NS', { range: '10y', interval: '1d' });
+    const ni = await loadCandles('NIFTYBEES.NS', { range: '10y', interval: '1d' });
+    const at = new Map(ni.map((r) => [r.date, r.close]));
+    const common = mo.filter((r) => at.has(r.date));
+    if (common.length > 250) {
+      realEtf = {
+        from: common[0].date,
+        to: common[common.length - 1].date,
+        momentum: stats(common.map((r) => ({ date: r.date, equity: r.close }))),
+        nifty: stats(common.map((r) => ({ date: r.date, equity: at.get(r.date) }))),
+      };
+    }
+  } catch {
+    /* optional */
+  }
+  const strip = ({ curve, benchCurve, ...rest }) => rest;
+  return {
+    capital,
+    universe: { name: universe, source: list.source, used: series.length },
+    assumptions: ASSUMPTIONS,
+    A: A.map((x) => ({ ...strip(x), verdict: verdict(x, x.benchmark) })),
+    B: B.map((x) => ({ ...strip(x), verdict: verdict(x, bBench) })),
+    benchmarkB: bBench,
+    equalWeight: strip(EW),
+    realEtf,
+    // Momentum's own contribution = return above the equal-weight portfolio of the SAME (biased) universe.
+    momentumExcessPct: B.map((x) => ({ variant: x.variant, cagrAboveEqualWeightPct: x.all.cagrPct - EW.all.cagrPct, sharpeAboveEqualWeight: x.all.sharpe - EW.all.sharpe })),
+    curves: {
+      A: A[1].curve.filter((_, k) => k % 5 === 0),
+      AB: A[1].benchCurve.filter((_, k) => k % 5 === 0),
+      B: B[3].curve.filter((_, k) => k % 5 === 0).map((p) => ({ date: p.date, equity: p.equity / capital })),
+      BB: bhCurve.filter((_, k) => k % 5 === 0),
+    },
+    caveats: [
+      "B uses today's NIFTY 200 members (survivorship bias: past losers that left the index are missing), so B's results are flattered.",
+      'Taxes are not modelled: frequent switching/rebalancing triggers short-term capital gains tax, which buy-and-hold largely avoids.',
+      'Rules were fixed in advance; still, 10 years is one market history. Research only — not investment advice.',
+    ],
+  };
+}
+
+// CLI
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const args = process.argv.slice(2);
+  const cIdx = args.indexOf('--capital');
+  const capital = cIdx >= 0 ? Number(args[cIdx + 1]) : 1e6;
+  runStrategyTests({ capital })
+    .then((r) => {
+      const row = (n, s, extra = '') => console.log(`${n.padEnd(46)} ${s.cagrPct.toFixed(1).padStart(6)}%  ${s.volPct.toFixed(1).padStart(5)}%  ${s.sharpe?.toFixed(2).padStart(5)}  ${s.maxDrawdownPct.toFixed(1).padStart(6)}%  ${extra}`);
+      const head = () => console.log(`${'strategy'.padEnd(46)}   CAGR    vol  Sharpe   maxDD`);
+      const a0 = r.A[0];
+      console.log(`\nA · NIFTY trend vs buy-and-hold · ${a0.all.from} → ${a0.all.to} (${a0.all.years.toFixed(1)}y)`);
+      head();
+      row('NIFTY buy-and-hold (+div)', a0.benchmark.all);
+      for (const x of r.A) {
+        row(x.name, x.all, `${x.switchesPerYear.toFixed(1)} switches/yr · ${x.pctTimeInvested.toFixed(0)}% invested`);
+        console.log(`   halves: Sharpe ${x.firstHalf.sharpe.toFixed(2)} / ${x.secondHalf.sharpe.toFixed(2)} vs NIFTY ${x.benchmark.firstHalf.sharpe.toFixed(2)} / ${x.benchmark.secondHalf.sharpe.toFixed(2)} · maxDD ${x.firstHalf.maxDrawdownPct.toFixed(0)}% / ${x.secondHalf.maxDrawdownPct.toFixed(0)}% vs ${x.benchmark.firstHalf.maxDrawdownPct.toFixed(0)}% / ${x.benchmark.secondHalf.maxDrawdownPct.toFixed(0)}% → ${x.verdict}`);
+      }
+      const b = r.B[0];
+      console.log(`\nB · momentum on ${r.universe.name} (${r.universe.used} stocks) · ₹${r.capital.toLocaleString('en-IN')} · ${b.all.from} → ${b.all.to} (${b.all.years.toFixed(1)}y)`);
+      head();
+      row('NIFTY buy-and-hold (+div)', r.benchmarkB.all);
+      row(r.equalWeight.name, r.equalWeight.all, `costs ${r.equalWeight.chargesPctPerYear.toFixed(2)}%/yr`);
+      for (const x of r.B) {
+        row(x.name, x.all, `costs ${x.chargesPctPerYear.toFixed(2)}%/yr · turnover ${x.turnoverPerYear.toFixed(1)}×/yr`);
+        console.log(`   halves: Sharpe ${x.firstHalf.sharpe.toFixed(2)} / ${x.secondHalf.sharpe.toFixed(2)} vs NIFTY ${r.benchmarkB.firstHalf.sharpe.toFixed(2)} / ${r.benchmarkB.secondHalf.sharpe.toFixed(2)} → ${x.verdict}`);
+      }
+      console.log('\nMomentum above the equal-weight portfolio of the same stocks (removes the shared survivorship bias):');
+      for (const m of r.momentumExcessPct) console.log(`   ${m.variant}: CAGR ${m.cagrAboveEqualWeightPct >= 0 ? '+' : ''}${m.cagrAboveEqualWeightPct.toFixed(1)} pts · Sharpe ${m.sharpeAboveEqualWeight >= 0 ? '+' : ''}${m.sharpeAboveEqualWeight.toFixed(2)}`);
+      console.log(`\n${r.caveats.join('\n')}`);
+    })
+    .catch((err) => {
+      console.error('Error:', err.message);
+      process.exit(1);
+    });
+}

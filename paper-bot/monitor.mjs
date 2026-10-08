@@ -63,12 +63,16 @@ export function computeAlerts(r) {
     if (held.has(w.symbol) && (w.events || []).includes('results')) out.push({ level: 'high', text: `${w.symbol} (held in paper portfolio): results event in the news — moves are usually larger.` });
   }
   const v = r.volatility;
-  if (v?.ratio >= 1.3) out.push({ level: 'info', text: `NIFTY options pricing ${((v.ratio - 1) * 100).toFixed(0)}% more volatility than forecast (India VIX ${v.impliedPct?.toFixed(1)}%).` });
-  if (v?.ratio && v.ratio <= 0.8) out.push({ level: 'info', text: `NIFTY options pricing ${((1 - v.ratio) * 100).toFixed(0)}% less volatility than forecast (India VIX ${v.impliedPct?.toFixed(1)}%).` });
+  // Only flag NIFTY options when the gap is unusual vs VIX's normal premium.
+  if (v?.reading && /unusually/.test(v.reading)) out.push({ level: 'info', text: `NIFTY: ${v.reading}` });
+  else if (!v?.typicalRatio && v?.ratio >= 1.3) out.push({ level: 'info', text: `NIFTY options pricing ${((v.ratio - 1) * 100).toFixed(0)}% more volatility than forecast (India VIX ${v.impliedPct?.toFixed(1)}%).` });
   if (r.evaluation?.newsValue?.tilt?.autoDisabled) out.push({ level: 'high', text: 'News tilt switched itself off: scored predictions show it does not help.' });
   if (r.scorecard?.scored >= 30 && r.scorecard.brier.app >= r.scorecard.brier.uniform) out.push({ level: 'high', text: `Probabilities are doing no better than a coin-flip after ${r.scorecard.scored} scored predictions.` });
   for (const e of r.events?.added || []) out.push({ level: 'info', text: `New event: ${e.symbol} ${e.type} (at ${Number(e.price).toFixed(2)}) — tracked for 1/5/20-day drift.` });
   for (const a of r.portfolio?.actions || []) out.push({ level: 'info', text: `Paper portfolio: ${a.action} ${a.symbol}.` });
+  for (const a of r.strategies?.actions || []) {
+    if (a.account !== 'nifty') out.push({ level: 'info', text: `Strategy forward test · ${a.account}: ${a.action}.` });
+  }
   return out;
 }
 
@@ -170,7 +174,7 @@ export async function runMonitor({ base = BASE, trade = true, notify: doNotify =
   let ranking = null;
   try {
     const v = await api('/api/vol-check?symbol=%5ENSEI&days=7');
-    vol = { impliedPct: v.impliedPct, forecastPct: v.forecastPct, ratio: v.ratio, reading: v.reading };
+    vol = { impliedPct: v.impliedPct, forecastPct: v.forecastPct, ratio: v.ratio, typicalRatio: v.typicalRatio, model: v.model, reading: v.reading };
   } catch (err) {
     vol = { error: err.message };
   }
@@ -196,6 +200,15 @@ export async function runMonitor({ base = BASE, trade = true, notify: doNotify =
     events = { error: err.message };
   }
 
+  // 1d. Strategy forward-test accounts (each trades only on its own schedule)
+  let strategies = null;
+  try {
+    const sa = await api('/api/strategy-accounts/rebalance', {});
+    strategies = { startedAt: sa.startedAt, actions: sa.actions, accounts: sa.accounts.map((x) => ({ key: x.key, name: x.name, equity: x.equity, returnPct: x.returnPct, holdings: x.holdings.length })) };
+  } catch (err) {
+    strategies = { error: err.message };
+  }
+
   // 2. Score due predictions
   const evalRes = await api('/api/prediction-evaluate', {});
   const { entries } = await api('/api/prediction-history?limit=500');
@@ -219,6 +232,7 @@ export async function runMonitor({ base = BASE, trade = true, notify: doNotify =
     ranking,
     health,
     events,
+    strategies,
     portfolio: pf && !pf.error
       ? { equity: pf.equity, returnPct: pf.returnPct, cash: pf.cash, charges: pf.totalCharges, positions: pf.positions.map((p) => ({ symbol: p.symbol, qty: p.qty, entry: p.entryPrice, last: p.mark, pnl: p.unrealized })), actions: pf.actions.filter((a) => ['buy', 'close'].includes(a.action)) }
       : pf,
@@ -275,6 +289,7 @@ function printReport(report) {
     console.log(`\nPaper portfolio: ₹${p.equity.toFixed(0)} (${p.returnPct >= 0 ? '+' : ''}${p.returnPct.toFixed(2)}%), ${p.positions.length} open, charges ₹${p.charges.toFixed(0)}${p.actions.length ? ' · today: ' + p.actions.map((a) => `${a.action} ${a.symbol}`).join(', ') : ' · no trades today'}`);
   } else if (report.portfolio?.error) console.log(`\nPaper portfolio error: ${report.portfolio.error}`);
   if (report.health) console.log(`\nHealth: ${report.health.level.toUpperCase()} — ${report.health.checks.filter((c) => c.level !== 'ok').map((c) => `${c.name}: ${c.detail}`).join(' · ') || 'all checks ok'}`);
+  if (report.strategies?.accounts) console.log(`Strategies (forward test since ${String(report.strategies.startedAt).slice(0, 10)}): ${report.strategies.accounts.map((a) => `${a.key} ${a.returnPct >= 0 ? '+' : ''}${a.returnPct.toFixed(2)}%`).join(' · ')}`);
   if (report.events && !report.events.error) console.log(`Events: ${report.events.tracked} tracked${report.events.added.length ? ` · new: ${report.events.added.map((e) => `${e.symbol} ${e.type}`).join(', ')}` : ''}`);
   if (report.alerts?.length) {
     console.log('\nALERTS:');

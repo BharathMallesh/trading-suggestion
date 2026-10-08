@@ -22,6 +22,7 @@ export const DEFAULT_COSTS = {
 };
 
 const RATES = {
+  sttEtfSellPct: 0.001, // equity ETFs: STT only on sale, 0.001%
   sttDeliveryPct: 0.1,
   sttIntradaySellPct: 0.025,
   exchangePct: 0.00297,
@@ -34,7 +35,7 @@ const RATES = {
 /**
  * Charges for ONE executed order (excluding slippage, which is applied to the
  * fill price by the engine).
- * @param {{ side:'buy'|'sell', value:number, product:'delivery'|'intraday', costs?:object }} p
+ * @param {{ side:'buy'|'sell', value:number, product:'delivery'|'intraday'|'etf', costs?:object }} p
  * @returns {{ total:number, breakdown:object }}
  */
 export function orderCharges({ side, value, product, costs = DEFAULT_COSTS }) {
@@ -46,7 +47,8 @@ export function orderCharges({ side, value, product, costs = DEFAULT_COSTS }) {
     : costs.brokerageDeliveryCap
       ? Math.min(pct(costs.brokerageDeliveryPct), costs.brokerageDeliveryCap)
       : pct(costs.brokerageDeliveryPct);
-  const stt = intra ? (side === 'sell' ? pct(RATES.sttIntradaySellPct) : 0) : pct(RATES.sttDeliveryPct);
+  const etf = product === 'etf'; // held in demat like delivery, but ETF STT
+  const stt = intra ? (side === 'sell' ? pct(RATES.sttIntradaySellPct) : 0) : etf ? (side === 'sell' ? pct(RATES.sttEtfSellPct) : 0) : pct(RATES.sttDeliveryPct);
   const exchange = pct(RATES.exchangePct);
   const sebi = pct(RATES.sebiPct);
   const stamp = side === 'buy' ? pct(intra ? RATES.stampIntradayBuyPct : RATES.stampDeliveryBuyPct) : 0;

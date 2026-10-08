@@ -1,0 +1,71 @@
+{
+  "fittedAt": "2026-10-08T06:46:44.703Z",
+  "horizon": 5,
+  "bestStock": "har",
+  "bestNifty": "blend",
+  "niftyTypicalRatio": 1.2394201135619538,
+  "summary": {
+    "rv20": {
+      "n": 1679,
+      "meanQlike": 0.6548623369198359
+    },
+    "rv60": {
+      "n": 1679,
+      "meanQlike": 0.5617192695681612
+    },
+    "ewma": {
+      "n": 1679,
+      "meanQlike": 0.5671295398916717
+    },
+    "garch": {
+      "n": 1679,
+      "meanQlike": 0.5158580958060521
+    },
+    "har": {
+      "n": 1679,
+      "meanQlike": 0.5089611921501402
+    },
+    "blend": {
+      "n": 1679,
+      "meanQlike": 0.5100110560411065
+    }
+  },
+  "niftyHeadToHead": {
+    "rv20": {
+      "n": 163,
+      "meanQlike": 0.5713786618726697
+    },
+    "rv60": {
+      "n": 163,
+      "meanQlike": 0.548248631695862
+    },
+    "ewma": {
+      "n": 163,
+      "meanQlike": 0.48864534937822923
+    },
+    "garch": {
+      "n": 163,
+      "meanQlike": 0.4768981109025012
+    },
+    "har": {
+      "n": 163,
+      "meanQlike": 0.4949088180992468
+    },
+    "blend": {
+      "n": 163,
+      "meanQlike": 0.4708556283430883
+    },
+    "indiaVix": {
+      "n": 163,
+      "meanQlike": 0.3442605603278082
+    },
+    "vixScaled": {
+      "n": 163,
+      "meanQlike": 0.3399369133726017
+    },
+    "blendVix": {
+      "n": 163,
+      "meanQlike": 0.38132804015908595
+    }
+  }
+}

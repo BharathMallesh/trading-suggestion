@@ -281,6 +281,24 @@
         <div id="hrOut" style="margin-top:12px"></div>
       </section>
 
+      <!-- Strategies: backtests + live forward test -->
+      <section class="card span2">
+        <h2>Strategies <span style="font-size:12px;color:var(--warn);font-weight:500">LOW-TURNOVER · PAPER FORWARD TEST</span></h2>
+        <p class="hint">
+          Two rule-based strategies fixed in advance, judged against simply holding NIFTY after Indian costs:
+          <b>A</b> NIFTY trend filter (hold NIFTY while above its 200-day average, else liquid fund) and
+          <b>B2</b> momentum top 20 of NIFTY 200 with the same market filter. The <b>forward test</b> runs them as paper accounts from the start
+          date with ₹ capital and real costs — no hindsight. Taxes not modelled. Not investment advice.
+        </p>
+        <div class="row" style="gap:8px">
+          <button id="stfBtn" type="button">Forward test (paper accounts)</button>
+          <button id="stbBtn" type="button" style="background:#0d1320;color:var(--ink);border:1px solid var(--line)">10-year backtests</button>
+          <button id="stResetAcctBtn" type="button" style="background:#0d1320;color:var(--ink);border:1px solid var(--line)">Restart forward test</button>
+        </div>
+        <div id="stsStatus" class="note" style="display:none"></div>
+        <div id="stsOut" style="margin-top:12px"></div>
+      </section>
+
       <!-- Cross-sectional ranking -->
       <section class="card span2">
         <h2>Stock ranking <span style="font-size:12px;color:var(--warn);font-weight:500">WEEKS–MONTHS · RESEARCH</span></h2>
@@ -1365,7 +1383,8 @@
           const f = d.forecastsAnnualPct;
           out.innerHTML = `<div class="kv">
             <div>Symbol</div><div>${esc(d.symbol)} · ${esc(d.asOf)} · last ${Number(d.last).toFixed(2)}</div>
-            <div>Forecast vol (annual)</div><div><b>${d.forecastPct?.toFixed(1)}%</b> EWMA · 20-day ${f.rv20?.toFixed(1)}% · 60-day ${f.rv60?.toFixed(1)}%</div>
+            <div>Forecast vol (annual)</div><div><b>${d.forecastPct?.toFixed(1)}%</b> (model: ${esc(d.model)}, the replay winner)${d.eventAddOnPct ? ` <span style="color:var(--warn)">incl. +${d.eventAddOnPct.toFixed(1)} pts for results due</span>` : ''} · EWMA ${f.ewma?.toFixed(1)}% · GARCH ${f.garch?.toFixed(1) ?? '–'}% · HAR ${f.har?.toFixed(1) ?? '–'}%</div>
+            ${d.typicalRatio ? `<div>Usual VIX premium</div><div>×${d.typicalRatio.toFixed(2)} (India VIX vs realised, 5-year replay)</div>` : ''}
             <div>Implied vol</div><div>${d.impliedPct != null ? `<b>${d.impliedPct.toFixed(1)}%</b> (${esc(d.impliedSource)}) · ratio ${d.ratio.toFixed(2)}` : '–'}</div>
             <div>±1σ over ${d.days} days</div><div>forecast ${d.expectedMovePct.forecast?.toFixed(2)}%${d.expectedMovePct.implied != null ? ` · implied ${d.expectedMovePct.implied.toFixed(2)}%` : ''}</div>
             ${d.optionChain && !d.optionChain.error ? `<div>Option chain</div><div>ATM ${d.optionChain.atmStrike} · put/call OI ratio ${d.optionChain.pcr?.toFixed(2) ?? '–'} · ${d.optionChain.strikes} strikes</div>` : ''}
@@ -1540,6 +1559,90 @@
       $('evtShowBtn').addEventListener('click', () => evtLoad(false));
       $('evtScanBtn').addEventListener('click', () => evtLoad(true));
 
+
+      // --- Strategies ---
+      function multiCurve(series) {
+        // series: [{ name, color, points: [{date, equity}] }] normalised to 100 at the first common date
+        const all = series.filter((x) => x.points?.length >= 2);
+        if (!all.length) return '';
+        const W = 680, H = 200, pl = 46, pr = 10, pt = 10, pb = 22;
+        const norm = all.map((x) => ({ ...x, pts: x.points.map((p) => ({ date: p.date, v: (p.equity / x.points[0].equity) * 100 })) }));
+        const vals = norm.flatMap((x) => x.pts.map((p) => p.v));
+        let lo = Math.min(...vals), hi = Math.max(...vals);
+        const pad = (hi - lo || 1) * 0.05;
+        lo -= pad; hi += pad;
+        const n = Math.max(...norm.map((x) => x.pts.length));
+        const xf = (i) => pl + (i / (n - 1 || 1)) * (W - pl - pr);
+        const yf = (v) => pt + ((hi - v) / (hi - lo)) * (H - pt - pb);
+        let g = `<text x="${pl - 4}" y="${yf(hi) + 4}" text-anchor="end" font-size="10" fill="var(--muted)">${hi.toFixed(0)}</text><text x="${pl - 4}" y="${yf(lo)}" text-anchor="end" font-size="10" fill="var(--muted)">${lo.toFixed(0)}</text>`;
+        g += `<line x1="${pl}" x2="${W - pr}" y1="${yf(100)}" y2="${yf(100)}" stroke="var(--line)" stroke-dasharray="3 3"/>`;
+        for (const x of norm) g += `<polyline fill="none" stroke="${x.color}" stroke-width="1.8" points="${x.pts.map((p, i) => `${xf(i).toFixed(1)},${yf(p.v).toFixed(1)}`).join(' ')}"/>`;
+        const first = norm[0].pts[0].date, last = norm[0].pts[norm[0].pts.length - 1].date;
+        g += `<text x="${pl}" y="${H - 6}" font-size="10" fill="var(--muted)">${esc(first)}</text><text x="${W - pr}" y="${H - 6}" text-anchor="end" font-size="10" fill="var(--muted)">${esc(last)}</text>`;
+        return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;background:#0d1320;border-radius:8px;margin-top:8px">${g}</svg>
+          <div class="note">${all.map((x) => `<span style="color:${x.color}">■</span> ${esc(x.name)}`).join(' · ')} (start = 100)</div>`;
+      }
+      const COLORS = { nifty: 'var(--muted)', trend: 'var(--accent)', momentum: 'var(--up)' };
+      function renderAccounts(d) {
+        if (!d.accounts?.length) return `<div class="note">${esc(d.note || 'Not started.')}</div>`;
+        let html = `<div class="note">Forward test since ${esc(String(d.startedAt).slice(0, 10))} · ₹${Number(d.capital).toLocaleString('en-IN')} each</div>`;
+        if (d.actions?.length) html += `<div class="note">This run: ${d.actions.map((a) => esc(`${a.account}: ${a.action}`)).join(' · ')}</div>`;
+        html += '<table><thead><tr><th style="text-align:left">Account</th><th>Equity</th><th>Return</th><th>Cash</th><th>Charges</th><th style="text-align:left">Holdings</th></tr></thead><tbody>';
+        for (const a of d.accounts) {
+          const col = a.returnPct >= 0 ? 'var(--up)' : 'var(--down)';
+          html += `<tr><td style="text-align:left">${esc(a.name)}</td><td>₹${a.equity.toFixed(0)}</td><td style="color:${col}">${a.returnPct >= 0 ? '+' : ''}${a.returnPct.toFixed(2)}%</td>
+            <td>₹${a.cash.toFixed(0)}</td><td>₹${a.charges.toFixed(0)}</td>
+            <td style="text-align:left;font-size:12px">${a.holdings.length ? esc(a.holdings.map((h) => h.symbol.replace('.NS', '') + '×' + h.qty).join(', ')) : 'cash / liquid fund'}</td></tr>`;
+        }
+        html += '</tbody></table>';
+        html += multiCurve(d.accounts.map((a) => ({ name: a.name, color: COLORS[a.key], points: a.history })));
+        return html + `<div class="note">${esc(d.note)}</div>`;
+      }
+      function renderBacktests(d) {
+        const row = (name, s, extra = '') => `<tr><td style="text-align:left">${esc(name)}</td><td>${s.cagrPct.toFixed(1)}%</td><td>${s.volPct.toFixed(1)}%</td><td>${s.sharpe?.toFixed(2)}</td><td>${s.maxDrawdownPct.toFixed(1)}%</td><td style="text-align:left;font-size:12px">${extra}</td></tr>`;
+        const head = '<table><thead><tr><th style="text-align:left">Strategy</th><th>CAGR</th><th>Vol</th><th>Sharpe</th><th>Max drawdown</th><th style="text-align:left">Notes</th></tr></thead><tbody>';
+        const a0 = d.A[0];
+        let html = `<div style="font-size:13px"><b>A · NIFTY trend</b> · ${esc(a0.all.from)} → ${esc(a0.all.to)}</div>` + head + row('NIFTY buy-and-hold (+dividends)', a0.benchmark.all, 'benchmark');
+        for (const x of d.A) html += row(x.name, x.all, `${x.switchesPerYear.toFixed(1)} switches/yr · ${x.pctTimeInvested.toFixed(0)}% invested · ${esc(x.verdict)}`);
+        html += '</tbody></table>';
+        html += multiCurve([{ name: 'NIFTY buy-and-hold', color: 'var(--muted)', points: d.curves.AB }, { name: 'A · trend (month-end)', color: 'var(--accent)', points: d.curves.A }]);
+        const b0 = d.B[0];
+        html += `<div style="font-size:13px;margin-top:12px"><b>B · Momentum on ${esc(d.universe.name)}</b> (${d.universe.used} stocks) · ${esc(b0.all.from)} → ${esc(b0.all.to)} · ₹${Number(d.capital).toLocaleString('en-IN')}</div>` + head;
+        html += row('NIFTY buy-and-hold (+dividends)', d.benchmarkB.all, 'benchmark');
+        html += row(d.equalWeight.name, d.equalWeight.all, `shares B's survivorship bias · costs ${d.equalWeight.chargesPctPerYear.toFixed(2)}%/yr`);
+        for (const x of d.B) {
+          const ex = d.momentumExcessPct.find((m) => m.variant === x.variant);
+          html += row(x.name, x.all, `costs ${x.chargesPctPerYear.toFixed(2)}%/yr · ${ex.cagrAboveEqualWeightPct >= 0 ? '+' : ''}${ex.cagrAboveEqualWeightPct.toFixed(1)} pts vs equal-weight · ${esc(x.verdict)}`);
+        }
+        html += '</tbody></table>';
+        if (d.realEtf) {
+          const r = d.realEtf;
+          html += `<div style="font-size:13px;margin-top:12px"><b>Reality check (no survivorship bias): real ETFs</b> · ${esc(r.from)} → ${esc(r.to)}</div>` + head +
+            row('Momentum 30 ETF (MOMENTUM.NS)', r.momentum, 'actual investable returns, after fund costs') + row('NIFTY 50 ETF (NIFTYBEES)', r.nifty, '') + '</tbody></table>';
+        }
+        return html + `<div class="note">${d.caveats.map(esc).join(' ')}</div>`;
+      }
+      async function stsRun(kind) {
+        const out = $('stsOut');
+        const status = $('stsStatus');
+        status.style.display = 'block';
+        status.textContent = kind === 'back' ? 'Running 10-year backtests on NIFTY and NIFTY 200 (~30 s)…' : kind === 'reset' ? 'Restarting the forward test…' : 'Updating paper accounts…';
+        try {
+          if (kind === 'back') out.innerHTML = renderBacktests(await api('/api/strategy-tests', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }));
+          else if (kind === 'reset') out.innerHTML = renderAccounts(await api('/api/strategy-accounts/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ capital: 1000000 }) }));
+          else out.innerHTML = renderAccounts(await api('/api/strategy-accounts/rebalance', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }));
+        } catch (e) {
+          out.innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
+        } finally {
+          status.style.display = 'none';
+        }
+      }
+      $('stfBtn').addEventListener('click', () => stsRun('fwd'));
+      $('stbBtn').addEventListener('click', () => stsRun('back'));
+      $('stResetAcctBtn').addEventListener('click', () => {
+        if (confirm('Restart the strategy forward test? All three paper accounts start over at ₹10 lakh.')) stsRun('reset');
+      });
+
       // --- Today ---
       function renderToday(d) {
         const r = d.report;
@@ -1576,6 +1679,8 @@
         const rk = r.ranking;
         if (rk && !rk.error) html += `<div class="note">Ranking (${esc(rk.asOf)}): top ${esc(rk.top.join(', '))} · bottom ${esc(rk.bottom.join(', '))} — see Stock ranking → Evidence.</div>`;
         if (r.events && !r.events.error) html += `<div class="note">Earnings/rating events tracked: ${r.events.tracked}${r.events.added?.length ? ' · new today: ' + esc(r.events.added.map((e) => e.symbol + ' ' + e.type).join(', ')) : ''}</div>`;
+        const sa = r.strategies;
+        if (sa?.accounts) html += `<div class="note">Strategy forward test (since ${esc(String(sa.startedAt).slice(0, 10))}): ${sa.accounts.map((a) => `${esc(a.key)} ${a.returnPct >= 0 ? '+' : ''}${a.returnPct.toFixed(2)}%`).join(' · ')}</div>`;
         const p = r.portfolio;
         if (p?.equity != null) html += `<div class="note">Paper portfolio ₹${p.equity.toFixed(0)} (${p.returnPct >= 0 ? '+' : ''}${p.returnPct.toFixed(2)}%) · ${p.positions.length} open · charges ₹${p.charges.toFixed(0)}</div>`;
         const c = r.scorecard;

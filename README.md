@@ -391,6 +391,39 @@ Scoring counts one prediction per stock per day.
 - **Scheduled** (Claude app): monitor 10:00 / 13:00 / 15:00 IST weekdays,
   collector ~16:00 weekdays, model refit Saturdays 10:00.
 
+### Volatility models (upgraded)
+
+`node paper-bot/volatility.mjs --eval --save` scores EWMA, 20/60-day, GARCH(1,1),
+HAR (daily/weekly/monthly realised variance) and a blend on identical dates
+(QLIKE), plus India VIX and a bias-corrected VIX for NIFTY, and saves the
+winners to `paper-bot/vol-model.json` (stocks → HAR, NIFTY → blend in Oct
+2026; HAR ~10% better than EWMA). The live check uses the winner, judges NIFTY
+against VIX's *usual* premium (~24% over realised) instead of calling every
+day "expensive", and adds a one-big-day add-on when results are due.
+
+### Strategies: backtests + forward test
+
+`node paper-bot/strategies.mjs` (dashboard → Strategies) tests two rule-based,
+low-turnover strategies fixed in advance, after Indian costs, vs NIFTY
+buy-and-hold (+dividends), over 10 years, with both halves reported:
+
+- **A · NIFTY trend**: NIFTY ETF while NIFTY > 200-day average (±1%), else a
+  liquid fund. Month-end check: ~9.1% CAGR vs 10.5% but max drawdown ~15% vs
+  ~38% — a risk reducer, not a return booster.
+- **B · Momentum** (NIFTY 200, top 20, monthly) built up as B0 → B1 buffer →
+  B2 market filter → B3 vol target, plus an **equal-weight control** of the
+  same stocks (shares the survivorship bias) and a **real-ETF reality check**
+  (MOMENTUM.NS vs NIFTYBEES since 2022: 8.6% vs 7.0% CAGR, max drawdown 31%
+  vs 15%). The backtest's big numbers are mostly survivorship bias.
+
+Taxes (STCG on switches/rebalances) are not modelled.
+
+**Forward test**: `paper-bot/strategy-accounts.mjs` runs NIFTY buy-and-hold,
+A and B2 as ₹10 lakh paper accounts from the start date with real costs (ETF
+rates for NIFTYBEES), trading only on their own schedules (A and B2 monthly);
+the monitor updates them every run. Results from here on can't be
+hindsight-fitted — judge after many months.
+
 ### API endpoints
 
 | Endpoint | Method | Purpose |
@@ -428,6 +461,10 @@ Scoring counts one prediction per stock per day.
 | `/api/events/scan` | POST | Scan news for new events `{universe?|symbols?}` |
 | `/api/today` | GET | Latest monitor report + health |
 | `/api/today/run` | POST | Run the investor monitor now |
+| `/api/strategy-tests` | POST | 10-year strategy backtests `{capital?, universe?}` |
+| `/api/strategy-accounts` | GET | Forward-test paper accounts |
+| `/api/strategy-accounts/rebalance` | POST | Run the accounts' schedules + mark to market |
+| `/api/strategy-accounts/reset` | POST | Restart the forward test `{capital}` |
 
 Bad input returns **400** with a readable message, unknown symbols **404**,
 a missing API key **503**.
