@@ -380,6 +380,20 @@
         <div id="ooOut" style="margin-top:12px"></div>
       </section>
 
+      <!-- Volatility premium: selling options -->
+      <section class="card span2">
+        <h2>Selling volatility <span style="font-size:12px;color:var(--warn);font-weight:500">NIFTY WEEKLY OPTIONS · REPLAY · PAPER ONLY</span></h2>
+        <p class="hint">
+          Option prices usually assume bigger moves than actually happen, so <b>sellers</b> of options collect a premium on average, and occasionally take
+          a large loss. This replays three fixed strategies on 7+ years of NIFTY weekly options after Indian charges and slippage: first priced from India VIX,
+          then on <b>actual NSE closing prices</b>. The real-price result decides. Not a recommendation: short options can lose many weeks of profit in one week.
+        </p>
+        <div class="row" style="gap:8px">
+          <button id="vpBtn" type="button">Re-run replay (first run downloads NSE data, a few minutes)</button>
+        </div>
+        <div id="vpOut" style="margin-top:12px"></div>
+      </section>
+
       <!-- Volatility: implied vs forecast -->
       <section class="card span2">
         <h2>Volatility check <span style="font-size:12px;color:var(--warn);font-weight:500">OPTIONS · RESEARCH</span></h2>
@@ -612,12 +626,20 @@
           const body = mode === 'summarize'
             ? { mode, text: $('text').value, focus: $('focus').value }
             : { mode, question: $('q').value };
-          const { answer } = await api('/api/ask', {
+          const { answer, model } = await api('/api/ask', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body),
           });
           out.textContent = answer || '(empty response)';
+          if (model) {
+            const tag = document.createElement('div');
+            tag.className = 'note';
+            tag.textContent = /:free$/.test(model)
+              ? `Answered by ${model} (free fallback — Ling is unavailable, e.g. out of credits). Not finance-tuned; double-check facts.`
+              : `Answered by ${model}.`;
+            out.appendChild(tag);
+          }
         } catch (e) {
           out.className = 'out err';
           out.textContent = 'Error: ' + e.message;
@@ -1420,6 +1442,47 @@
 
 
 
+      // --- Selling volatility (premium replay) ---
+      function vpRender(r) {
+        if (!r || !r.model) return '<div class="note">Not run yet — click the button.</div>';
+        const p2 = (x) => (x == null || !Number.isFinite(x) ? '–' : (x >= 0 ? '+' : '') + x.toFixed(1) + '%');
+        const row = (s) => !s.all ? '' : `<tr><td style="text-align:left">${esc(s.name)}</td><td>${s.all.weeks}</td><td>${p2(s.all.meanWeeklyPct)}</td><td>${s.all.tStat?.toFixed(2) ?? '–'}</td>
+          <td>${s.all.winRatePct.toFixed(0)}%</td><td style="color:var(--down)">${p2(s.all.worstWeekPct)}</td><td>${p2(s.all.accountCagrPct)}</td><td>${p2(-s.all.accountMaxDrawdownPct)}</td>
+          <td style="text-align:left;font-size:12px">${esc(s.verdict)}</td></tr>`;
+        const table = (strats) => `<table><thead><tr><th style="text-align:left">Strategy</th><th>Weeks</th><th>Avg week (on margin)</th><th>t</th><th>Win</th><th>Worst week</th>
+          <th>Account CAGR</th><th>Account max drop</th><th style="text-align:left">Verdict</th></tr></thead><tbody>${Object.values(strats).map(row).join('')}</tbody></table>`;
+        const m = r.model;
+        let html = `<div style="font-size:14px;margin-bottom:8px"><b>${esc(r.verdict)}</b></div>
+          <div class="kv"><div>The premium</div><div>India VIX averaged ${m.premium.avgImpliedPct.toFixed(1)}% vs ${m.premium.avgRealisedPct.toFixed(1)}% actually realised; implied was higher in ${m.premium.pctWeeksImpliedAbove.toFixed(0)}% of weeks (${esc(m.from)} → ${esc(m.to)}).</div></div>`;
+        if (r.real && !r.real.error && r.real.strategies) {
+          const x = r.real;
+          html += `<div style="margin-top:10px;font-size:13px"><b>Actual NSE option prices</b> · ${x.weeks} weekly trades · ${esc(x.from)} → ${esc(x.to)}${x.weeklyIvVsVix ? ` · real weekly ATM implied vol = ${x.weeklyIvVsVix.median.toFixed(2)} × India VIX (median)` : ''}${x.blocked ? ` · <span style="color:var(--warn)">partial: ${esc(x.blocked)}</span>` : ''}</div>` + table(x.strategies);
+        } else if (r.real?.error) {
+          html += `<div class="err" style="margin-top:8px">Real-price replay: ${esc(r.real.error)}</div>`;
+        }
+        html += `<div style="margin-top:10px;font-size:13px"><b>Model: priced from India VIX</b> (assumption-dependent)</div>` + table(m.strategies);
+        html += `<div class="note">${esc(m.rule)}<br>${m.caveats.map(esc).join('<br>')}</div>`;
+        return html;
+      }
+      (async () => {
+        try {
+          $('vpOut').innerHTML = vpRender(await api('/api/vol-premium'));
+        } catch (e) {
+          $('vpOut').innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
+        }
+      })();
+      $('vpBtn').addEventListener('click', async () => {
+        $('vpOut').textContent = 'Replaying… (downloads any missing NSE days first)';
+        $('vpBtn').disabled = true;
+        try {
+          $('vpOut').innerHTML = vpRender(await api('/api/vol-premium', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }));
+        } catch (e) {
+          $('vpOut').innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
+        } finally {
+          $('vpBtn').disabled = false;
+        }
+      });
+
       // --- Foundation models (Kronos / Chronos-Bolt tabs) ---
       const FM_LABEL = { kronos: 'Kronos', chronos: 'Chronos-Bolt' };
       let fmModel = 'kronos';
@@ -1429,7 +1492,7 @@
         if (!r || !r.verdict) return `<div class="note">${FM_LABEL[fmModel]} has not been replay-tested yet — use "Re-run replay test".</div>`;
         const col = r.verdict === 'helps' ? 'var(--good, #3fb950)' : r.verdict === 'hurts' ? 'var(--bad, #f85149)' : 'var(--warn)';
         const row = (h, x) => `<tr><td style="text-align:left">${h === '1d' ? 'Next session' : 'Next 5 sessions'}</td>
-          <td>${x.brierModel.toFixed(4)}</td><td>${x.brierCurrent.toFixed(4)}</td><td>${x.brierClimatology.toFixed(4)}</td>
+          <td>${x.brierModel.toFixed(4)}</td><td>${x.brierCurrent == null ? '<span title="The app makes no 5-day probability — compare with base rates">n/a</span>' : x.brierCurrent.toFixed(4)}</td><td>${x.brierClimatology.toFixed(4)}</td>
           <td>${x.tVsCurrent == null ? '–' : x.tVsCurrent.toFixed(2)}</td>
           <td>${fmPct(x.directionHitRate)} <span style="color:var(--muted)">(n ${x.directionN})</span></td>
           <td>${fmPct(x.holdout?.directionHitRate)}</td></tr>`;
@@ -1829,6 +1892,13 @@
         if (!r) return html + '<div class="note">No monitor run yet — click <b>Run now</b>.</div>';
         const ageMin = (Date.now() - new Date(r.finishedAt)) / 60000;
         html += `<div class="note">Last run ${esc(r.market.ist)} (${ageMin < 90 ? Math.round(ageMin) + ' min' : (ageMin / 60).toFixed(1) + ' h'} ago) · market ${r.market.open ? 'open' : 'closed'}</div>`;
+        if (d.weekly) {
+          const w = d.weekly;
+          html += `<details style="margin:8px 0;border:1px solid var(--line);border-radius:10px;padding:8px 10px"><summary style="cursor:pointer;font-size:13px"><b>Weekly scorecard ${esc(w.week.label)}</b> · ${esc(w.summary)}</summary>
+            <table><thead><tr><th style="text-align:left">Account</th><th>Equity</th><th>This week</th><th>Since start</th></tr></thead><tbody>${w.accounts.map((a) =>
+              `<tr><td style="text-align:left">${esc(a.name)}</td><td>₹${Math.round(a.equity).toLocaleString('en-IN')}</td><td>${a.weekPct == null ? '–' : (a.weekPct >= 0 ? '+' : '') + a.weekPct.toFixed(2) + '%'}</td><td>${a.totalPct == null ? '–' : (a.totalPct >= 0 ? '+' : '') + a.totalPct.toFixed(2) + '%'}</td></tr>`).join('')}</tbody></table>
+            <div class="note">${w.predictions.scored ? `${w.predictions.scored} predictions scored this week · Brier ${w.predictions.brier.app.toFixed(4)} vs coin-flip ${w.predictions.brier.uniform.toFixed(4)}` : 'No predictions scored this week.'}${w.allTime?.verdict ? ' · All time: ' + esc(w.allTime.verdict) : ''}</div></details>`;
+        }
         if (r.alerts?.length) {
           html += '<div style="margin:8px 0;padding:10px;border:1px solid var(--warn);border-radius:10px"><b>Alerts</b><ul style="margin:6px 0 0 18px;font-size:13px">' +
             r.alerts.map((a) => `<li style="color:${a.level === 'high' ? 'var(--down)' : 'var(--ink)'}">${esc(a.text)}</li>`).join('') + '</ul></div>';

@@ -32,6 +32,21 @@ export async function llmCredits() {
   return { totalCredits: Number(d.total_credits) || 0, totalUsage: Number(d.total_usage) || 0, remaining: (Number(d.total_credits) || 0) - (Number(d.total_usage) || 0) };
 }
 
+/** Model that answered the most recent successful call (main or a fallback). */
+let lastModel = null;
+export const llmLastModel = () => lastModel;
+
+// Statuses where another model may succeed: no credits, rate limit, model
+// gone / unavailable, provider errors.
+const FALLBACK_STATUSES = new Set([402, 404, 429, 500, 502, 503, 504]);
+
+function friendly(status, body) {
+  if (status === 402) return new HttpError(503, 'OpenRouter account is out of credits — add credits at https://openrouter.ai/settings/credits. AI features (Ask, narration, news briefs, sentiment) fall back to non-AI results until then.');
+  if (status === 401) return new HttpError(503, 'OpenRouter rejected the API key (401) — check or replace the key.');
+  if (status === 429) return new HttpError(503, 'OpenRouter is rate-limiting requests — try again shortly.');
+  return new HttpError(502, `OpenRouter HTTP ${status}: ${String(body).slice(0, 400)}`);
+}
+
 export async function chat(messages, opts = {}) {
   const key = process.env[OPENROUTER.apiKeyEnv];
   if (!key) {
@@ -41,50 +56,64 @@ export async function chat(messages, opts = {}) {
         `  export ${OPENROUTER.apiKeyEnv}="sk-or-..."`,
     );
   }
-  const attempts = 1 + Math.max(0, opts.retryEmpty ?? 1);
-  for (let attempt = 0; attempt < attempts; attempt++) {
-    // Default 25s timeout so backtests don't hang on a slow/stuck API call
-    const signal =
-      opts.signal ||
-      (typeof AbortSignal !== 'undefined' && AbortSignal.timeout
-        ? AbortSignal.timeout(opts.timeoutMs ?? 25_000)
-        : undefined);
+  // An explicitly requested model is used alone; otherwise main → free fallbacks.
+  const models = opts.model ? [opts.model] : [OPENROUTER.model, ...(opts.noFallback ? [] : OPENROUTER.fallbackModels)];
+  let firstError = null;
+  for (const model of models) {
+    const attempts = 1 + Math.max(0, opts.retryEmpty ?? 1);
+    let failed = null;
+    for (let attempt = 0; attempt < attempts; attempt++) {
+      // Default 25s timeout so backtests don't hang on a slow/stuck API call
+      const signal =
+        opts.signal ||
+        (typeof AbortSignal !== 'undefined' && AbortSignal.timeout
+          ? AbortSignal.timeout(opts.timeoutMs ?? 25_000)
+          : undefined);
 
-    const res = await fetch(`${OPENROUTER.baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${key}`,
-        // Optional OpenRouter attribution headers.
-        'HTTP-Referer': 'http://localhost',
-        'X-Title': 'AutoClaw Trading Research',
-      },
-      body: JSON.stringify({
-        model: opts.model || OPENROUTER.model,
-        temperature: opts.temperature ?? 0.3,
-        messages,
-      }),
-      signal,
-    });
-    if (!res.ok) {
-      const body = await res.text().catch(() => '');
-      lastLlmError = { at: new Date().toISOString(), status: res.status };
-      if (res.status === 402) {
-        throw new HttpError(503, 'OpenRouter account is out of credits — add credits at https://openrouter.ai/settings/credits. AI features (Ask, narration, news briefs, sentiment) fall back to non-AI results until then.');
+      const res = await fetch(`${OPENROUTER.baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${key}`,
+          // Optional OpenRouter attribution headers.
+          'HTTP-Referer': 'http://localhost',
+          'X-Title': 'AutoClaw Trading Research',
+        },
+        body: JSON.stringify({
+          model,
+          temperature: opts.temperature ?? 0.3,
+          messages,
+        }),
+        signal,
+      });
+      if (!res.ok) {
+        const body = await res.text().catch(() => '');
+        failed = { status: res.status, body };
+        break;
       }
-      if (res.status === 401) throw new HttpError(503, 'OpenRouter rejected the API key (401) — check or replace the key.');
-      if (res.status === 429) throw new HttpError(503, 'OpenRouter is rate-limiting requests — try again shortly.');
-      throw new HttpError(502, `OpenRouter HTTP ${res.status} ${res.statusText}: ${body.slice(0, 400)}`);
+      const data = await res.json();
+      const msg = data?.choices?.[0]?.message || {};
+      const content = typeof msg.content === 'string' ? msg.content : '';
+      if (content.trim()) return done(model, content);
+      if (opts.jsonKeys?.length && typeof msg.reasoning === 'string') {
+        const obj = extractJson(msg.reasoning, (o) => opts.jsonKeys.some((k) => k in o), { last: true });
+        if (obj) return done(model, JSON.stringify(obj));
+      }
     }
-    lastLlmError = null;
-    const data = await res.json();
-    const msg = data?.choices?.[0]?.message || {};
-    const content = typeof msg.content === 'string' ? msg.content : '';
-    if (content.trim()) return content;
-    if (opts.jsonKeys?.length && typeof msg.reasoning === 'string') {
-      const obj = extractJson(msg.reasoning, (o) => opts.jsonKeys.some((k) => k in o), { last: true });
-      if (obj) return JSON.stringify(obj);
+    if (!failed) return done(model, ''); // answered, but empty
+    // The main model's problem is what the health check should report.
+    if (model === models[0]) {
+      lastLlmError = { at: new Date().toISOString(), status: failed.status };
+      firstError = friendly(failed.status, failed.body);
     }
+    if (!FALLBACK_STATUSES.has(failed.status)) break; // e.g. bad key: no model will work
   }
-  return '';
+  throw firstError;
+}
+
+function done(model, text) {
+  lastModel = model;
+  // A fallback answering doesn't clear the main model's error (health shows it).
+  if (model === OPENROUTER.model) lastLlmError = null;
+  return text;
 }

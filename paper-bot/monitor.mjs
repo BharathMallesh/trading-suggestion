@@ -28,7 +28,8 @@ import { mkdirSync, writeFileSync, appendFileSync, existsSync, readdirSync, read
 import { execFile } from 'child_process';
 import { dirname, join } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
-import { dedupeDaily } from './prediction-log.mjs';
+import { scorecard } from './monitor-score.mjs';
+import { maybeWeekly } from './weekly.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const OUT = process.env.MONITOR_DIR || join(HERE, 'monitor');
@@ -57,6 +58,7 @@ export function computeAlerts(r) {
   for (const c of r.health?.checks || []) {
     if (c.level === 'fail') out.push({ level: 'high', text: `Health: ${c.name} failing — ${c.detail}` });
     else if (c.level === 'warn' && c.name === 'AI key' && /credits|balance|failed/.test(c.detail)) out.push({ level: 'high', text: `AI: ${c.detail}` });
+    else if (c.level === 'warn' && c.name === 'disk space') out.push({ level: 'high', text: `Disk: ${c.detail}` });
     else if (c.level === 'warn' && ['intraday store', 'calibration', 'scoring'].includes(c.name)) out.push({ level: 'info', text: `Health: ${c.name} — ${c.detail}` });
   }
   const held = new Set((r.portfolio?.positions || []).map((p) => p.symbol));
@@ -104,40 +106,7 @@ export function marketStatus(now = new Date()) {
   return { open, ist: ist.toISOString().slice(0, 16).replace('T', ' ') + ' IST', weekday: day >= 1 && day <= 5 };
 }
 
-const KEYS = { UP: 'probUp', DOWN: 'probDown', SIDEWAYS: 'probSideways' };
-const brier = (p, l) => ['UP', 'DOWN', 'SIDEWAYS'].reduce((a, k) => a + ((Number(p?.[KEYS[k]]) || 0) - (k === l ? 1 : 0)) ** 2, 0);
-
-/** Scorecard over every scored prediction in the log. */
-export function scorecard(entries) {
-  // One prediction per stock per day (see prediction-log dedupeDaily).
-  const ev = dedupeDaily(entries.filter((e) => e.evaluated && e.realizedLabel));
-  if (!ev.length) return { scored: 0 };
-  const avg = (f) => ev.reduce((a, e) => a + f(e), 0) / ev.length;
-  const freq = { UP: 0, DOWN: 0, SIDEWAYS: 0 };
-  for (const e of ev) freq[e.realizedLabel]++;
-  const base = { probUp: freq.UP / ev.length, probDown: freq.DOWN / ev.length, probSideways: freq.SIDEWAYS / ev.length };
-  const out = {
-    scored: ev.length,
-    outcomes: freq,
-    hitRatePct: (ev.filter((e) => e.hitBias).length / ev.length) * 100,
-    brier: {
-      app: avg((e) => brier(e, e.realizedLabel)),
-      beforeLing: ev.every((e) => e.base) ? avg((e) => brier(e.base, e.realizedLabel)) : null,
-      uniform: avg((e) => brier({ probUp: 1 / 3, probDown: 1 / 3, probSideways: 1 / 3 }, e.realizedLabel)),
-      // hindsight base rates of the scored set — a tough, slightly unfair benchmark
-      hindsightBaseRates: avg((e) => brier(base, e.realizedLabel)),
-    },
-  };
-  out.verdict =
-    out.scored < 30
-      ? `Too early: ${out.scored} scored predictions (need ~30+ before reading much into it).`
-      : out.brier.app < out.brier.uniform
-        ? out.brier.app < out.brier.hindsightBaseRates
-          ? 'App beats both a coin-flip and hindsight base rates — promising, keep watching.'
-          : 'App beats a coin-flip but not hindsight base rates — honest, no clear edge.'
-        : 'App is worse than a coin-flip — probabilities are not helping.';
-  return out;
-}
+export { scorecard } from './monitor-score.mjs';
 
 /**
  * One monitoring run against the dashboard server at `base`.
@@ -256,6 +225,14 @@ export async function runMonitor({ base = BASE, trade = true, notify: doNotify =
   const v = report.evaluation;
   const notable = rows.filter((r) => r.events?.length || Math.abs(r.sentiment ?? 0) >= 0.6).map((r) => `${r.symbol.replace('.NS', '')}${r.events?.length ? '⚠' : ''}${r.sentiment != null ? ` ${r.sentiment > 0 ? '+' : ''}${r.sentiment}` : ''}`).join(', ');
   appendFileSync(journal, `| ${market.ist} | ${market.open ? 'open' : 'closed'} | ${card.scored} | ${card.hitRatePct != null ? card.hitRatePct.toFixed(0) + '%' : '–'} | ${f(card.brier?.app)} / ${f(card.brier?.uniform)} / ${f(card.brier?.beforeLing)} | ${v.llmValue?.n ? v.llmValue.verdict : 'n/a'} | ${v.newsValue?.tilt?.n ? v.newsValue.tilt.verdict : 'n/a'} | ${report.portfolio?.equity != null ? '₹' + report.portfolio.equity.toFixed(0) : '–'} | ${notable || '–'} |\n`);
+
+  // Weekly scorecard after the last run of the week (Friday ≥ 15:00 IST).
+  try {
+    const w = maybeWeekly({ entries, notifyFn: doNotify ? notify : null });
+    if (w) report.weekly = { week: w.week.label, summary: w.summary };
+  } catch (err) {
+    report.weekly = { error: err.message };
+  }
 
   report.files = { json: join(OUT, `${stamp}.json`), journal };
   return report;

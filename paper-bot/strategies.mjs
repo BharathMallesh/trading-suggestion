@@ -11,6 +11,11 @@
 //      B0 plain · B1 + buffer (keep holdings while rank ≤ 40)
 //      B2 + market filter (cash when NIFTY < 200-day average)
 //      B3 + volatility targeting (15% annual; remainder in liquid fund)
+// C. Volatility-targeted NIFTY: hold NIFTY sized so expected volatility is
+//    15% a year (exposure = min(1, 15% ÷ forecast vol), re-sized at month
+//    end, rest in a liquid fund). Forecasters compared: rv20, EWMA, HAR —
+//    does the better forecast give a better strategy? Plus C+A: the same
+//    sizing on top of the trend filter.
 //
 // Costs: Indian delivery charges per order (STT, exchange, SEBI, stamp, GST,
 // DP charge per sale) + slippage; ETF trades use ETF rates. Cash earns a
@@ -29,6 +34,7 @@ import { candles } from '../market-data.mjs';
 import { orderCharges, DEFAULT_COSTS } from './costs.mjs';
 import { loadIndexList, SIGNALS } from './ranking.mjs';
 import { mapLimit, badRequest } from '../util.mjs';
+import { FORECASTERS } from './volatility.mjs';
 
 const TD = 252;
 export const ASSUMPTIONS = {
@@ -130,6 +136,60 @@ export function trendStrategy(index, { monthEnd = false, a = ASSUMPTIONS } = {})
     pctTimeInvested: (daysIn / (index.length - start - 1)) * 100,
     curve,
     benchCurve: bench,
+  };
+}
+
+/**
+ * Strategy C: volatility-targeted NIFTY (optionally on top of the trend filter).
+ * Re-sized at month end only (low turnover); costs on the size change.
+ */
+export function volTargetStrategy(index, { forecaster = 'har', withTrend = false, a = ASSUMPTIONS } = {}) {
+  const close = index.map((r) => r.close);
+  const logR = close.slice(1).map((c, i) => Math.log(c / close[i]));
+  const start = Math.max(a.smaDays, 300);
+  const dailyLiquid = (1 + a.liquidYield) ** (1 / TD) - 1;
+  const dailyDiv = a.dividendYield / TD;
+  const f = FORECASTERS[forecaster];
+  const sizeAt = (i) => {
+    let exp = 1;
+    const v = f(logR.slice(0, i), 21);
+    if (v) exp = Math.min(1, a.volTarget / (v * Math.sqrt(TD)));
+    if (withTrend) {
+      const m = sma(close, i, a.smaDays);
+      if (m && close[i] < m) exp = 0;
+    }
+    return exp;
+  };
+  let exposure = sizeAt(start);
+  let equity = 1;
+  let turnover = 0;
+  let sumExp = 0;
+  const curve = [{ date: index[start].date, equity }];
+  for (let i = start + 1; i < index.length; i++) {
+    const r = close[i] / close[i - 1] - 1;
+    equity *= 1 + exposure * (r + dailyDiv - a.etfExpense / TD) + (1 - exposure) * dailyLiquid;
+    sumExp += exposure;
+    const isMonthEnd = i + 1 >= index.length || index[i + 1].date.slice(0, 7) !== index[i].date.slice(0, 7);
+    if (isMonthEnd) {
+      const next = sizeAt(i);
+      const delta = Math.abs(next - exposure);
+      if (delta >= 0.05) {
+        equity *= 1 - (delta * a.etfRoundTripPct) / 200;
+        turnover += delta;
+        exposure = next;
+      }
+    }
+    curve.push({ date: index[i].date, equity });
+  }
+  const years = (index.length - start - 1) / TD;
+  return {
+    name: `C · vol target ${Math.round(a.volTarget * 100)}% (${forecaster})${withTrend ? ' + trend filter' : ''}`,
+    forecaster,
+    withTrend,
+    ...withHalves(curve),
+    avgExposurePct: (sumExp / (index.length - start - 1)) * 100,
+    turnoverPerYear: turnover / years,
+    curve,
   };
 }
 
@@ -264,6 +324,22 @@ export function momentumStrategy(series, index, { variant = 'B3', capital = 1e6,
 export async function runStrategyTests({ capital = 1e6, universe = 'nifty200', loadCandles = candles } = {}) {
   const index = await loadCandles('^NSEI', { range: '10y', interval: '1d' });
   const A = [trendStrategy(index), trendStrategy(index, { monthEnd: true })];
+  const C = [
+    volTargetStrategy(index, { forecaster: 'rv20' }),
+    volTargetStrategy(index, { forecaster: 'ewma' }),
+    volTargetStrategy(index, { forecaster: 'har' }),
+    volTargetStrategy(index, { forecaster: 'har', withTrend: true }),
+  ];
+  // NIFTY buy-and-hold over C's window (C starts later: it needs 300 days for HAR)
+  const cFrom = C[0].curve[0].date;
+  const cIdx = index.filter((r) => r.date >= cFrom);
+  const cBh = [];
+  let ce = 1;
+  cIdx.forEach((r, k) => {
+    if (k) ce *= r.close / cIdx[k - 1].close + ASSUMPTIONS.dividendYield / TD;
+    cBh.push({ date: r.date, equity: ce });
+  });
+  const cBench = withHalves(cBh);
 
   const list = await loadIndexList(universe);
   const loaded = await mapLimit(list.symbols, 4, async (sym) => {
@@ -319,6 +395,8 @@ export async function runStrategyTests({ capital = 1e6, universe = 'nifty200', l
     universe: { name: universe, source: list.source, used: series.length },
     assumptions: ASSUMPTIONS,
     A: A.map((x) => ({ ...strip(x), verdict: verdict(x, x.benchmark) })),
+    C: C.map((x) => ({ ...strip(x), verdict: verdict(x, cBench) })),
+    benchmarkC: cBench,
     B: B.map((x) => ({ ...strip(x), verdict: verdict(x, bBench) })),
     benchmarkB: bBench,
     equalWeight: strip(EW),
@@ -355,6 +433,13 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       for (const x of r.A) {
         row(x.name, x.all, `${x.switchesPerYear.toFixed(1)} switches/yr · ${x.pctTimeInvested.toFixed(0)}% invested`);
         console.log(`   halves: Sharpe ${x.firstHalf.sharpe.toFixed(2)} / ${x.secondHalf.sharpe.toFixed(2)} vs NIFTY ${x.benchmark.firstHalf.sharpe.toFixed(2)} / ${x.benchmark.secondHalf.sharpe.toFixed(2)} · maxDD ${x.firstHalf.maxDrawdownPct.toFixed(0)}% / ${x.secondHalf.maxDrawdownPct.toFixed(0)}% vs ${x.benchmark.firstHalf.maxDrawdownPct.toFixed(0)}% / ${x.benchmark.secondHalf.maxDrawdownPct.toFixed(0)}% → ${x.verdict}`);
+      }
+      console.log(`\nC · volatility-targeted NIFTY · ${r.benchmarkC.all.from} → ${r.benchmarkC.all.to}`);
+      head();
+      row('NIFTY buy-and-hold (+div)', r.benchmarkC.all);
+      for (const x of r.C) {
+        row(x.name, x.all, `${x.avgExposurePct.toFixed(0)}% avg exposure · turnover ${x.turnoverPerYear.toFixed(1)}×/yr`);
+        console.log(`   halves: Sharpe ${x.firstHalf.sharpe.toFixed(2)} / ${x.secondHalf.sharpe.toFixed(2)} vs NIFTY ${r.benchmarkC.firstHalf.sharpe.toFixed(2)} / ${r.benchmarkC.secondHalf.sharpe.toFixed(2)} → ${x.verdict}`);
       }
       const b = r.B[0];
       console.log(`\nB · momentum on ${r.universe.name} (${r.universe.used} stocks) · ₹${r.capital.toLocaleString('en-IN')} · ${b.all.from} → ${b.all.to} (${b.all.years.toFixed(1)}y)`);

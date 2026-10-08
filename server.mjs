@@ -38,10 +38,13 @@ import { volCheck, evaluateVolForecasts } from './paper-bot/volatility.mjs';
 import { healthChecks } from './paper-bot/health.mjs';
 import { scanEvents, updateEventReturns, eventStats, loadEvents } from './paper-bot/events.mjs';
 import { runMonitor, latestReport } from './paper-bot/monitor.mjs';
+import { latestWeekly } from './paper-bot/weekly.mjs';
 import { loadIndexList } from './paper-bot/ranking.mjs';
 import { runStrategyTests } from './paper-bot/strategies.mjs';
 import { optionOdds, evaluateOptionOdds } from './paper-bot/option-odds.mjs';
 import { testFii } from './paper-bot/fii.mjs';
+import { runAndSaveVolPremium, loadVolPremium } from './paper-bot/vol-premium.mjs';
+import { llmLastModel } from './ling-client.mjs';
 import { foundationForecast, foundationReplay, saveReplay, loadReplay, MODELS as FOUNDATION_MODELS } from './paper-bot/foundation.mjs';
 import { rebalanceAccounts, resetAccounts, loadAccounts, summarize as summarizeAccounts } from './paper-bot/strategy-accounts.mjs';
 import { HttpError, badRequest, parseSymbols, parseBool, mapLimit } from './util.mjs';
@@ -171,7 +174,7 @@ const server = http.createServer(async (req, res) => {
       if (mode === 'summarize') answer = await summarize(text, { focus, ...llm });
       else if (mode === 'explain') answer = await explain(question, llm);
       else answer = await research(question, llm);
-      return json(res, 200, { answer });
+      return json(res, 200, { answer, model: llmLastModel() });
     }
 
     // --- read-only market data ---
@@ -475,6 +478,14 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, await testFii({}));
     }
 
+    // --- Volatility premium: is selling NIFTY options profitable after costs? ---
+    if (req.method === 'GET' && url.pathname === '/api/vol-premium') {
+      return json(res, 200, loadVolPremium() || { verdict: null, note: 'Not run yet.' });
+    }
+    if (req.method === 'POST' && url.pathname === '/api/vol-premium') {
+      return json(res, 200, await runAndSaveVolPremium({}));
+    }
+
     // --- Local foundation models: Kronos + Chronos-Bolt ---
     if (req.method === 'GET' && url.pathname === '/api/foundation') {
       const model = url.searchParams.get('model') || '';
@@ -551,7 +562,7 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { events: loadEvents().slice(-100).reverse(), stats: eventStats() });
     }
     if (req.method === 'GET' && url.pathname === '/api/today') {
-      return json(res, 200, { report: latestReport(), health: await healthChecks() });
+      return json(res, 200, { report: latestReport(), health: await healthChecks(), weekly: latestWeekly() });
     }
     if (req.method === 'POST' && url.pathname === '/api/today/run') {
       // Runs the investor monitor in-process against this same server.

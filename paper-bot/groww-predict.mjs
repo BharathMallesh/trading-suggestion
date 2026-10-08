@@ -640,7 +640,7 @@ export async function growwProbability(symbol, opts = {}) {
   let base = primaryCal ? primaryCal.probs : baseProbabilities(score);
   let horizons = [];
   // ATR used for the expected-move bands; multi-horizon mode switches to the
-  // DAILY ATR because its window is "1–3 sessions" (a 15-min ATR would
+  // DAILY ATR because its window is the next session (a 15-min ATR would
   // understate the range several-fold).
   let moveAtr = ind.atr14;
 
@@ -793,18 +793,23 @@ export async function growwProbability(symbol, opts = {}) {
  */
 function expectedMoveEstimate({ close, atr, mode, intervalMinutes, bias }) {
   const px = Number(close) || 0;
-  const a = Number(atr) || 0;
+  // Intraday odds cover 4 bars; a one-bar ATR spans ~√4 = 2× less than that.
+  const barsAhead = mode !== 'multi' && intervalMinutes < 1440 ? 4 : 1;
+  const a = (Number(atr) || 0) * Math.sqrt(barsAhead);
+  // Must match the horizon the probabilities are calibrated and scored on
+  // (evaluate.mjs EVAL_SETTINGS / prediction-log horizonFor): daily & multi =
+  // next session; intraday = next 4 bars.
   const horizonLabel =
-    mode === 'multi' ? 'next 1–3 sessions'
-      : intervalMinutes <= 5 ? 'next 15–45 minutes'
-        : intervalMinutes <= 15 ? 'next 30–90 minutes'
-          : intervalMinutes <= 60 ? 'next 2–6 hours'
-            : 'next 1–3 sessions';
+    mode === 'multi' ? 'next session'
+      : intervalMinutes <= 5 ? 'next ~20 minutes (4 × 5-min bars)'
+        : intervalMinutes <= 15 ? 'next ~1 hour (4 × 15-min bars)'
+          : intervalMinutes <= 60 ? 'next ~4 hours (4 × 60-min bars)'
+            : 'next session';
   if (px <= 0 || a <= 0) {
     return {
       available: false,
       horizonLabel,
-      timeWindow: mode === 'multi' ? '1–3 sessions (mixed horizons)' : `next few ${intervalMinutes}m bars`,
+      timeWindow: mode === 'multi' ? 'Next session (mixed-horizon inputs)' : horizonLabel,
       note: 'ATR unavailable — cannot size a range.',
     };
   }
@@ -818,15 +823,15 @@ function expectedMoveEstimate({ close, atr, mode, intervalMinutes, bias }) {
 
   let timeWindow;
   if (mode === 'multi') {
-    timeWindow = 'About 1 session to 1–3 sessions (mix of intraday + daily structure)';
+    timeWindow = 'Next session (inputs mix intraday + daily structure; scored on the next session)';
   } else if (intervalMinutes <= 5) {
-    timeWindow = 'About next 15–45 minutes (several 5m bars)';
+    timeWindow = 'Next ~20 minutes (4 × 5-min bars — the horizon these odds are calibrated and scored on)';
   } else if (intervalMinutes <= 15) {
-    timeWindow = 'About next 30–90 minutes (several 15m bars)';
+    timeWindow = 'Next ~1 hour (4 × 15-min bars — the horizon these odds are calibrated and scored on)';
   } else if (intervalMinutes <= 60) {
-    timeWindow = 'About next 2–6 hours';
+    timeWindow = 'Next ~4 hours (4 × 60-min bars — the horizon these odds are calibrated and scored on)';
   } else {
-    timeWindow = 'About next 1–3 daily sessions';
+    timeWindow = 'Next session (the horizon these odds are calibrated and scored on)';
   }
 
   const lean =
@@ -836,7 +841,8 @@ function expectedMoveEstimate({ close, atr, mode, intervalMinutes, bias }) {
     available: true,
     horizonLabel,
     lastClose: px,
-    atr: a,
+    atr: Number(atr) || 0,
+    rangeBasis: barsAhead > 1 ? `ATR × √${barsAhead} (${barsAhead} bars ahead)` : "daily ATR (one session)",
     timeWindow,
     lean,
     upside: {

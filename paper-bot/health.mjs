@@ -2,14 +2,16 @@
 // Each check returns { name, ok, detail } ; `level` is 'ok' | 'warn' | 'fail'.
 // Never reads or prints the API key — only whether one is set.
 
-import { readdirSync, existsSync, statSync } from 'fs';
+import { readdirSync, existsSync, statSync, statfsSync } from 'fs';
+import { execFileSync } from 'child_process';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { quote } from '../market-data.mjs';
 import { storeStatus } from './collector.mjs';
 import { loadCalibration } from './calibration.mjs';
 import { computeStats } from './prediction-log.mjs';
-import { llmCredits, llmStatus } from '../ling-client.mjs';
+import { llmCredits, llmStatus, llmLastModel } from '../ling-client.mjs';
+import { OPENROUTER } from '../config.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const MONITOR_DIR = process.env.MONITOR_DIR || join(__dir, 'monitor');
@@ -26,6 +28,28 @@ export function lastSessionDate(now = new Date()) {
 }
 
 const check = (name, level, detail) => ({ name, level, detail });
+
+/**
+ * Free disk space in bytes. On macOS, use the figure Finder shows ("available
+ * for important usage", which counts purgeable space macOS frees on demand);
+ * fall back to statfs (which doesn't).
+ */
+export function freeDiskBytes(path = __dir) {
+  if (process.platform === 'darwin') {
+    try {
+      const js = `ObjC.import("Foundation"); var r = Ref(); $.NSURL.fileURLWithPath(${JSON.stringify(path)}).getResourceValueForKeyError(r, $.NSURLVolumeAvailableCapacityForImportantUsageKey, null); r[0].js`;
+      const v = Number(execFileSync('osascript', ['-l', 'JavaScript', '-e', js], { timeout: 5000, encoding: 'utf8' }).trim());
+      if (v > 0) return v;
+    } catch {
+      /* fall back */
+    }
+  }
+  const s = statfsSync(path);
+  return s.bavail * s.bsize;
+}
+
+export const DISK_WARN_GB = 2;
+export const DISK_FAIL_GB = 0.5;
 
 /**
  * Run all checks.
@@ -67,10 +91,12 @@ export async function healthChecks(opts = {}) {
       /* balance unknown */
     }
     const recent = (opts.statusFn || llmStatus)();
+    const used = (opts.lastModelFn || llmLastModel)();
+    const viaFallback = used && used !== OPENROUTER.model ? ` · free fallback ${used} is answering meanwhile` : OPENROUTER.fallbackModels.length ? ' · free fallback models will answer meanwhile' : '';
     if (credits && credits.remaining <= 0.01) {
-      out.push(check('AI key', 'warn', `OpenRouter has no credits left (used $${credits.totalUsage.toFixed(2)} of $${credits.totalCredits.toFixed(2)} bought) — add credits at openrouter.ai/settings/credits; AI features are falling back`));
+      out.push(check('AI key', 'warn', `OpenRouter has no credits left (used $${credits.totalUsage.toFixed(2)} of $${credits.totalCredits.toFixed(2)} bought) — add credits at openrouter.ai/settings/credits${viaFallback}`));
     } else if (recent) {
-      out.push(check('AI key', 'warn', `last AI call failed (HTTP ${recent.status} at ${recent.at.slice(11, 16)} UTC)`));
+      out.push(check('AI key', 'warn', `last AI call failed (HTTP ${recent.status} at ${recent.at.slice(11, 16)} UTC)${viaFallback}`));
     } else {
       out.push(check('AI key', 'ok', credits ? `key set · balance $${credits.remaining.toFixed(2)}` : 'OPENROUTER_API_KEY is set on the server'));
     }
@@ -115,6 +141,18 @@ export async function healthChecks(opts = {}) {
     out.push(check('monitor', hrs > 30 ? 'warn' : 'ok', last ? `last run ${hrs.toFixed(1)} h ago` : 'never run'));
   } else {
     out.push(check('monitor', 'warn', 'never run — npm run monitor'));
+  }
+
+  // 8. Disk space: the collector, logs and caches fail silently on a full disk.
+  try {
+    const gb = (opts.diskFn || freeDiskBytes)() / 1e9;
+    out.push(gb < DISK_FAIL_GB
+      ? check('disk space', 'fail', `only ${gb.toFixed(1)} GB free — data collection and logs will start failing; free up space`)
+      : gb < DISK_WARN_GB
+        ? check('disk space', 'warn', `${gb.toFixed(1)} GB free — below ${DISK_WARN_GB} GB; free up space soon`)
+        : check('disk space', 'ok', `${gb.toFixed(1)} GB free`));
+  } catch (err) {
+    out.push(check('disk space', 'warn', `could not read free space: ${err.message.slice(0, 80)}`));
   }
 
   const level = out.some((c) => c.level === 'fail') ? 'fail' : out.some((c) => c.level === 'warn') ? 'warn' : 'ok';

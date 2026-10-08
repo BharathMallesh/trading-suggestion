@@ -194,10 +194,26 @@ async function forecastWindows(model, windows, opts) {
 
 // --------------------------------------------------------------- live use ---
 
+/**
+ * The app makes no multi-day Call / Put probability, so beyond the next
+ * session the only fair yardstick is base rates — drop the stand-in.
+ */
+function noAppForecast(x) {
+  for (const o of [x, x.holdout]) {
+    if (!o) continue;
+    o.brierCurrent = null;
+    o.meanDiffVsCurrent = null;
+    o.tVsCurrent = null;
+    o.noAppForecast = true;
+  }
+  return x;
+}
+
 export function loadReplay(model) {
   const f = join(DATA, `foundation-replay-${model}.json`);
   if (!existsSync(f)) return null;
   const r = JSON.parse(readFileSync(f, 'utf8'));
+  for (const [h, x] of Object.entries(r.horizons || {})) if (h !== '1d') noAppForecast(x);
   // How often the model's confident calls (top probability ≥ 80%) came true.
   for (const h of Object.keys(r.horizons || {})) {
     const conf = (r.samples || []).filter((x) => `${x.h}d` === h).map((x) => {
@@ -360,6 +376,7 @@ export async function foundationReplay({ model, n = 200, seed = 7, loadCandles =
       holdout: summarise(r.filter((x) => x.group === 'holdout')),
     };
   }
+  for (const [h, x] of Object.entries(horizons)) if (h !== '1d') noAppForecast(x);
   const d1 = horizons['1d'];
   const helps = d1.tVsCurrent != null && d1.tVsCurrent <= -2 && d1.holdout.n > 0 && d1.holdout.meanDiffVsCurrent < 0;
   const hurts = d1.tVsCurrent != null && d1.tVsCurrent >= 2;
@@ -401,7 +418,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       saveReplay(r, seed === 7 ? '' : `-seed${seed}`);
       console.log(`\n${r.summary}`);
       for (const [h, x] of Object.entries(r.horizons)) {
-        console.log(`  ${h}: main n=${x.n} model ${x.brierModel.toFixed(4)} app ${x.brierCurrent.toFixed(4)} base ${x.brierClimatology.toFixed(4)} t=${x.tVsCurrent?.toFixed(2)} dir ${(x.directionHitRate * 100).toFixed(1)}% (z ${x.directionZ?.toFixed(2)}) | holdout n=${x.holdout.n} model ${x.holdout.brierModel.toFixed(4)} app ${x.holdout.brierCurrent.toFixed(4)} dir ${(x.holdout.directionHitRate * 100).toFixed(1)}%`);
+        console.log(`  ${h}: main n=${x.n} model ${x.brierModel.toFixed(4)} app ${x.brierCurrent?.toFixed(4) ?? '–'} base ${x.brierClimatology.toFixed(4)} t=${x.tVsCurrent?.toFixed(2)} dir ${(x.directionHitRate * 100).toFixed(1)}% (z ${x.directionZ?.toFixed(2)}) | holdout n=${x.holdout.n} model ${x.holdout.brierModel.toFixed(4)} app ${x.holdout.brierCurrent?.toFixed(4) ?? '–'} dir ${(x.holdout.directionHitRate * 100).toFixed(1)}%`);
       }
       console.log(`Verdict: ${r.verdict.toUpperCase()} · ${((Date.now() - t0) / 60000).toFixed(1)} min · ${r.rule}`);
     });
