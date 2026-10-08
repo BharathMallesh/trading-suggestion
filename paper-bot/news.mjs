@@ -50,6 +50,52 @@ export const FACTS = {
   regulatoryAction: [true],
 };
 
+// A fact survives only if the headline Ling cites for it actually talks about it.
+const EVIDENCE = {
+  results: /\b(results?|earnings|net profit|profit|PAT|EBITDA|net income|EPS)\b/i,
+  guidance: /\b(guidance|outlook|forecast|guides|target for FY)\b/i,
+  // A rating CHANGE needs a change word — "is rated Sell" alone is not a downgrade.
+  rating: /\b(upgrade[sd]?|downgrade[sd]?|lifts?|raises?|cuts?|lowers?|revises?|slashes)\b.*\b(rating|target|stance|call)\b|\b(upgrade[sd]?|downgrade[sd]?)\b/i,
+  orderWin: /\b(order|contract|wins?|bags?|secures?|deal)\b/i,
+  managementChange: /\b(CEO|CFO|MD|chairman|chairperson|resign\w*|appoint\w*|steps down|exits?|sacked|fired|names)\b/i,
+  regulatoryAction: /\b(SEBI|RBI|FDA|USFDA|CCI|penalty|fine[ds]?|probe|ban(s|ned)?|licen[cs]e|notice|raid|tax demand|show[- ]cause)\b/i,
+};
+// "Results" must be ACTUAL quarterly numbers, not previews or business/sales updates.
+const NOT_RESULTS = /\b(preview|ahead of|expected|expectations|estimates? for|business update|sales update|update|volumes?|wholesale|retail sales|heads? (toward|towards|into)|upcoming|results? date|record date|scheduled|to announce|will announce|transcript)\b/i;
+
+/**
+ * Fiscal quarter Indian companies are reporting in a given month (FY starts
+ * April): Oct–Dec → Q2, Jan–Mar → Q3, Apr–Jun → Q4, Jul–Sep → Q1.
+ */
+export function reportingQuarter(date = new Date()) {
+  const m = new Date(date).getUTCMonth() + 1;
+  return m >= 10 ? 2 : m <= 3 ? 3 : m <= 6 ? 4 : 1;
+}
+
+/**
+ * Drop facts whose cited headline doesn't support them (guards against the
+ * model inventing a "results miss" from a price fall).
+ * @param {object} facts   cleaned facts
+ * @param {object} evidence { factKey: headlineNumber (1-based) }
+ * @param {{title:string}[]} headlines
+ */
+export function verifyFacts(facts, evidence, headlines, now = new Date()) {
+  const out = {};
+  for (const [k, v] of Object.entries(facts || {})) {
+    const idx = Number(evidence?.[k]);
+    const h = Number.isInteger(idx) && idx >= 1 ? headlines[idx - 1]?.title : null;
+    if (!h || !EVIDENCE[k]?.test(h)) continue;
+    if (k === 'results') {
+      if (NOT_RESULTS.test(h)) continue;
+      // A results headline naming an older quarter (e.g. "Q1 profit surge" in October) is stale.
+      const q = (h.match(/\bQ([1-4])\b/i) || [])[1];
+      if (q && Number(q) !== reportingQuarter(now)) continue;
+    }
+    out[k] = v;
+  }
+  return out;
+}
+
 /** Keep only known fact keys with allowed values; drop nulls / unknowns. */
 export function cleanFacts(raw) {
   const out = {};
@@ -73,13 +119,14 @@ export const ALIASES = {
   SBIN: 'SBI', BHARTIARTL: 'Airtel', 'M&M': 'Mahindra', HINDUNILVR: 'HUL', KOTAKBANK: 'Kotak Mahindra Bank',
   BAJFINANCE: 'Bajaj Finance', ASIANPAINT: 'Asian Paints', ULTRACEMCO: 'UltraTech', NESTLEIND: 'Nestle India',
   HEROMOTOCO: 'Hero MotoCorp', EICHERMOT: 'Eicher', TATAMOTORS: 'Tata Motors', TATASTEEL: 'Tata Steel',
-  POWERGRID: 'Power Grid', ADANIENT: 'Adani Enterprises', ADANIPORTS: 'Adani Ports', SUNPHARMA: 'Sun Pharma',
+  POWERGRID: 'Power Grid', BEL: 'Bharat Electronics', ADANIENT: 'Adani Enterprises', ADANIPORTS: 'Adani Ports', SUNPHARMA: 'Sun Pharma',
   DRREDDY: "Dr Reddy's", APOLLOHOSP: 'Apollo Hospitals', BAJAJFINSV: 'Bajaj Finserv', INDUSINDBK: 'IndusInd',
 };
 // Headline patterns for aliased names (whole phrase; a few need variants).
 const ALIAS_MATCH = {
   SBIN: /\bSBI\b|State Bank of India/i,
   KOTAKBANK: /Kotak (Mahindra )?Bank/i,
+  BEL: /Bharat Electronics|\bBEL\b(?! Fuse)/i,
   HINDUNILVR: /\bHUL\b|Hindustan Unilever/i,
   'M&M': /\bM&M\b|Mahindra & Mahindra|Mahindra and Mahindra/i,
 };
@@ -128,6 +175,19 @@ export function nameTokens(name) {
  * Keep headlines that mention the company (first distinctive name word, or
  * the ticker as a whole word), are recent, and aren't quote-page listings.
  */
+// Foreign listings / filings that share a name with an Indian company
+// ("Titan Machinery (NASDAQ:TITN)", "Titan Acquisition Corp 10-Q", "Severn Trent (SVT)").
+const FOREIGN = /\b(NASDAQ|NYSE|NYSEAMERICAN|OTC|TSX|ASX|LSE|SEC)\b|\b(8-K|10-Q|10-K)\b|\bPDMR\b|\b(Inc|Corp|Plc)\b\.?/i;
+/** True when a headline names some OTHER ticker in parentheses, e.g. "(SVT)" for Trent. */
+const NOT_TICKERS = new Set(['IPO', 'AGM', 'EGM', 'FII', 'FIIS', 'DII', 'DIIS', 'QIP', 'OFS', 'EV', 'EVS', 'MF', 'PSU', 'NBFC', 'GDP', 'RBI', 'SEBI', 'CEO', 'CFO', 'MD', 'GST', 'NSE', 'BSE', 'USFDA', 'FDA', 'AI', 'IT', 'PLI', 'ESG', 'JV', 'PAT', 'EPS', 'YOY', 'QOQ', 'MPC', 'INR', 'USD', 'ETF', 'NAV']);
+const otherTicker = (title, ticker) => {
+  const m = String(title).match(/\(([A-Z]{2,6})\)/g) || [];
+  return m.some((x) => {
+    const t = x.slice(1, -1);
+    return t !== String(ticker).toUpperCase() && !NOT_TICKERS.has(t);
+  });
+};
+
 export function relevantHeadlines(items, tokens, { maxAgeDays = 7, now = Date.now(), ticker = '', match = null } = {}) {
   const first = match ? null : tokens[0];
   const tick = match || (ticker ? new RegExp(`\\b${ticker.replace(/[^A-Za-z0-9&]/g, '')}\\b`, 'i') : null);
@@ -138,7 +198,7 @@ export function relevantHeadlines(items, tokens, { maxAgeDays = 7, now = Date.no
       const fresh = now - (n.providerPublishTime || 0) * 1000 <= maxAgeDays * 86400_000;
       const mentions = (first && t.toLowerCase().includes(first)) || (tick && tick.test(t));
       const key = t.toLowerCase().slice(0, 60);
-      if (!fresh || !mentions || JUNK.test(t) || seen.has(key)) return false;
+      if (!fresh || !mentions || JUNK.test(t) || seen.has(key) || FOREIGN.test(t) || otherTicker(t, ticker)) return false;
       seen.add(key);
       return true;
     })
@@ -218,14 +278,18 @@ export async function newsBrief(symbol, { useLlm = true, refresh = false } = {})
             role: 'system',
             content:
               'You summarise news headlines factually for a research dashboard. Do not predict prices or recommend trades. ' +
-              'Use ONLY what the headlines state; if something is not stated, use null. Ignore market-wide roundups that merely list the company. ' +
+              'Use ONLY what the headlines state; if something is not stated, use null. Ignore market-wide roundups that merely list the company, ' +
+              'and ignore headlines about OTHER companies with a similar name (foreign listings, different businesses). ' +
+              '"results" means the company\'s ACTUAL quarterly financial results (profit/revenue/EPS reported) vs expectations — NOT previews, ' +
+              'pre-results business or sales updates, volume data, or share-price moves. For every non-null fact, cite the headline NUMBER that states it in "evidence". ' +
               'Reply ONLY with JSON: {"brief":"2-3 factual sentences",' +
               '"sentiment":number from -1 (clearly negative for the company) to 1 (clearly positive), 0 if mixed/neutral,' +
               '"facts":{"results":"beat"|"miss"|"inline"|null (only if ACTUAL results vs expectations are reported, not previews),' +
               '"guidance":"raised"|"cut"|"maintained"|null,"rating":"upgrade"|"downgrade"|null,' +
-              '"orderWin":true|null,"managementChange":true|null,"regulatoryAction":true|null}}',
+              '"orderWin":true|null,"managementChange":true|null,"regulatoryAction":true|null},' +
+              '"evidence":{"<factName>": headline number, ...}}',
           },
-          { role: 'user', content: `Company: ${company}\nHeadlines (newest first):\n${headlines.map((h) => `- ${h.title} (${h.publisher}, ${h.time.slice(0, 10)})`).join('\n')}` },
+          { role: 'user', content: `Company: ${company} (NSE: ${ticker})\nHeadlines (newest first):\n${headlines.map((h, i) => `${i + 1}. ${h.title} (${h.publisher}, ${h.time.slice(0, 10)})`).join('\n')}` },
         ],
         { temperature: 0, timeoutMs: 45_000, jsonKeys: ['sentiment'] },
       );
@@ -234,7 +298,9 @@ export async function newsBrief(symbol, { useLlm = true, refresh = false } = {})
         out.brief = String(j.brief || '').slice(0, 600);
         const sNum = Number(j.sentiment);
         out.sentiment = Number.isFinite(sNum) ? Math.max(-1, Math.min(1, sNum)) : null;
-        out.facts = cleanFacts(j.facts);
+        out.facts = verifyFacts(cleanFacts(j.facts), j.evidence, headlines);
+        // The headline behind each surviving fact (shown + stored with events).
+        out.factEvidence = Object.fromEntries(Object.keys(out.facts).map((k) => [k, headlines[Number(j.evidence?.[k]) - 1]?.title || null]));
         saveDaily(sym, out);
       }
     } catch (err) {

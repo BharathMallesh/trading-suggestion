@@ -18,6 +18,7 @@
 import { pathToFileURL } from 'node:url';
 import { candles } from '../market-data.mjs';
 import { badRequest, mapLimit } from '../util.mjs';
+import { optionChain } from '../groww-data.mjs';
 
 const TRADING_DAYS = 252;
 const isNifty = (s) => /^(\^NSEI|NIFTY|NIFTY50|NIFTY 50)$/i.test(String(s).trim());
@@ -131,7 +132,7 @@ export async function evaluateVolForecasts(opts = {}) {
  * Implied vs forecast volatility for one symbol now.
  * @param {{ symbol:string, iv?:number, days?:number }} p  iv in % (annualised); auto = India VIX for NIFTY
  */
-export async function volCheck({ symbol, iv, days = 7, loadCandles = candles } = {}) {
+export async function volCheck({ symbol, iv, days = 7, expiry, loadCandles = candles, chainFn = optionChain } = {}) {
   const sym = isNifty(symbol) ? '^NSEI' : String(symbol || '').trim();
   if (!sym) throw badRequest('symbol is required, e.g. ^NSEI or TCS.NS');
   const d = Number(days);
@@ -143,10 +144,22 @@ export async function volCheck({ symbol, iv, days = 7, loadCandles = candles } =
   );
   let impliedPct = iv != null && iv !== '' ? Number(iv) : null;
   let impliedSource = impliedPct != null ? 'you entered' : null;
+  let chain = null;
   if (impliedPct == null && sym === '^NSEI') {
     const v = await loadCandles('^INDIAVIX', { range: '5d', interval: '1d' });
     impliedPct = v[v.length - 1].close;
     impliedSource = 'India VIX';
+  } else if (impliedPct == null && process.env.GROWW_ACCESS_TOKEN && /\.(NS|BO)$/i.test(sym)) {
+    // Real stock-option IV from Groww's option chain (ATM, nearest monthly expiry).
+    try {
+      chain = await chainFn({ underlying: sym, expiry });
+      if (chain.atmIvPct) {
+        impliedPct = chain.atmIvPct;
+        impliedSource = `Groww option chain (ATM ${chain.atmStrike}, expiry ${chain.expiry})`;
+      }
+    } catch (err) {
+      chain = { error: err.message.slice(0, 140) };
+    }
   }
   if (impliedPct != null && !(impliedPct > 0 && impliedPct < 300)) throw badRequest('IV must be a percentage between 0 and 300.');
   const forecastPct = forecasts.ewma ?? forecasts.rv20;
@@ -162,6 +175,7 @@ export async function volCheck({ symbol, iv, days = 7, loadCandles = candles } =
     forecastPct,
     impliedPct,
     impliedSource,
+    optionChain: chain,
     ratio,
     expectedMovePct: { implied: move(impliedPct), forecast: move(forecastPct) },
     reading:

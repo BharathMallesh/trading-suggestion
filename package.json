@@ -20,6 +20,9 @@
     "eval": "node paper-bot/evaluate.mjs",
     "calibrate": "node paper-bot/evaluate.mjs --interval 1d --save && node paper-bot/evaluate.mjs --interval 60m --save && node paper-bot/evaluate.mjs --interval 15m --save && node paper-bot/evaluate.mjs --interval 5m --save",
     "monitor": "node paper-bot/monitor.mjs",
-    "collect": "node paper-bot/collector.mjs"
+    "collect": "node paper-bot/collector.mjs",
+    "backfill": "node paper-bot/collector.mjs --groww-backfill 120",
+    "ranking": "node paper-bot/ranking.mjs --universe nifty200 --horizon 20",
+    "vol": "node paper-bot/volatility.mjs"
   }
 }

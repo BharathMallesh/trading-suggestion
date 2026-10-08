@@ -22,6 +22,57 @@
 import { pathToFileURL } from 'node:url';
 import { candles } from '../market-data.mjs';
 import { badRequest, mapLimit } from '../util.mjs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const DATA = process.env.INDEX_LIST_DIR || join(dirname(fileURLToPath(import.meta.url)), 'data');
+/** Official constituent CSVs published by NSE Indices. */
+export const INDEX_LISTS = {
+  nifty50: 'https://archives.nseindia.com/content/indices/ind_nifty50list.csv',
+  nifty100: 'https://archives.nseindia.com/content/indices/ind_nifty100list.csv',
+  nifty200: 'https://archives.nseindia.com/content/indices/ind_nifty200list.csv',
+  nifty500: 'https://archives.nseindia.com/content/indices/ind_nifty500list.csv',
+};
+
+/** Parse NSE's "Company Name,Industry,Symbol,Series,ISIN Code" CSV → ['SYMBOL.NS', …]. */
+export function parseIndexCsv(text) {
+  const lines = String(text).trim().split(/\r?\n/);
+  const head = lines.shift().split(',').map((h) => h.trim().toLowerCase());
+  const col = head.indexOf('symbol');
+  if (col < 0) return [];
+  return lines.map((l) => l.split(',')[col]?.trim()).filter(Boolean).map((s) => `${s}.NS`);
+}
+
+/**
+ * Current constituents of an NSE index (cached 7 days in paper-bot/data).
+ * Falls back to the built-in NIFTY 50 list if NSE can't be reached.
+ */
+export async function loadIndexList(name = 'nifty50', { fetchFn = fetch } = {}) {
+  const url = INDEX_LISTS[name];
+  if (!url) throw badRequest(`Unknown universe "${name}". Use ${Object.keys(INDEX_LISTS).join(', ')}.`);
+  const cacheFile = join(DATA, `index-${name}.json`);
+  try {
+    if (existsSync(cacheFile)) {
+      const c = JSON.parse(readFileSync(cacheFile, 'utf8'));
+      if (Date.now() - c.at < 7 * 86400000 && c.symbols?.length) return { symbols: c.symbols, source: 'cache' };
+    }
+  } catch {
+    /* refetch */
+  }
+  try {
+    const res = await fetchFn(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+    const symbols = res.ok ? parseIndexCsv(await res.text()) : [];
+    if (symbols.length >= 40) {
+      mkdirSync(DATA, { recursive: true });
+      writeFileSync(cacheFile, JSON.stringify({ at: Date.now(), symbols }));
+      return { symbols, source: 'NSE' };
+    }
+  } catch {
+    /* fall through */
+  }
+  return { symbols: NIFTY50, source: 'built-in NIFTY 50 (NSE list unavailable)' };
+}
 
 /** NIFTY 50 constituents (approximate, Oct 2026). Missing tickers are skipped. */
 export const NIFTY50 = [
@@ -150,10 +201,12 @@ async function loadUniverse(symbols, load) {
 export async function evaluateRanking(opts = {}) {
   const horizon = Number(opts.horizon) || 20;
   if (![20, 40, 60].includes(horizon)) throw badRequest('horizon must be 20, 40 or 60 trading days.');
-  const topN = opts.topN || 5;
-  const costPct = opts.costPct ?? 0.25;
   const load = opts.loadCandles || candles;
-  const symbols = opts.symbols?.length ? opts.symbols : NIFTY50;
+  const list = opts.symbols?.length ? { symbols: opts.symbols, source: 'custom' } : await loadIndexList(opts.universe || 'nifty50');
+  const symbols = list.symbols;
+  // Wider universes hold more names in the top bucket (≈ top decile, min 5).
+  const topN = opts.topN || Math.max(5, Math.round(symbols.length / 10));
+  const costPct = opts.costPct ?? 0.25;
   const { series, skipped } = await loadUniverse(symbols, load);
   if (series.length < 10) throw badRequest(`Need at least 10 stocks with 5y history; got ${series.length}. ${skipped.join(' · ')}`);
 
@@ -262,6 +315,8 @@ export async function evaluateRanking(opts = {}) {
     topN,
     costPct,
     universe: series.length,
+    universeName: opts.symbols?.length ? 'custom' : opts.universe || 'nifty50',
+    universeSource: list.source,
     skipped,
     from: periods[0].date,
     to: periods[periods.length - 1].end,
@@ -269,7 +324,7 @@ export async function evaluateRanking(opts = {}) {
     summary,
     benchmark,
     caveats: [
-      "Universe is today's NIFTY 50 (survivorship bias flatters results).",
+      "Universe is today's index list (survivorship bias flatters results; wider lists reduce but don't remove it).",
       'Signals are fixed rules — nothing is fitted — but 5 years is still a short sample.',
       'Costs are approximate (round trip on replaced names). Research only, not investment advice.',
     ],
@@ -279,21 +334,24 @@ export async function evaluateRanking(opts = {}) {
 /** Current ranking for a universe (latest common date). */
 export async function liveRanking(opts = {}) {
   const load = opts.loadCandles || candles;
-  const symbols = opts.symbols?.length ? opts.symbols : NIFTY50;
+  const symbols = opts.symbols?.length ? opts.symbols : (await loadIndexList(opts.universe || 'nifty50')).symbols;
   const { series, skipped } = await loadUniverse(symbols, load);
   if (series.length < 5) throw badRequest('Need at least 5 stocks with enough history.');
   const latest = series.map((s) => s.dates[s.dates.length - 1]).sort().reverse();
   const at = latest.find((d) => series.filter((s) => s.dateIndex.has(d)).length >= series.length * 0.8) || latest[0];
   const snap = signalSnapshot(series, at);
-  const order = [...snap].filter((r) => r.values.composite != null).sort((a, b) => b.values.composite - a.values.composite);
+  const sortBy = ALL_SIGNALS.includes(opts.sortBy) ? opts.sortBy : 'composite';
+  const order = [...snap].filter((r) => r.values[sortBy] != null && r.values.composite != null).sort((a, b) => b.values[sortBy] - a.values[sortBy]);
   return {
     asOf: at,
     universe: series.length,
+    sortBy,
     skipped,
     ranking: order.map((r, i) => ({
       rank: i + 1,
       symbol: r.symbol,
       composite: r.values.composite,
+      score: r.values[sortBy],
       mom12_1Pct: r.values.mom12_1 != null ? r.values.mom12_1 * 100 : null,
       vol60Pct: r.values.lowVol != null ? -r.values.lowVol * Math.sqrt(252) * 100 : null,
       pctOf52wHigh: r.values.high52 != null ? r.values.high52 * 100 : null,
@@ -307,15 +365,17 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const args = process.argv.slice(2);
   const hIdx = args.indexOf('--horizon');
   const horizon = hIdx >= 0 ? Number(args[hIdx + 1]) : 20;
+  const uIdx = args.indexOf('--universe');
+  const universe = uIdx >= 0 ? args[uIdx + 1] : 'nifty50';
   const run = args.includes('--live')
-    ? liveRanking().then((r) => {
+    ? liveRanking({ universe }).then((r) => {
         console.log(`\nRANKING · ${r.asOf} · ${r.universe} stocks (composite: momentum 12-1, low vol, 52w high)`);
         console.log('rank symbol           composite  mom12-1   vol(ann)  %52wH');
         for (const x of r.ranking) console.log(`${String(x.rank).padStart(4)} ${x.symbol.padEnd(16)} ${x.composite.toFixed(2).padStart(8)}  ${x.mom12_1Pct?.toFixed(1).padStart(7)}%  ${x.vol60Pct?.toFixed(1).padStart(6)}%  ${x.pctOf52wHigh?.toFixed(0).padStart(4)}%`);
         if (r.skipped.length) console.log(`Skipped: ${r.skipped.join(' · ')}`);
         console.log(r.note);
       })
-    : evaluateRanking({ horizon }).then((r) => {
+    : evaluateRanking({ horizon, universe }).then((r) => {
         console.log(`\nRANKING REPLAY · horizon ${r.horizon} trading days · ${r.universe} stocks · ${r.from} → ${r.to} · ${r.periods} rebalances · top ${r.topN}, cost ${r.costPct}%/turnover`);
         console.log('signal       meanIC   t-stat  %pos  IC 1st/2nd half   top-bottom/period  top-N CAGR  evidence');
         for (const [k, v] of Object.entries(r.summary)) {

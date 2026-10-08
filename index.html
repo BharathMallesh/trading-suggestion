@@ -63,6 +63,19 @@
     </header>
 
     <main>
+      <!-- Today: everything an investor checks, on one screen -->
+      <section class="card span2" id="todayCard">
+        <h2>Today <span style="font-size:12px;color:var(--warn);font-weight:500">RESEARCH · PAPER ONLY</span></h2>
+        <p class="hint">Latest monitor run: alerts, data health, NIFTY volatility, watchlist read, earnings events, ranking, paper portfolio and the
+          running scorecard. <b>Run now</b> refreshes everything (~1–2 min); the scheduled monitor also updates it during market hours.</p>
+        <div class="row" style="gap:8px">
+          <button id="tdRefreshBtn" type="button">Refresh</button>
+          <button id="tdRunBtn" type="button" style="background:#0d1320;color:var(--ink);border:1px solid var(--line)">Run now</button>
+        </div>
+        <div id="tdStatus" class="note" style="display:none"></div>
+        <div id="tdOut" style="margin-top:12px"></div>
+      </section>
+
       <!-- Ask panel -->
       <section class="card span2">
         <h2>Ask (research · explain · summarize)</h2>
@@ -278,7 +291,9 @@
         </p>
         <div class="row">
           <div><label>Replay horizon</label><select id="rkHorizon"><option value="20">1 month (20 days)</option><option value="60" selected>3 months (60 days)</option></select></div>
-          <div style="flex:2"><label>Universe (blank = NIFTY 50)</label><input id="rkSyms" placeholder="RELIANCE.NS, TCS.NS, …" /></div>
+          <div><label>Universe</label><select id="rkUniverse"><option value="nifty50">NIFTY 50</option><option value="nifty100">NIFTY 100</option><option value="nifty200" selected>NIFTY 200</option><option value="nifty500">NIFTY 500 (slow)</option></select></div>
+          <div><label>Sort current ranking by</label><select id="rkSort"><option value="composite">Composite</option><option value="mom12_1" selected>12-1 month momentum</option><option value="mom6_1">6-1 month momentum</option><option value="high52">Near 52-week high</option><option value="reversal1m">1-month reversal</option><option value="lowVol">Low volatility</option><option value="trend">Trend</option></select></div>
+          <div style="flex:2"><label>Custom symbols (overrides universe)</label><input id="rkSyms" placeholder="RELIANCE.NS, TCS.NS, …" /></div>
         </div>
         <div class="row" style="gap:8px">
           <button id="rkLiveBtn" type="button">Current ranking</button>
@@ -288,18 +303,31 @@
         <div id="rkOut" style="margin-top:12px"></div>
       </section>
 
+      <!-- Earnings & rating events -->
+      <section class="card span2">
+        <h2>Earnings &amp; rating events <span style="font-size:12px;color:var(--warn);font-weight:500">DRIFT TRACKER</span></h2>
+        <p class="hint">When the news shows a results beat / miss / in-line, an upgrade / downgrade or a guidance change, the event is recorded with the
+          price then; returns 1, 5 and 20 trading days later are measured against NIFTY. Builds evidence on post-earnings drift over time. Not advice.</p>
+        <div class="row" style="gap:8px">
+          <button id="evtShowBtn" type="button">Show events</button>
+          <button id="evtScanBtn" type="button" style="background:#0d1320;color:var(--ink);border:1px solid var(--line)">Scan NIFTY 50 news now</button>
+        </div>
+        <div id="evtOut" style="margin-top:12px"></div>
+      </section>
+
       <!-- Volatility: implied vs forecast -->
       <section class="card span2">
         <h2>Volatility check <span style="font-size:12px;color:var(--warn);font-weight:500">OPTIONS · RESEARCH</span></h2>
         <p class="hint">
           Compares the volatility options are pricing (implied) with a forecast from recent price behaviour. NIFTY uses India VIX automatically;
-          for a stock, enter the option's IV % from your broker. Volatility is where this app has shown measurable skill — direction is not.
+          for a stock, enter the option's IV % from your broker — or set GROWW_ACCESS_TOKEN on the server and it is read from Groww's option chain (ATM IV, put/call OI ratio). Volatility is where this app has shown measurable skill — direction is not.
           Factual comparison, not a trade suggestion.
         </p>
         <div class="row">
           <div><label>Symbol</label><input id="vcSym" value="^NSEI" /></div>
           <div><label>Implied vol % (blank = India VIX for NIFTY)</label><input id="vcIv" type="number" step="any" placeholder="e.g. 28" /></div>
           <div><label>Days to expiry</label><input id="vcDays" type="number" value="7" /></div>
+          <div><label>Expiry (Groww chain, optional)</label><input id="vcExpiry" placeholder="YYYY-MM-DD" /></div>
         </div>
         <div class="row" style="gap:8px">
           <button id="vcBtn" type="button">Check</button>
@@ -1290,17 +1318,19 @@
         try {
           const syms = $('rkSyms').value.trim();
           if (kind === 'live') {
-            const d = await api('/api/rankings' + (syms ? '?symbols=' + encodeURIComponent(syms) : ''));
-            let html = `<div class="note">As of ${esc(d.asOf)} · ${d.universe} stocks${d.skipped?.length ? ' · skipped ' + d.skipped.length : ''}</div>
+            const q = new URLSearchParams({ universe: $('rkUniverse').value, sortBy: $('rkSort').value });
+            if (syms) q.set('symbols', syms);
+            const d = await api('/api/rankings?' + q.toString());
+            let html = `<div class="note">As of ${esc(d.asOf)} · ${d.universe} stocks · sorted by <b>${esc(SIG_NAME[d.sortBy] || d.sortBy)}</b>${d.skipped?.length ? ' · skipped ' + d.skipped.length : ''}</div>
               <table><thead><tr><th>#</th><th style="text-align:left">Symbol</th><th>Composite</th><th>12-1m momentum</th><th>Volatility (ann.)</th><th>% of 52w high</th></tr></thead><tbody>`;
-            for (const r of d.ranking) {
+            for (const r of d.ranking.slice(0, 50)) {
               html += `<tr><td>${r.rank}</td><td style="text-align:left">${esc(r.symbol)}</td><td>${r.composite.toFixed(2)}</td><td>${r.mom12_1Pct?.toFixed(1)}%</td><td>${r.vol60Pct?.toFixed(1)}%</td><td>${r.pctOf52wHigh?.toFixed(0)}%</td></tr>`;
             }
             out.innerHTML = html + `</tbody></table><div class="note">${esc(d.note)} Run <b>Evidence</b> to see whether this composite has worked historically.</div>`;
           } else {
-            const d = await api('/api/ranking-eval', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ horizon: Number($('rkHorizon').value), symbols: syms || undefined }) });
+            const d = await api('/api/ranking-eval', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ horizon: Number($('rkHorizon').value), symbols: syms || undefined, universe: $('rkUniverse').value }) });
             const col = (e) => (e === 'strong' ? 'var(--up)' : e === 'weak' ? 'var(--warn)' : 'var(--muted)');
-            let html = `<div class="note">${d.periods} rebalances every ${d.horizon} trading days · ${esc(d.from)} → ${esc(d.to)} · ${d.universe} stocks · top ${d.topN}, ${d.costPct}% cost per replaced name</div>
+            let html = `<div class="note">${esc(d.universeName)} (${esc(d.universeSource)}) · ${d.periods} rebalances every ${d.horizon} trading days · ${esc(d.from)} → ${esc(d.to)} · ${d.universe} stocks · top ${d.topN}, ${d.costPct}% cost per replaced name</div>
               <table><thead><tr><th style="text-align:left">Signal</th><th>Mean IC</th><th>t-stat</th><th>% periods &gt; 0</th><th>IC 1st / 2nd half</th><th>Top − bottom fifth</th><th>Top-${d.topN} CAGR</th><th>Evidence</th></tr></thead><tbody>`;
             for (const [k, v] of Object.entries(d.summary)) {
               html += `<tr><td style="text-align:left">${esc(SIG_NAME[k] || k)}</td><td>${v.meanIC.toFixed(3)}</td><td>${v.tStat?.toFixed(2) ?? '–'}</td><td>${v.pctPositive.toFixed(0)}%</td>
@@ -1330,6 +1360,7 @@
         try {
           const q = new URLSearchParams({ symbol: $('vcSym').value.trim(), days: $('vcDays').value });
           if ($('vcIv').value) q.set('iv', $('vcIv').value);
+          if ($('vcExpiry').value) q.set('expiry', $('vcExpiry').value.trim());
           const d = await api('/api/vol-check?' + q.toString());
           const f = d.forecastsAnnualPct;
           out.innerHTML = `<div class="kv">
@@ -1337,7 +1368,9 @@
             <div>Forecast vol (annual)</div><div><b>${d.forecastPct?.toFixed(1)}%</b> EWMA · 20-day ${f.rv20?.toFixed(1)}% · 60-day ${f.rv60?.toFixed(1)}%</div>
             <div>Implied vol</div><div>${d.impliedPct != null ? `<b>${d.impliedPct.toFixed(1)}%</b> (${esc(d.impliedSource)}) · ratio ${d.ratio.toFixed(2)}` : '–'}</div>
             <div>±1σ over ${d.days} days</div><div>forecast ${d.expectedMovePct.forecast?.toFixed(2)}%${d.expectedMovePct.implied != null ? ` · implied ${d.expectedMovePct.implied.toFixed(2)}%` : ''}</div>
-          </div><div style="margin-top:8px;font-size:14px">${esc(d.reading)}</div><div class="note">${esc(d.disclaimer)}</div>`;
+            ${d.optionChain && !d.optionChain.error ? `<div>Option chain</div><div>ATM ${d.optionChain.atmStrike} · put/call OI ratio ${d.optionChain.pcr?.toFixed(2) ?? '–'} · ${d.optionChain.strikes} strikes</div>` : ''}
+          </div>${d.optionChain?.error ? `<div class="note">Groww option chain unavailable: ${esc(d.optionChain.error)}</div>` : ''}
+          <div style="margin-top:8px;font-size:14px">${esc(d.reading)}</div><div class="note">${esc(d.disclaimer)}</div>`;
         } catch (e) {
           out.innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
         }
@@ -1474,6 +1507,101 @@
       });
       loadSettings();
 
+      // --- Events ---
+      function renderEventStats(stats) {
+        if (!stats?.length) return '<div class="note">No events recorded yet — they appear as companies report (results seasons: mid-Jan/Apr/Jul/Oct).</div>';
+        const cell = (x) => (x ? `${x.avgAbnormalPct != null ? (x.avgAbnormalPct >= 0 ? '+' : '') + x.avgAbnormalPct.toFixed(2) + '% vs NIFTY' : (x.avgRetPct >= 0 ? '+' : '') + x.avgRetPct.toFixed(2) + '%'} <span style="color:var(--muted)">(n=${x.n})</span>` : '<span style="color:var(--muted)">pending</span>');
+        return '<table><thead><tr><th style="text-align:left">Event</th><th>Count</th><th>+1 day</th><th>+5 days</th><th>+20 days</th></tr></thead><tbody>' +
+          stats.map((t) => `<tr><td style="text-align:left">${esc(t.type)}</td><td>${t.events}</td><td>${cell(t.d1)}</td><td>${cell(t.d5)}</td><td>${cell(t.d20)}</td></tr>`).join('') + '</tbody></table>';
+      }
+      async function evtLoad(scan) {
+        const out = $('evtOut');
+        out.textContent = scan ? 'Scanning NIFTY 50 news (one AI reading per stock per day)…' : 'Loading…';
+        try {
+          const d = scan
+            ? await api('/api/events/scan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ universe: 'nifty50' }) })
+            : await api('/api/events');
+          let html = scan ? `<div class="note">New events: ${d.added.length ? d.added.map((e) => esc(e.symbol + ' ' + e.type)).join(', ') : 'none'} · tracked ${d.tracked}</div>` : '';
+          html += renderEventStats(d.stats);
+          const list = d.events || [];
+          if (list.length) {
+            html += '<div style="margin-top:8px;font-size:13px"><b>Recent events</b></div><table><thead><tr><th>Date</th><th style="text-align:left">Stock</th><th>Event</th><th>Price</th><th>+5d vs NIFTY</th><th style="text-align:left">Headline</th></tr></thead><tbody>';
+            for (const e of list.slice(0, 15)) {
+              const r5 = e.returns?.[5];
+              html += `<tr><td>${esc(e.date)}</td><td style="text-align:left">${esc(e.symbol)}</td><td>${esc(e.type)}</td><td>${Number(e.price).toFixed(2)}</td><td>${r5?.abnormal != null ? (r5.abnormal * 100).toFixed(2) + '%' : '–'}</td><td style="text-align:left;font-size:12px">${esc((e.headline || '').slice(0, 80))}</td></tr>`;
+            }
+            html += '</tbody></table>';
+          }
+          out.innerHTML = html;
+        } catch (e) {
+          out.innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
+        }
+      }
+      $('evtShowBtn').addEventListener('click', () => evtLoad(false));
+      $('evtScanBtn').addEventListener('click', () => evtLoad(true));
+
+      // --- Today ---
+      function renderToday(d) {
+        const r = d.report;
+        const h = d.health;
+        const lvlCol = (l) => (l === 'ok' ? 'var(--up)' : l === 'warn' ? 'var(--warn)' : 'var(--down)');
+        let html = '';
+        if (h) {
+          html += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">' + h.checks.map((c) =>
+            `<span title="${esc(c.detail)}" style="border:1px solid ${lvlCol(c.level)};color:${lvlCol(c.level)};border-radius:999px;padding:2px 8px;font-size:12px">${esc(c.name)}: ${esc(c.level)}</span>`).join('') + '</div>';
+        }
+        if (!r) return html + '<div class="note">No monitor run yet — click <b>Run now</b>.</div>';
+        const ageMin = (Date.now() - new Date(r.finishedAt)) / 60000;
+        html += `<div class="note">Last run ${esc(r.market.ist)} (${ageMin < 90 ? Math.round(ageMin) + ' min' : (ageMin / 60).toFixed(1) + ' h'} ago) · market ${r.market.open ? 'open' : 'closed'}</div>`;
+        if (r.alerts?.length) {
+          html += '<div style="margin:8px 0;padding:10px;border:1px solid var(--warn);border-radius:10px"><b>Alerts</b><ul style="margin:6px 0 0 18px;font-size:13px">' +
+            r.alerts.map((a) => `<li style="color:${a.level === 'high' ? 'var(--down)' : 'var(--ink)'}">${esc(a.text)}</li>`).join('') + '</ul></div>';
+        } else {
+          html += '<div class="note">No alerts.</div>';
+        }
+        const v = r.volatility;
+        if (v && !v.error) html += `<div style="font-size:14px;margin:6px 0"><b>NIFTY volatility:</b> India VIX ${v.impliedPct?.toFixed(1)}% vs forecast ${v.forecastPct?.toFixed(1)}% (ratio ${v.ratio?.toFixed(2)}). ${esc(v.reading)}</div>`;
+        html += '<table><thead><tr><th style="text-align:left">Stock</th><th>Last</th><th>Up/Down/Side</th><th>Signal</th><th>News</th><th>±1 ATR</th><th style="text-align:left">Events</th></tr></thead><tbody>';
+        for (const w of r.watchlist || []) {
+          if (w.error) {
+            html += `<tr><td style="text-align:left">${esc(w.symbol)}</td><td colspan="6" class="err">${esc(w.error)}</td></tr>`;
+            continue;
+          }
+          html += `<tr><td style="text-align:left">${esc(w.symbol)}</td><td>${Number(w.last).toFixed(1)}</td>
+            <td>${Math.round(w.up * 100)}/${Math.round(w.down * 100)}/${Math.round(w.side * 100)}</td><td>${esc(w.edge || '')}</td>
+            <td>${sentimentBadge({ sentiment: w.sentiment, events: w.events })}</td><td>${w.atrPct != null ? w.atrPct.toFixed(2) + '%' : '–'}</td>
+            <td style="text-align:left;font-size:12px">${esc((w.events || []).join(', '))}</td></tr>`;
+        }
+        html += '</tbody></table>';
+        const rk = r.ranking;
+        if (rk && !rk.error) html += `<div class="note">Ranking (${esc(rk.asOf)}): top ${esc(rk.top.join(', '))} · bottom ${esc(rk.bottom.join(', '))} — see Stock ranking → Evidence.</div>`;
+        if (r.events && !r.events.error) html += `<div class="note">Earnings/rating events tracked: ${r.events.tracked}${r.events.added?.length ? ' · new today: ' + esc(r.events.added.map((e) => e.symbol + ' ' + e.type).join(', ')) : ''}</div>`;
+        const p = r.portfolio;
+        if (p?.equity != null) html += `<div class="note">Paper portfolio ₹${p.equity.toFixed(0)} (${p.returnPct >= 0 ? '+' : ''}${p.returnPct.toFixed(2)}%) · ${p.positions.length} open · charges ₹${p.charges.toFixed(0)}</div>`;
+        const c = r.scorecard;
+        html += `<div class="note">Scorecard: ${esc(c?.verdict || 'no scored predictions yet')}${c?.scored ? ` · hit-rate ${c.hitRatePct.toFixed(0)}% · Brier ${c.brier.app.toFixed(3)} vs coin-flip ${c.brier.uniform.toFixed(3)}` : ''}</div>`;
+        return html + `<div class="note">${esc(r.disclaimer)}</div>`;
+      }
+      async function tdLoad(run) {
+        const out = $('tdOut');
+        const status = $('tdStatus');
+        status.style.display = 'block';
+        status.textContent = run ? 'Running the investor monitor (watchlist, news, scoring, events, portfolio)… ~1–2 min' : 'Loading…';
+        $('tdRunBtn').disabled = $('tdRefreshBtn').disabled = true;
+        try {
+          const d = run ? await api('/api/today/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }) : await api('/api/today');
+          out.innerHTML = renderToday(d);
+        } catch (e) {
+          out.innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
+        } finally {
+          status.style.display = 'none';
+          $('tdRunBtn').disabled = $('tdRefreshBtn').disabled = false;
+        }
+      }
+      $('tdRefreshBtn').addEventListener('click', () => tdLoad(false));
+      $('tdRunBtn').addEventListener('click', () => tdLoad(true));
+      tdLoad(false);
+
       // News sentiment chip: −1 … +1, coloured, with event flags on hover.
       function sentimentBadge(n) {
         if (!n) return '<span style="color:var(--muted)">–</span>';
@@ -1528,6 +1656,7 @@
           const col = sc > 0.2 ? 'var(--up)' : sc < -0.2 ? 'var(--down)' : 'var(--muted)';
           html += `<div style="font-size:13px">${esc(n.brief)}</div>
             ${renderFacts(n.facts)}
+            ${n.factEvidence && Object.keys(n.factEvidence).length ? `<div class="note">Source headlines: ${Object.entries(n.factEvidence).map(([k, t]) => `<b>${esc(FACT_LABEL[k] || k)}</b> — ${esc(t || '')}`).join(' · ')}</div>` : ''}
             <div class="note">Headline sentiment: <b style="color:${col}">${Number.isFinite(sc) ? (sc > 0 ? '+' : '') + sc.toFixed(2) : '–'}</b> (−1 negative … +1 positive). Shown for context and logged so its value can be measured — it does not change the probabilities.</div>`;
         }
         if (n.headlines?.length) {

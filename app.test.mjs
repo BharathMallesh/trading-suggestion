@@ -17,7 +17,7 @@ after(() => rmSync(TMP, { recursive: true, force: true }));
 const portfolio = await import('./paper-bot/portfolio.mjs');
 const { currentSettings, saveSettings, resetSettings, validate } = await import('./paper-bot/settings.mjs');
 const { PAPER } = await import('./paper-bot/config.mjs');
-const { nameTokens, relevantHeadlines, parseRss, detectEvents, isRoundup } = await import('./paper-bot/news.mjs');
+const { nameTokens, relevantHeadlines, parseRss, detectEvents, isRoundup, verifyFacts, reportingQuarter } = await import('./paper-bot/news.mjs');
 const { logPrediction, computeStats } = await import('./paper-bot/prediction-log.mjs');
 
 /** Steady uptrend daily bars ending today, so the tech signal goes LONG. */
@@ -265,7 +265,7 @@ test('news: one AI reading per stock per day (no drift between runs)', async () 
     if (u.includes('openrouter')) {
       llmCalls++;
       const s = llmCalls === 1 ? 0.6 : -0.9; // a second call would disagree
-      return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: JSON.stringify({ brief: 'b', sentiment: s, facts: { results: 'beat' } }) } }] }) };
+      return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: JSON.stringify({ brief: 'b', sentiment: s, facts: { results: 'beat' }, evidence: { results: 1 } }) } }] }) };
     }
     if (u.includes('news.google.com')) {
       return { ok: true, status: 200, text: async () => `<rss><item><title>Zeta Q2 results beat estimates - Mint</title><pubDate>${pub}</pubDate><source url="x">Mint</source></item></rss>` };
@@ -284,4 +284,52 @@ test('news: one AI reading per stock per day (no drift between runs)', async () 
     globalThis.fetch = realFetch;
     delete process.env.OPENROUTER_API_KEY;
   }
+});
+
+test('news: foreign namesakes and other tickers are dropped (Titan Machinery, Severn Trent)', () => {
+  const now = Date.now();
+  const t = now / 1000 - 600;
+  const items = [
+    { title: 'Titan Machinery (NASDAQ:TITN) Shares Down 8.3%', providerPublishTime: t },
+    { title: 'TACHW 10-Q Filings - Titan Acquisition Corp. Warrants', providerPublishTime: t },
+    { title: "Titan's Q2 sales growth beats expectations", providerPublishTime: t },
+    { title: 'Severn Trent (SVT) PDMR sells shares', providerPublishTime: t },
+    { title: 'Trent surges after Q2 update (IPO buzz)', providerPublishTime: t },
+  ];
+  assert.deepEqual(relevantHeadlines(items, ['titan'], { now, ticker: 'TITAN' }).map((h) => h.title), ["Titan's Q2 sales growth beats expectations"]);
+  assert.deepEqual(relevantHeadlines(items, ['trent'], { now, ticker: 'TRENT' }).map((h) => h.title), ['Trent surges after Q2 update (IPO buzz)']);
+});
+
+test('news facts must be backed by the cited headline (no invented results miss)', () => {
+  const hl = [
+    { title: 'Adani Group stocks fall today: Adani Enterprises declines 3%' },
+    { title: 'CARE upgrades Adani Enterprises to AA' },
+    { title: 'Titan Q2 sales update misses estimates' },
+    { title: 'HDFC Bank Q2 net profit rises 12%, beats estimates' },
+  ];
+  assert.deepEqual(verifyFacts({ results: 'miss', rating: 'upgrade' }, { results: 1, rating: 2 }, hl), { rating: 'upgrade' });
+  assert.deepEqual(verifyFacts({ results: 'miss' }, { results: 3 }, hl), {}, 'business/sales update is not results');
+  assert.deepEqual(verifyFacts({ results: 'beat' }, { results: 4 }, hl), { results: 'beat' });
+  assert.deepEqual(verifyFacts({ results: 'beat' }, {}, hl), {}, 'no evidence → dropped');
+});
+
+test('results facts: upcoming-results and stale-quarter headlines are rejected', () => {
+  const oct = new Date('2026-10-08T06:00:00Z');
+  assert.equal(reportingQuarter(oct), 2);
+  assert.equal(reportingQuarter(new Date('2026-02-10')), 3);
+  const hl = [
+    { title: 'Hindalco stock heads toward November 6 results after Q1 profit surge' },
+    { title: 'Hindalco Q1 net profit rises 30%' },
+    { title: 'Hindalco Q2 net profit rises 18%, beats estimates' },
+  ];
+  assert.deepEqual(verifyFacts({ results: 'beat' }, { results: 1 }, hl, oct), {});
+  assert.deepEqual(verifyFacts({ results: 'beat' }, { results: 2 }, hl, oct), {}, 'Q1 in October is stale');
+  assert.deepEqual(verifyFacts({ results: 'beat' }, { results: 3 }, hl, oct), { results: 'beat' });
+});
+
+test('rating facts need a change (upgrade/downgrade/lifts/cuts), not just a rating', () => {
+  const hl = [{ title: 'Power Grid Corporation of India Ltd is Rated Sell' }, { title: 'Kotak lifts rating on Bharat Electronics' }, { title: 'HSBC upgrades Kotak Mahindra Bank' }];
+  assert.deepEqual(verifyFacts({ rating: 'downgrade' }, { rating: 1 }, hl), {});
+  assert.deepEqual(verifyFacts({ rating: 'upgrade' }, { rating: 2 }, hl), { rating: 'upgrade' });
+  assert.deepEqual(verifyFacts({ rating: 'upgrade' }, { rating: 3 }, hl), { rating: 'upgrade' });
 });

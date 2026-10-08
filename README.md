@@ -337,6 +337,34 @@ upgrade/downgrade, order win, management change, regulatory action — shown as
 chips and logged; the hit-rate panel shows what followed each fact type.
 Scoring counts one prediction per stock per day.
 
+### Today page, health, alerts, events
+
+- **Today** (top of the dashboard): the latest monitor run on one screen —
+  alerts, health chips, NIFTY volatility, watchlist, ranking, earnings events,
+  paper portfolio and scorecard. *Run now* re-runs the monitor in-process.
+- **Health checks** (`/api/health`): market data, news feed, AI key present
+  (never its value), intraday-store freshness, calibration age, scoring
+  progress, last monitor run.
+- **Alerts**: held stock with a results event, NIFTY options unusually rich or
+  cheap vs forecast, news tilt switched off, probabilities worse than a
+  coin-flip after 30+ scored, failing health checks, new events.
+  `node paper-bot/monitor.mjs --notify` shows them as macOS notifications.
+- **Earnings & rating events** (`paper-bot/events.mjs`): results beat / miss /
+  in-line, upgrades / downgrades and guidance changes from NIFTY 50 news are
+  recorded with the price, then returns at +1 / +5 / +20 trading days vs NIFTY
+  are measured (post-earnings drift, tracked going forward).
+  Facts are only kept when the headline Ling cites actually supports them;
+  previews, business updates, older quarters, foreign namesakes ("Titan
+  Machinery", "Severn Trent", "Bel Fuse") and plain ratings without a change
+  are rejected.
+- **Ranking universes**: NIFTY 50 / 100 / 200 / 500 from NSE's official lists
+  (`npm run ranking`), sort the live ranking by any signal.
+- **Groww** (with `GROWW_ACCESS_TOKEN`): `npm run backfill` adds ~120 days of
+  intraday history; the volatility check reads ATM IV and the put/call OI ratio
+  from Groww's option chain (default expiry: last Tuesday of the month).
+- **Scheduled** (Claude app): monitor 10:00 / 13:00 / 15:00 IST weekdays,
+  collector ~16:00 weekdays, model refit Saturdays 10:00.
+
 ### API endpoints
 
 | Endpoint | Method | Purpose |
@@ -369,6 +397,11 @@ Scoring counts one prediction per stock per day.
 | `/api/ranking-eval` | POST | Ranking replay `{horizon: 20|40|60, symbols?}` |
 | `/api/vol-check` | GET | Implied vs forecast vol `?symbol=&iv=&days=` |
 | `/api/vol-eval` | POST | Volatility forecast replay |
+| `/api/health` | GET | Health checks |
+| `/api/events` | GET | Tracked earnings/rating events + drift stats |
+| `/api/events/scan` | POST | Scan news for new events `{universe?|symbols?}` |
+| `/api/today` | GET | Latest monitor report + health |
+| `/api/today/run` | POST | Run the investor monitor now |
 
 Bad input returns **400** with a readable message, unknown symbols **404**,
 a missing API key **503**.

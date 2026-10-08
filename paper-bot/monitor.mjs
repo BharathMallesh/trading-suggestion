@@ -9,15 +9,23 @@
 //   3. Applies today's daily signals to the paper portfolio.
 //   4. Scorecard from all scored predictions: hit-rate, Brier vs simple
 //      baselines, does Ling help, does the news tilt help.
+//   5. Health checks, NIFTY implied-vs-forecast volatility, ranking, and the
+//      earnings-event tracker (scan NIFTY 50 news for results beats/misses).
+//   6. Alerts (held stock with a results event, options unusually rich/cheap,
+//      tilt switched off, failing health checks, …) — optional macOS
+//      notification with --notify.
 // Writes paper-bot/monitor/<date>-<time>.json and appends to journal.md.
+// The dashboard's "Today" page runs the same function in-process.
 //
 //   node paper-bot/monitor.mjs                 # default http://127.0.0.1:3000
 //   MONITOR_URL=http://127.0.0.1:3001 node paper-bot/monitor.mjs
 //   node paper-bot/monitor.mjs --no-trade      # skip the paper portfolio step
+//   node paper-bot/monitor.mjs --notify        # macOS notification for alerts
 //
 // Research / paper simulation only. Not investment advice.
 
-import { mkdirSync, writeFileSync, appendFileSync, existsSync } from 'fs';
+import { mkdirSync, writeFileSync, appendFileSync, existsSync, readdirSync, readFileSync } from 'fs';
+import { execFile } from 'child_process';
 import { dirname, join } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { dedupeDaily } from './prediction-log.mjs';
@@ -25,18 +33,61 @@ import { dedupeDaily } from './prediction-log.mjs';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const OUT = process.env.MONITOR_DIR || join(HERE, 'monitor');
 const BASE = process.env.MONITOR_URL || 'http://127.0.0.1:3000';
-const args = process.argv.slice(2);
-const trade = !args.includes('--no-trade');
 
-async function api(path, body) {
-  const res = await fetch(BASE + path, body === undefined ? {} : {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(`${path}: ${data.error || res.status}`);
-  return data;
+/** JSON client for the dashboard server at `base`. */
+function client(base) {
+  return async function api(path, body) {
+    const res = await fetch(base + path, body === undefined ? {} : {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(`${path}: ${data.error || res.status}`);
+    return data;
+  };
+}
+
+/**
+ * Alerts worth an investor's attention (factual; never "buy/sell").
+ * @returns {{ level:'high'|'info', text:string }[]}
+ */
+export function computeAlerts(r) {
+  const out = [];
+  for (const c of r.health?.checks || []) {
+    if (c.level === 'fail') out.push({ level: 'high', text: `Health: ${c.name} failing — ${c.detail}` });
+    else if (c.level === 'warn' && ['intraday store', 'calibration', 'scoring'].includes(c.name)) out.push({ level: 'info', text: `Health: ${c.name} — ${c.detail}` });
+  }
+  const held = new Set((r.portfolio?.positions || []).map((p) => p.symbol));
+  for (const w of r.watchlist || []) {
+    if (held.has(w.symbol) && (w.events || []).includes('results')) out.push({ level: 'high', text: `${w.symbol} (held in paper portfolio): results event in the news — moves are usually larger.` });
+  }
+  const v = r.volatility;
+  if (v?.ratio >= 1.3) out.push({ level: 'info', text: `NIFTY options pricing ${((v.ratio - 1) * 100).toFixed(0)}% more volatility than forecast (India VIX ${v.impliedPct?.toFixed(1)}%).` });
+  if (v?.ratio && v.ratio <= 0.8) out.push({ level: 'info', text: `NIFTY options pricing ${((1 - v.ratio) * 100).toFixed(0)}% less volatility than forecast (India VIX ${v.impliedPct?.toFixed(1)}%).` });
+  if (r.evaluation?.newsValue?.tilt?.autoDisabled) out.push({ level: 'high', text: 'News tilt switched itself off: scored predictions show it does not help.' });
+  if (r.scorecard?.scored >= 30 && r.scorecard.brier.app >= r.scorecard.brier.uniform) out.push({ level: 'high', text: `Probabilities are doing no better than a coin-flip after ${r.scorecard.scored} scored predictions.` });
+  for (const e of r.events?.added || []) out.push({ level: 'info', text: `New event: ${e.symbol} ${e.type} (at ${Number(e.price).toFixed(2)}) — tracked for 1/5/20-day drift.` });
+  for (const a of r.portfolio?.actions || []) out.push({ level: 'info', text: `Paper portfolio: ${a.action} ${a.symbol}.` });
+  return out;
+}
+
+/** macOS desktop notification (no-op elsewhere). Text passed as an argument, never interpolated into a script. */
+export function notify(title, message) {
+  if (process.platform !== 'darwin') return;
+  execFile('osascript', ['-e', 'on run argv', '-e', 'display notification (item 2 of argv) with title (item 1 of argv)', '-e', 'end run', title, message.slice(0, 220)], () => {});
+}
+
+/** Latest saved monitor report (for the Today page), or null. */
+export function latestReport() {
+  if (!existsSync(OUT)) return null;
+  const files = readdirSync(OUT).filter((f) => f.endsWith('.json')).sort();
+  if (!files.length) return null;
+  try {
+    return JSON.parse(readFileSync(join(OUT, files[files.length - 1]), 'utf8'));
+  } catch {
+    return null;
+  }
 }
 
 /** NSE session status in IST, independent of this machine's timezone. */
@@ -83,7 +134,12 @@ export function scorecard(entries) {
   return out;
 }
 
-async function main() {
+/**
+ * One monitoring run against the dashboard server at `base`.
+ * @returns {Promise<object>} the saved report
+ */
+export async function runMonitor({ base = BASE, trade = true, notify: doNotify = false } = {}) {
+  const api = client(base);
   const startedAt = new Date().toISOString();
   const market = marketStatus();
   const { settings } = await api('/api/settings');
@@ -125,6 +181,21 @@ async function main() {
     ranking = { error: err.message };
   }
 
+  // 1c. Health + earnings-event tracker (NIFTY 50 news; one AI reading per stock per day)
+  let health = null;
+  try {
+    health = await api('/api/health');
+  } catch (err) {
+    health = { level: 'fail', checks: [{ name: 'health endpoint', level: 'fail', detail: err.message }] };
+  }
+  let events = null;
+  try {
+    const sc = await api('/api/events/scan', { universe: 'nifty50' });
+    events = { added: sc.added, stats: sc.stats, tracked: sc.tracked };
+  } catch (err) {
+    events = { error: err.message };
+  }
+
   // 2. Score due predictions
   const evalRes = await api('/api/prediction-evaluate', {});
   const { entries } = await api('/api/prediction-history?limit=500');
@@ -146,11 +217,18 @@ async function main() {
     scorecard: card,
     volatility: vol,
     ranking,
+    health,
+    events,
     portfolio: pf && !pf.error
       ? { equity: pf.equity, returnPct: pf.returnPct, cash: pf.cash, charges: pf.totalCharges, positions: pf.positions.map((p) => ({ symbol: p.symbol, qty: p.qty, entry: p.entryPrice, last: p.mark, pnl: p.unrealized })), actions: pf.actions.filter((a) => ['buy', 'close'].includes(a.action)) }
       : pf,
     disclaimer: 'Research / paper simulation only. Not investment advice.',
   };
+  report.alerts = computeAlerts(report);
+  if (doNotify && report.alerts.length) {
+    const top = report.alerts.filter((a) => a.level === 'high').concat(report.alerts.filter((a) => a.level !== 'high'));
+    notify(`Trading research · ${report.alerts.length} alert${report.alerts.length > 1 ? 's' : ''}`, top.slice(0, 3).map((a) => a.text).join(' · '));
+  }
 
   mkdirSync(OUT, { recursive: true });
   const stamp = market.ist.replace(' IST', '').replace(/[: ]/g, '-'); // IST, e.g. 2026-10-08-10-29
@@ -164,6 +242,15 @@ async function main() {
   const notable = rows.filter((r) => r.events?.length || Math.abs(r.sentiment ?? 0) >= 0.6).map((r) => `${r.symbol.replace('.NS', '')}${r.events?.length ? '⚠' : ''}${r.sentiment != null ? ` ${r.sentiment > 0 ? '+' : ''}${r.sentiment}` : ''}`).join(', ');
   appendFileSync(journal, `| ${market.ist} | ${market.open ? 'open' : 'closed'} | ${card.scored} | ${card.hitRatePct != null ? card.hitRatePct.toFixed(0) + '%' : '–'} | ${f(card.brier?.app)} / ${f(card.brier?.uniform)} / ${f(card.brier?.beforeLing)} | ${v.llmValue?.n ? v.llmValue.verdict : 'n/a'} | ${v.newsValue?.tilt?.n ? v.newsValue.tilt.verdict : 'n/a'} | ${report.portfolio?.equity != null ? '₹' + report.portfolio.equity.toFixed(0) : '–'} | ${notable || '–'} |\n`);
 
+  report.files = { json: join(OUT, `${stamp}.json`), journal };
+  return report;
+}
+
+/** Console summary of a report (CLI). */
+function printReport(report) {
+  const { market, watchlist: rows, scorecard: card, volatility: vol, ranking, evaluation: v } = report;
+  const f = (x) => (x == null ? '–' : x.toFixed(4));
+  const symbols = rows.map((r) => r.symbol);
   // Console summary
   const pct = (x) => (x * 100).toFixed(0).padStart(2);
   console.log(`\nINVESTOR MONITOR · ${market.ist} · market ${market.open ? 'OPEN' : 'closed'} · ${symbols.length} stocks`);
@@ -176,7 +263,7 @@ async function main() {
     console.log(`${r.symbol.padEnd(14)} ${String(r.last?.toFixed(1)).padStart(8)}  ${pct(r.up)}/${pct(r.down)}/${pct(r.side)}      ${r.bias.padEnd(8)}  ${String(r.edge).padEnd(5)}  ${r.aiAdjusted ? 'y' : '-'}  ${r.sentiment == null ? '  n/a' : (r.sentiment > 0 ? '+' : '') + r.sentiment.toFixed(1).padStart(4)}  ${r.tiltPts ? (r.tiltPts > 0 ? '+' : '') + r.tiltPts.toFixed(1) : '  0 '}   ${r.atrPct != null ? r.atrPct.toFixed(2) + '%' : '–'}  ${r.events.join(', ')}`);
   }
   if (vol && !vol.error) console.log(`\nNIFTY volatility: implied (India VIX) ${vol.impliedPct?.toFixed(1)}% vs forecast ${vol.forecastPct?.toFixed(1)}% (ratio ${vol.ratio?.toFixed(2)}) — ${vol.reading}`);
-  if (ranking && !ranking.error) console.log(`Ranking (composite, ${ranking.asOf}): top ${ranking.top.map((s) => s.replace('.NS', '')).join(', ')} · bottom ${ranking.bottom.map((s) => s.replace('.NS', '')).join(', ')} (no historical evidence yet — see Stock ranking → Evidence)`);
+  if (ranking && !ranking.error) console.log(`Ranking (composite, ${ranking.asOf}): top ${ranking.top.map((s) => s.replace('.NS', '')).join(', ')} · bottom ${ranking.bottom.map((s) => s.replace('.NS', '')).join(', ')} (check Stock ranking → Evidence before relying on it)`);
   console.log(`\nScoring: checked ${v.checked}, newly scored ${v.newlyScored}. ${card.verdict || 'No scored predictions yet.'}`);
   if (card.scored) {
     console.log(`  Hit-rate ${card.hitRatePct.toFixed(0)}% · Brier app ${f(card.brier.app)} vs coin-flip ${f(card.brier.uniform)} vs hindsight base rates ${f(card.brier.hindsightBaseRates)}${card.brier.beforeLing != null ? ` · before Ling ${f(card.brier.beforeLing)}` : ''}`);
@@ -187,13 +274,23 @@ async function main() {
     const p = report.portfolio;
     console.log(`\nPaper portfolio: ₹${p.equity.toFixed(0)} (${p.returnPct >= 0 ? '+' : ''}${p.returnPct.toFixed(2)}%), ${p.positions.length} open, charges ₹${p.charges.toFixed(0)}${p.actions.length ? ' · today: ' + p.actions.map((a) => `${a.action} ${a.symbol}`).join(', ') : ' · no trades today'}`);
   } else if (report.portfolio?.error) console.log(`\nPaper portfolio error: ${report.portfolio.error}`);
-  console.log(`\nSaved ${join(OUT, stamp + '.json')} · journal ${journal}`);
+  if (report.health) console.log(`\nHealth: ${report.health.level.toUpperCase()} — ${report.health.checks.filter((c) => c.level !== 'ok').map((c) => `${c.name}: ${c.detail}`).join(' · ') || 'all checks ok'}`);
+  if (report.events && !report.events.error) console.log(`Events: ${report.events.tracked} tracked${report.events.added.length ? ` · new: ${report.events.added.map((e) => `${e.symbol} ${e.type}`).join(', ')}` : ''}`);
+  if (report.alerts?.length) {
+    console.log('\nALERTS:');
+    for (const a of report.alerts) console.log(`  ${a.level === 'high' ? '!!' : ' •'} ${a.text}`);
+  }
+  console.log(`\nSaved ${report.files.json} · journal ${report.files.journal}`);
   console.log('Research / paper simulation only. Not investment advice.');
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  main().catch((err) => {
-    console.error(`Monitor failed: ${err.message}\nIs the dashboard running at ${BASE}? (node server.mjs, with OPENROUTER_API_KEY set)`);
-    process.exit(1);
-  });
+  const args = process.argv.slice(2);
+  runMonitor({ base: BASE, trade: !args.includes('--no-trade'), notify: args.includes('--notify') })
+    .then(printReport)
+    .catch((err) => {
+      console.error(`Monitor failed: ${err.message}\nIs the dashboard running at ${BASE}? (node server.mjs, with OPENROUTER_API_KEY set)`);
+      if (args.includes('--notify')) notify('Trading research monitor failed', err.message);
+      process.exit(1);
+    });
 }

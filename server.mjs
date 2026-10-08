@@ -35,6 +35,10 @@ import { currentSettings, saveSettings, resetSettings } from './paper-bot/settin
 import * as portfolio from './paper-bot/portfolio.mjs';
 import { evaluateRanking, liveRanking } from './paper-bot/ranking.mjs';
 import { volCheck, evaluateVolForecasts } from './paper-bot/volatility.mjs';
+import { healthChecks } from './paper-bot/health.mjs';
+import { scanEvents, updateEventReturns, eventStats, loadEvents } from './paper-bot/events.mjs';
+import { runMonitor, latestReport } from './paper-bot/monitor.mjs';
+import { loadIndexList } from './paper-bot/ranking.mjs';
 import { HttpError, badRequest, parseSymbols, parseBool, mapLimit } from './util.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -450,17 +454,44 @@ const server = http.createServer(async (req, res) => {
 
     // --- Cross-sectional ranking (weeks–months) ---
     if (req.method === 'GET' && url.pathname === '/api/rankings') {
-      return json(res, 200, await liveRanking({ symbols: parseSymbols(url.searchParams.get('symbols')) }));
+      return json(res, 200, await liveRanking({
+        symbols: parseSymbols(url.searchParams.get('symbols')),
+        universe: url.searchParams.get('universe') || undefined,
+        sortBy: url.searchParams.get('sortBy') || undefined,
+      }));
     }
     if (req.method === 'POST' && url.pathname === '/api/ranking-eval') {
       const body = await readJson(req);
-      return json(res, 200, await evaluateRanking({ horizon: Number(body.horizon) || 20, symbols: parseSymbols(body.symbols) }));
+      return json(res, 200, await evaluateRanking({ horizon: Number(body.horizon) || 20, symbols: parseSymbols(body.symbols), universe: body.universe || undefined }));
+    }
+
+    // --- Health, events, Today ---
+    if (req.method === 'GET' && url.pathname === '/api/health') {
+      return json(res, 200, await healthChecks());
+    }
+    if (req.method === 'POST' && url.pathname === '/api/events/scan') {
+      const body = await readJson(req);
+      const symbols = parseSymbols(body.symbols).length ? parseSymbols(body.symbols) : (await loadIndexList(body.universe || 'nifty50')).symbols;
+      const added = await scanEvents(symbols);
+      await updateEventReturns();
+      return json(res, 200, { added, tracked: loadEvents().length, stats: eventStats() });
+    }
+    if (req.method === 'GET' && url.pathname === '/api/events') {
+      return json(res, 200, { events: loadEvents().slice(-100).reverse(), stats: eventStats() });
+    }
+    if (req.method === 'GET' && url.pathname === '/api/today') {
+      return json(res, 200, { report: latestReport(), health: await healthChecks() });
+    }
+    if (req.method === 'POST' && url.pathname === '/api/today/run') {
+      // Runs the investor monitor in-process against this same server.
+      const report = await runMonitor({ base: `http://127.0.0.1:${PORT}`, trade: true });
+      return json(res, 200, { report, health: report.health });
     }
 
     // --- Volatility: implied vs forecast ---
     if (req.method === 'GET' && url.pathname === '/api/vol-check') {
       const p = url.searchParams;
-      return json(res, 200, await volCheck({ symbol: p.get('symbol') || '^NSEI', iv: p.get('iv') || undefined, days: Number(p.get('days') || 7) }));
+      return json(res, 200, await volCheck({ symbol: p.get('symbol') || '^NSEI', iv: p.get('iv') || undefined, days: Number(p.get('days') || 7), expiry: p.get('expiry') || undefined }));
     }
     if (req.method === 'POST' && url.pathname === '/api/vol-eval') {
       const body = await readJson(req);

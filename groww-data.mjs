@@ -106,6 +106,74 @@ export async function historicalCandles(p = {}) {
     });
 }
 
+/**
+ * Default monthly expiry for NSE stock options: the last Tuesday of the month
+ * (NSE's expiry day since Sept 2025); if that has passed, next month's.
+ * Exchange calendars change — pass an explicit expiry when in doubt.
+ */
+export function defaultMonthlyExpiry(now = new Date()) {
+  const ist = new Date(now.getTime() + 19800_000);
+  for (let add = 0; add < 2; add++) {
+    const y = ist.getUTCFullYear();
+    const m = ist.getUTCMonth() + add;
+    const last = new Date(Date.UTC(y, m + 1, 0));
+    while (last.getUTCDay() !== 2) last.setUTCDate(last.getUTCDate() - 1);
+    const iso = last.toISOString().slice(0, 10);
+    if (iso >= ist.toISOString().slice(0, 10)) return iso;
+  }
+  return null;
+}
+
+/**
+ * Option chain (READ-ONLY) from Groww: ATM implied volatility and the
+ * put/call open-interest ratio. Endpoint per Groww Trade API docs:
+ * GET /v1/option-chain/exchange/{exchange}/underlying/{underlying}?expiry_date=YYYY-MM-DD
+ * @returns {Promise<{underlying:string, expiry:string, spot:number, atmStrike:number, atmIvPct:number|null, pcr:number|null, strikes:number}>}
+ */
+export async function optionChain({ underlying, expiry, exchange = 'NSE', signal } = {}) {
+  const u = String(underlying || '').trim().toUpperCase().replace(/\.(NS|BO)$/, '');
+  if (!u) throw badRequest('An underlying is required, e.g. "TCS" or "NIFTY".');
+  const exp = expiry || defaultMonthlyExpiry();
+  if (!/^\d{4}-\d\d-\d\d$/.test(String(exp))) throw badRequest('Pass the expiry as YYYY-MM-DD.');
+  const url = `${BASE}/v1/option-chain/exchange/${encodeURIComponent(exchange)}/underlying/${encodeURIComponent(u)}?expiry_date=${exp}`;
+  const res = await fetch(url, { headers: authHeaders(), signal });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new HttpError(502, `Groww option chain HTTP ${res.status}: ${body.slice(0, 200)}`);
+  }
+  const data = await res.json();
+  return summarizeChain(data?.payload ?? data, { underlying: u, expiry: exp });
+}
+
+/** ATM IV (average of CE/PE at the strike nearest spot) and OI put/call ratio. */
+export function summarizeChain(payload, meta = {}) {
+  const spot = Number(payload?.underlying_ltp);
+  const strikes = payload?.strikes && typeof payload.strikes === 'object' ? payload.strikes : {};
+  const keys = Object.keys(strikes).map(Number).filter(Number.isFinite);
+  if (!keys.length || !(spot > 0)) throw new HttpError(502, 'Groww option chain: unexpected response (no strikes / spot).');
+  const atm = keys.reduce((a, k) => (Math.abs(k - spot) < Math.abs(a - spot) ? k : a), keys[0]);
+  const leg = strikes[String(atm)] || strikes[atm] || {};
+  // Groww may report IV as a fraction (0.22) or a percentage (22).
+  const ivPct = (x) => (x == null || !Number.isFinite(Number(x)) ? null : Number(x) < 3 ? Number(x) * 100 : Number(x));
+  const ivs = [ivPct(leg.CE?.greeks?.iv), ivPct(leg.PE?.greeks?.iv)].filter((v) => v != null && v > 0);
+  let ceOi = 0;
+  let peOi = 0;
+  for (const k of keys) {
+    const s = strikes[String(k)] || strikes[k] || {};
+    ceOi += Number(s.CE?.open_interest) || 0;
+    peOi += Number(s.PE?.open_interest) || 0;
+  }
+  return {
+    underlying: meta.underlying,
+    expiry: meta.expiry,
+    spot,
+    atmStrike: atm,
+    atmIvPct: ivs.length ? ivs.reduce((a, b) => a + b, 0) / ivs.length : null,
+    pcr: ceOi ? peOi / ceOi : null,
+    strikes: keys.length,
+  };
+}
+
 /** Convenience: one full NSE session (09:15–15:30 IST) for a date. */
 export async function daySession(symbol, dateStr, opts = {}) {
   const ds = String(dateStr || '');
