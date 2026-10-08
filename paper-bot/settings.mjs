@@ -26,6 +26,9 @@ export const NUMERIC = {
   'costs.slippagePct': [0, 1],
 };
 
+// key → boolean settings
+export const BOOLEAN = { llmAdjust: true };
+
 const DEFAULTS = JSON.parse(JSON.stringify({ ...PAPER, costs: { ...DEFAULT_COSTS, ...(PAPER.costs || {}) } }));
 
 /** Current effective values of the editable settings. */
@@ -33,6 +36,7 @@ export function currentSettings() {
   const out = { symbols: [...PAPER.symbols] };
   const costs = { ...DEFAULT_COSTS, ...(PAPER.costs || {}) };
   for (const k of Object.keys(NUMERIC)) out[k] = k.startsWith('costs.') ? costs[k.slice(6)] : PAPER[k];
+  for (const [k, d] of Object.entries(BOOLEAN)) out[k] = PAPER[k] ?? d;
   return out;
 }
 
@@ -44,6 +48,9 @@ export function validate(patch = {}) {
       const list = parseSymbols(v).map((s) => s.toUpperCase());
       if (!list.length || list.length > 30) throw badRequest('Symbols: give 1–30 tickers.');
       out.symbols = list;
+    } else if (k in BOOLEAN) {
+      if (![true, false, 'true', 'false'].includes(v)) throw badRequest(`${k} must be true or false.`);
+      out[k] = v === true || v === 'true';
     } else if (NUMERIC[k]) {
       const n = Number(v);
       const [lo, hi] = NUMERIC[k];
@@ -91,6 +98,7 @@ export function resetSettings() {
   }
   apply(Object.fromEntries(Object.keys(NUMERIC).map((k) => [k, k.startsWith('costs.') ? DEFAULTS.costs[k.slice(6)] : DEFAULTS[k]])));
   PAPER.symbols = [...DEFAULTS.symbols];
+  for (const [k, d] of Object.entries(BOOLEAN)) PAPER[k] = d;
   return currentSettings();
 }
 

@@ -424,6 +424,37 @@ rates for NIFTYBEES), trading only on their own schedules (A and B2 monthly);
 the monitor updates them every run. Results from here on can't be
 hindsight-fitted — judge after many months.
 
+### Call / Put payoff odds (volatility-based)
+
+Dashboard → Call / Put payoff odds, or `node paper-bot/option-odds.mjs TCS.NS CE 2150 25 7`:
+the chance an option ends **above breakeven** at expiry (CE: strike + premium,
+PE: strike − premium) from the volatility forecast — normal and fat-tailed
+(the stock's own past moves) — vs the chance implied by the option's price,
+plus fair value at forecast vol vs the premium. `--eval` replays 5 years:
+predicted vs observed frequencies line up (e.g. 32% → 32%, 72% → 73%).
+
+### Is Ling worth it? (replay)
+
+`OPENROUTER_API_KEY=… node paper-bot/ling-replay.mjs --n 200 --apply` replays
+past moments through the identical Ling prompt, **anonymised** (no names,
+dates or real prices, so the model can't recall what happened), and compares
+the Brier score with vs without Ling's adjustment. Rule fixed in advance:
+keep it only if it helps with t ≤ −2; `--apply` sets Settings → llmAdjust.
+
+### FII positioning test
+
+`node paper-bot/fii.mjs` (dashboard → Model evaluation → FII positioning test)
+downloads NSE's daily participant-wise open interest (cached; polite; stops if
+NSE blocks) and tests whether FII index-futures / options positioning predicted
+NIFTY's next 5 / 20 sessions. Result so far: no reliable evidence — shown as
+context only, not used in predictions.
+
+### Context model replication
+
+The context model must now also beat calibration on 10 NIFTY 50 stocks it
+never saw (`HOLDOUT_UNIVERSE`) before it is used live. Oct 2026: 5-min (+4.0%
+on unseen stocks) and daily (+0.5%) pass; 15-min and 60-min are off.
+
 ### API endpoints
 
 | Endpoint | Method | Purpose |
@@ -465,6 +496,9 @@ hindsight-fitted — judge after many months.
 | `/api/strategy-accounts` | GET | Forward-test paper accounts |
 | `/api/strategy-accounts/rebalance` | POST | Run the accounts' schedules + mark to market |
 | `/api/strategy-accounts/reset` | POST | Restart the forward test `{capital}` |
+| `/api/option-odds` | GET | Payoff odds `?symbol=&type=&strike=&premium=&iv=&days=` |
+| `/api/option-odds-eval` | POST | Calibration replay of the odds |
+| `/api/fii-test` | POST | FII positioning test |
 
 Bad input returns **400** with a readable message, unknown symbols **404**,
 a missing API key **503**.

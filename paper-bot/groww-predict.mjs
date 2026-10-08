@@ -351,6 +351,57 @@ export function applyNewsTilt(prediction, sentiment, { maxPts = PAPER.newsTiltPt
   return { applied: true, sentiment: s, shiftPts: shift * 100, before };
 }
 
+
+/**
+ * Ling's bounded adjustment of the base probabilities (shared by live
+ * Call/Put and the Ling replay so both use the identical prompt + parsing).
+ * Skipped entirely when Settings → llmAdjust is false.
+ * @returns {Promise<{prediction: object, llmError: string|null, raw: string}>}
+ */
+export async function lingAdjust({ meta, rows, ind, base, score, horizons }) {
+  if (PAPER.llmAdjust === false) {
+    return { prediction: parseProb('', base, 'Ling adjustment is switched off in Settings (the replay showed it does not help).'), llmError: null, raw: '' };
+  }
+  const user = buildUserPayload(meta, rows, ind, base, score, horizons);
+
+  let raw = '';
+  let llmError = null;
+  try {
+    raw = await chat(
+      [
+        { role: 'system', content: SYSTEM },
+        { role: 'user', content: user },
+      ],
+      { temperature: 0.15, timeoutMs: 45_000, jsonKeys: ['probUp', 'probDown'], retryEmpty: 0 },
+    );
+  } catch (err) {
+    raw = '';
+    llmError = err.message || String(err);
+  }
+
+  // Retry once with a compact prompt if the reply was empty / not JSON —
+  // but not when the key is missing (it would fail identically).
+  if (!/OPENROUTER_API_KEY/.test(llmError || '') && (!String(raw || '').trim() || !String(raw).match(/\{[\s\S]*\}/))) {
+    try {
+      raw = await chat(
+        [
+          { role: 'system', content: SYSTEM },
+          {
+            role: 'user',
+            content: `${meta.symbol} multiHorizonScore=${score.toFixed(2)} base up=${base.probUp.toFixed(2)} down=${base.probDown.toFixed(2)} side=${base.probSideways.toFixed(2)} RSI=${ind.rsi14?.toFixed(1)}. Adjust ≤0.15 and return JSON.`,
+          },
+        ],
+        { temperature: 0.1, timeoutMs: 30_000, jsonKeys: ['probUp', 'probDown'], retryEmpty: 0 },
+      );
+      llmError = null;
+    } catch (err) {
+      llmError = err.message || String(err);
+    }
+  }
+
+  return { prediction: parseProb(raw, base, llmError), llmError, raw };
+}
+
 /** Weights for multi-horizon blend (must sum ~1). Longer horizons = structure; short = timing. */
 const HORIZON_WEIGHTS = {
   m2: 0.2, // ~2 months daily
@@ -432,7 +483,7 @@ function weightedBlend(windows) {
   return { base: normalizeProbs(up, down, side), score };
 }
 
-function buildUserPayload(meta, rows, ind, base, score, horizons) {
+export function buildUserPayload(meta, rows, ind, base, score, horizons) {
   const last = rows[rows.length - 1];
   const tail = rows.slice(-6);
   const lines = tail
@@ -626,44 +677,7 @@ export async function growwProbability(symbol, opts = {}) {
     ];
   }
 
-  const user = buildUserPayload(meta, meta.rows, ind, base, score, horizons);
-
-  let raw = '';
-  let llmError = null;
-  try {
-    raw = await chat(
-      [
-        { role: 'system', content: SYSTEM },
-        { role: 'user', content: user },
-      ],
-      { temperature: 0.15, timeoutMs: 45_000, jsonKeys: ['probUp', 'probDown'], retryEmpty: 0 },
-    );
-  } catch (err) {
-    raw = '';
-    llmError = err.message || String(err);
-  }
-
-  // Retry once with a compact prompt if the reply was empty / not JSON —
-  // but not when the key is missing (it would fail identically).
-  if (!/OPENROUTER_API_KEY/.test(llmError || '') && (!String(raw || '').trim() || !String(raw).match(/\{[\s\S]*\}/))) {
-    try {
-      raw = await chat(
-        [
-          { role: 'system', content: SYSTEM },
-          {
-            role: 'user',
-            content: `${meta.symbol} multiHorizonScore=${score.toFixed(2)} base up=${base.probUp.toFixed(2)} down=${base.probDown.toFixed(2)} side=${base.probSideways.toFixed(2)} RSI=${ind.rsi14?.toFixed(1)}. Adjust ≤0.15 and return JSON.`,
-          },
-        ],
-        { temperature: 0.1, timeoutMs: 30_000, jsonKeys: ['probUp', 'probDown'], retryEmpty: 0 },
-      );
-      llmError = null;
-    } catch (err) {
-      llmError = err.message || String(err);
-    }
-  }
-
-  const prediction = parseProb(raw, base, llmError);
+  const { prediction } = await lingAdjust({ meta, rows: meta.rows, ind, base, score, horizons });
   const news = newsP ? await newsP : null;
   // Around results, pre-results "preview" sentiment says little about the
   // outcome — halve the tilt while a results event is in the headlines.

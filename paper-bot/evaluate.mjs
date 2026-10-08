@@ -46,6 +46,15 @@ export const EVAL_SETTINGS = {
   '5m': { range: '1mo', interval: '5m', horizon: 4, label: '5-min · next 4 bars (~20 min)' },
 };
 
+/**
+ * Replication set: NIFTY 50 names NOT in the fitting universe. The context
+ * model must also beat calibration here (never seen in training) to go live.
+ */
+export const HOLDOUT_UNIVERSE = [
+  'HCLTECH.NS', 'WIPRO.NS', 'TECHM.NS', 'ULTRACEMCO.NS', 'TATASTEEL.NS',
+  'JSWSTEEL.NS', 'ONGC.NS', 'CIPLA.NS', 'NESTLEIND.NS', 'POWERGRID.NS',
+];
+
 /** Default fitting universe (defined in config.mjs; re-exported for callers). */
 export { EVAL_UNIVERSE };
 
@@ -276,6 +285,7 @@ export async function evaluateModels(opts = {}) {
   // lucky stretch can't switch it on.
   let contextMode = null;
   let stability = null;
+  let holdout = null;
   if (ctx) {
     const best = metrics.contextMove.brier <= metrics.context.brier ? 'contextMove' : 'context';
     const sorted = [...test].sort((a, b) => (a.date < b.date ? -1 : 1));
@@ -283,7 +293,29 @@ export async function evaluateModels(opts = {}) {
     const gain = (part) => part.reduce((a, x) => a + brier(predictors.calibrated(x), x.label) - brier(predictors[best](x), x.label), 0) / part.length;
     stability = { model: best, gainFirstHalf: gain(halves[0]), gainSecondHalf: gain(halves[1]) };
     const stable = stability.gainFirstHalf > 0 && stability.gainSecondHalf > 0;
-    if (stable && metrics[best].skillPct - metrics.calibrated.skillPct >= 0.2) contextMode = best === 'contextMove' ? 'move' : 'full';
+    let replicated = true;
+    if (opts.holdout !== false) {
+      // Replication on stocks the model never saw (fitted parts unchanged).
+      const hs = [];
+      for (const sym of opts.holdoutSymbols || HOLDOUT_UNIVERSE) {
+        try {
+          const rows = await load(sym, { range: cfg.range, interval: cfg.interval });
+          hs.push(...buildSamples(rows, cfg.horizon, prepare(rows, ctx)).filter((x) => x.f));
+        } catch {
+          /* skip */
+        }
+      }
+      if (hs.length >= 100) {
+        const b = (pred) => hs.reduce((a, x) => a + brier(pred(x), x.label), 0) / hs.length;
+        const cal = b(predictors.calibrated);
+        const ctxB = b(predictors[best]);
+        holdout = { symbols: (opts.holdoutSymbols || HOLDOUT_UNIVERSE).length, n: hs.length, brierCalibrated: cal, brierContext: ctxB, gainPct: (1 - ctxB / cal) * 100 };
+        replicated = ctxB < cal;
+      } else {
+        holdout = { n: hs.length, note: 'too few hold-out samples — replication not checked' };
+      }
+    }
+    if (stable && replicated && metrics[best].skillPct - metrics.calibrated.skillPct >= 0.2) contextMode = best === 'contextMove' ? 'move' : 'full';
   }
   const useContext = Boolean(contextMode);
   const contextModel = ctx ? fitLogistic(all0().map((x) => toRow(x.f, ALL_FEATURES)), all0().map((x) => x.label)) : null;
@@ -336,6 +368,7 @@ export async function evaluateModels(opts = {}) {
     useContext,
     contextMode,
     stability,
+    holdout,
     contextModel: contextModel && { features: ALL_FEATURES, ...contextModel },
     reliability: {
       current: reliability(test, predictors.current),
@@ -400,6 +433,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       if (r.ablation?.length) {
         console.log('\nAblation (context model, adding one feature group at a time):');
         for (const a of r.ablation) console.log(`  + ${a.group.padEnd(8)} ${String(a.features).padStart(2)} features  Brier ${a.brier.toFixed(4)}  skill ${pct(a.skillPct)}`);
+        if (r.holdout) console.log(r.holdout.gainPct != null ? `Replication on ${r.holdout.symbols} unseen stocks (n=${r.holdout.n}): context ${r.holdout.gainPct >= 0 ? 'beats' : 'loses to'} calibration by ${Math.abs(r.holdout.gainPct).toFixed(2)}%` : `Replication: ${r.holdout.note}`);
         if (r.stability) console.log(`Stability (Brier gain vs calibration, ${r.stability.model}): first half ${r.stability.gainFirstHalf.toFixed(4)} · second half ${r.stability.gainSecondHalf.toFixed(4)}`);
         console.log(r.useContext
           ? `Context model BEATS calibration (≥0.2 pts) → live would use it in "${r.contextMode}" mode${r.contextMode === 'move' ? ' (move-vs-sideways from context, up/down split from calibration)' : ''}.`

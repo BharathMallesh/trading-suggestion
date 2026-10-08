@@ -333,6 +333,30 @@
         <div id="evtOut" style="margin-top:12px"></div>
       </section>
 
+      <!-- Call / Put payoff odds -->
+      <section class="card span2">
+        <h2>Call / Put payoff odds <span style="font-size:12px;color:var(--warn);font-weight:500">VOLATILITY-BASED · RESEARCH</span></h2>
+        <p class="hint">
+          The question an option buyer faces: <b>what is the chance this option ends above breakeven at expiry?</b> Answered from the volatility
+          forecast (where the app has measured skill — replayed calibration: predicted ≈ observed), not from a direction call (where it has none).
+          Compares the forecast with what the option's own price implies, and its fair value at forecast volatility with the premium.
+          Leave premium blank to price it from implied vol (India VIX for NIFTY, IV you enter, or Groww's chain). Not a recommendation.
+        </p>
+        <div class="row">
+          <div><label>Symbol</label><input id="ooSym" value="^NSEI" /></div>
+          <div><label>Type</label><select id="ooType"><option>CE</option><option>PE</option></select></div>
+          <div><label>Strike</label><input id="ooStrike" type="number" step="any" placeholder="e.g. 22500" /></div>
+          <div><label>Premium (optional)</label><input id="ooPremium" type="number" step="any" placeholder="auto from IV" /></div>
+          <div><label>IV % (optional)</label><input id="ooIv" type="number" step="any" placeholder="auto" /></div>
+          <div><label>Days to expiry</label><input id="ooDays" type="number" value="7" /></div>
+        </div>
+        <div class="row" style="gap:8px">
+          <button id="ooBtn" type="button">Calculate odds</button>
+          <button id="ooEvalBtn" type="button" style="background:#0d1320;color:var(--ink);border:1px solid var(--line)">Are the odds calibrated? (replay)</button>
+        </div>
+        <div id="ooOut" style="margin-top:12px"></div>
+      </section>
+
       <!-- Volatility: implied vs forecast -->
       <section class="card span2">
         <h2>Volatility check <span style="font-size:12px;color:var(--warn);font-weight:500">OPTIONS · RESEARCH</span></h2>
@@ -412,6 +436,7 @@
           <button id="evRunBtn" type="button">Run replay</button>
           <button id="evFitBtn" type="button" style="background:#0d1320;color:var(--ink);border:1px solid var(--line)">Fit &amp; use calibration</button>
           <button id="evShowBtn" type="button" style="background:#0d1320;color:var(--ink);border:1px solid var(--line)">Saved calibration</button>
+          <button id="fiiBtn" type="button" style="background:#0d1320;color:var(--ink);border:1px solid var(--line)">FII positioning test</button>
         </div>
         <div id="evStatus" class="note" style="display:none"></div>
         <div id="evOut" style="margin-top:12px"></div>
@@ -1371,6 +1396,53 @@
       $('rkEvalBtn').addEventListener('click', () => rkRun('eval'));
 
 
+
+      // --- Call / Put payoff odds ---
+      $('ooBtn').addEventListener('click', async () => {
+        const out = $('ooOut');
+        out.textContent = 'Calculating…';
+        try {
+          const q = new URLSearchParams({ symbol: $('ooSym').value.trim(), type: $('ooType').value, strike: $('ooStrike').value, days: $('ooDays').value });
+          if ($('ooPremium').value) q.set('premium', $('ooPremium').value);
+          if ($('ooIv').value) q.set('iv', $('ooIv').value);
+          const o = await api('/api/option-odds?' + q.toString());
+          const pct = (x) => (x == null ? '–' : (x * 100).toFixed(1) + '%');
+          out.innerHTML = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+              <div style="background:#0d1320;border:1px solid var(--line);border-radius:10px;padding:12px;text-align:center">
+                <div style="font-size:12px;color:var(--muted)">Chance of profit at expiry · forecast</div>
+                <div style="font-size:30px;font-weight:700">${pct(o.probProfit.forecastHistory ?? o.probProfit.forecastNormal)}</div></div>
+              <div style="background:#0d1320;border:1px solid var(--line);border-radius:10px;padding:12px;text-align:center">
+                <div style="font-size:12px;color:var(--muted)">…as implied by the option's price</div>
+                <div style="font-size:30px;font-weight:700;color:var(--muted)">${pct(o.probProfit.impliedNormal)}</div></div>
+            </div>
+            <div class="kv">
+              <div>Option</div><div>${esc(o.symbol)} ${esc(o.type)} ${o.strike} · ${o.days} days · spot ${o.spot.toFixed(2)}</div>
+              <div>Premium</div><div>${o.premium.toFixed(2)} (${esc(o.premiumSource)})</div>
+              <div>Breakeven</div><div>${o.breakeven.toFixed(2)} — needs a ${o.breakevenMovePct >= 0 ? '+' : ''}${o.breakevenMovePct.toFixed(2)}% move</div>
+              <div>Volatility</div><div>forecast ${o.forecastVolPct.toFixed(1)}% (${esc(o.volModel)})${o.impliedVolPct != null ? ` · implied ${o.impliedVolPct.toFixed(1)}%` : ''}${o.eventPending ? ' · <span style="color:var(--warn)">results due — widened</span>' : ''}</div>
+              <div>Chance in the money</div><div>forecast ${pct(o.probItm.forecast)}${o.probItm.implied != null ? ` · implied ${pct(o.probItm.implied)}` : ''}</div>
+              <div>Profit odds (normal model)</div><div>${pct(o.probProfit.forecastNormal)} · history-based ${pct(o.probProfit.forecastHistory)}</div>
+              <div>Fair value at forecast vol</div><div>${o.fairValueForecast.toFixed(2)} vs premium ${o.premium.toFixed(2)}${o.premiumVsFairPct != null ? ` (${o.premiumVsFairPct >= 0 ? '+' : ''}${o.premiumVsFairPct.toFixed(0)}%)` : ''}</div>
+            </div>
+            <div style="margin-top:8px;font-size:14px">${esc(o.reading)}</div><div class="note">${esc(o.disclaimer)}</div>`;
+        } catch (e) {
+          out.innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
+        }
+      });
+      $('ooEvalBtn').addEventListener('click', async () => {
+        const out = $('ooOut');
+        out.textContent = 'Replaying 5 years of option-odds predictions…';
+        try {
+          const r = await api('/api/option-odds-eval', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+          out.innerHTML = '<table><thead><tr><th style="text-align:left">Method</th><th>Brier ↓</th><th>n</th></tr></thead><tbody>' +
+            Object.entries(r.summary).map(([k, v]) => `<tr${k === r.best ? ' style="font-weight:700"' : ''}><td style="text-align:left">${esc(k)}${k === r.best ? ' ★' : ''}</td><td>${v.brier.toFixed(4)}</td><td>${v.n}</td></tr>`).join('') + '</tbody></table>' +
+            `<div style="margin-top:8px;font-size:14px">Calibration (history method): ${r.reliability.map((b) => `predicted ${(b.meanPredicted * 100).toFixed(0)}% → happened ${(b.observed * 100).toFixed(0)}%`).join(' · ')}</div>
+            <div class="note">${esc(r.note)}</div>`;
+        } catch (e) {
+          out.innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
+        }
+      });
+
       // --- Volatility check ---
       $('vcBtn').addEventListener('click', async () => {
         const out = $('vcOut');
@@ -1788,6 +1860,28 @@
         } catch (e) {
           out.className = 'out err';
           out.textContent = 'Error: ' + e.message;
+        }
+      });
+
+
+      // --- FII positioning test ---
+      $('fiiBtn').addEventListener('click', async () => {
+        const out = $('evOut');
+        out.textContent = 'Fetching NSE participant open interest (cached after the first run) and testing…';
+        try {
+          const r = await api('/api/fii-test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+          const NAME = { longRatio: 'FII index-futures long ratio', longRatioZ: '…its z-score (60 days)', ratioChg5: '…its 5-day change', optNet: 'FII index-options net (calls − puts)' };
+          let html = `<div class="note">${r.days} sessions · ${esc(r.from)} → ${esc(r.to)} · does FII positioning predict NIFTY?</div>`;
+          for (const [h, x] of Object.entries(r.horizons)) {
+            html += `<div style="font-size:13px;margin-top:8px"><b>Next ${h} sessions</b> · ${x.periods} periods · NIFTY up ${(x.baseUpRate * 100).toFixed(0)}% of the time</div>
+              <table><thead><tr><th style="text-align:left">Feature</th><th>IC</th><th>t</th><th>1st / 2nd half</th><th>Up% when high / low</th><th>Evidence</th></tr></thead><tbody>` +
+              Object.entries(x.features).map(([f, v]) => `<tr><td style="text-align:left">${esc(NAME[f] || f)}</td><td>${v.ic.toFixed(3)}</td><td>${v.tStat.toFixed(2)}</td><td>${v.icFirstHalf.toFixed(3)} / ${v.icSecondHalf.toFixed(3)}</td><td>${(v.upRateWhenHigh * 100).toFixed(0)}% / ${(v.upRateWhenLow * 100).toFixed(0)}%</td><td style="font-weight:700;color:${v.evidence === 'strong' ? 'var(--up)' : v.evidence === 'weak' ? 'var(--warn)' : 'var(--muted)'}">${esc(v.evidence)}</td></tr>`).join('') + '</tbody></table>';
+          }
+          const l = r.latest;
+          html += `<div style="margin-top:8px;font-size:14px">Latest (${esc(l.date)}): FIIs are <b>${(l.longRatio * 100).toFixed(1)}% long</b> in index futures (z ${l.longRatioZ?.toFixed(2) ?? '–'} vs the last 60 days). Context only.</div><div class="note">${esc(r.note)}</div>`;
+          out.innerHTML = html;
+        } catch (e) {
+          out.innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
         }
       });
 

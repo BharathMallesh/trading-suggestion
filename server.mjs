@@ -40,6 +40,8 @@ import { scanEvents, updateEventReturns, eventStats, loadEvents } from './paper-
 import { runMonitor, latestReport } from './paper-bot/monitor.mjs';
 import { loadIndexList } from './paper-bot/ranking.mjs';
 import { runStrategyTests } from './paper-bot/strategies.mjs';
+import { optionOdds, evaluateOptionOdds } from './paper-bot/option-odds.mjs';
+import { testFii } from './paper-bot/fii.mjs';
 import { rebalanceAccounts, resetAccounts, loadAccounts, summarize as summarizeAccounts } from './paper-bot/strategy-accounts.mjs';
 import { HttpError, badRequest, parseSymbols, parseBool, mapLimit } from './util.mjs';
 
@@ -465,6 +467,33 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && url.pathname === '/api/ranking-eval') {
       const body = await readJson(req);
       return json(res, 200, await evaluateRanking({ horizon: Number(body.horizon) || 20, symbols: parseSymbols(body.symbols), universe: body.universe || undefined }));
+    }
+
+    // --- FII positioning test ---
+    if (req.method === 'POST' && url.pathname === '/api/fii-test') {
+      return json(res, 200, await testFii({}));
+    }
+
+    // --- Call / Put payoff odds (volatility-based) ---
+    if (req.method === 'GET' && url.pathname === '/api/option-odds') {
+      const p = url.searchParams;
+      const symbol = p.get('symbol') || '^NSEI';
+      let eventPending = false;
+      if (/\.(NS|BO)$/i.test(symbol)) {
+        try {
+          eventPending = (await newsBrief(symbol, { useLlm: false })).events?.includes('results') || false;
+        } catch {
+          /* no news → no add-on */
+        }
+      }
+      return json(res, 200, await optionOdds({
+        symbol, type: p.get('type') || 'CE', strike: p.get('strike'), premium: p.get('premium') || undefined,
+        iv: p.get('iv') || undefined, days: Number(p.get('days') || 7), expiry: p.get('expiry') || undefined, eventPending,
+      }));
+    }
+    if (req.method === 'POST' && url.pathname === '/api/option-odds-eval') {
+      const body = await readJson(req);
+      return json(res, 200, await evaluateOptionOdds({ symbols: parseSymbols(body.symbols), horizon: Number(body.horizon) || 5 }));
     }
 
     // --- Strategy backtests + forward-test accounts ---
