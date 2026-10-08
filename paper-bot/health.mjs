@@ -9,6 +9,7 @@ import { quote } from '../market-data.mjs';
 import { storeStatus } from './collector.mjs';
 import { loadCalibration } from './calibration.mjs';
 import { computeStats } from './prediction-log.mjs';
+import { llmCredits, llmStatus } from '../ling-client.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const MONITOR_DIR = process.env.MONITOR_DIR || join(__dir, 'monitor');
@@ -55,10 +56,25 @@ export async function healthChecks(opts = {}) {
     out.push(check('news feed', 'warn', err.message.slice(0, 120)));
   }
 
-  // 3. AI key present (never its value)
-  out.push(process.env.OPENROUTER_API_KEY
-    ? check('AI key', 'ok', 'OPENROUTER_API_KEY is set on the server')
-    : check('AI key', 'warn', 'OPENROUTER_API_KEY not set — Ling adjustments, news briefs and sentiment are off'));
+  // 3. AI: key present (never its value), account balance, recent failures
+  if (!process.env.OPENROUTER_API_KEY) {
+    out.push(check('AI key', 'warn', 'OPENROUTER_API_KEY not set — news briefs, sentiment and narration are off'));
+  } else {
+    let credits = null;
+    try {
+      credits = await (opts.creditsFn || llmCredits)();
+    } catch {
+      /* balance unknown */
+    }
+    const recent = (opts.statusFn || llmStatus)();
+    if (credits && credits.remaining <= 0.01) {
+      out.push(check('AI key', 'warn', `OpenRouter has no credits left (used $${credits.totalUsage.toFixed(2)} of $${credits.totalCredits.toFixed(2)} bought) — add credits at openrouter.ai/settings/credits; AI features are falling back`));
+    } else if (recent) {
+      out.push(check('AI key', 'warn', `last AI call failed (HTTP ${recent.status} at ${recent.at.slice(11, 16)} UTC)`));
+    } else {
+      out.push(check('AI key', 'ok', credits ? `key set · balance $${credits.remaining.toFixed(2)}` : 'OPENROUTER_API_KEY is set on the server'));
+    }
+  }
 
   // 4. Collector freshness
   const st = storeStatus();

@@ -56,6 +56,7 @@ export function computeAlerts(r) {
   const out = [];
   for (const c of r.health?.checks || []) {
     if (c.level === 'fail') out.push({ level: 'high', text: `Health: ${c.name} failing — ${c.detail}` });
+    else if (c.level === 'warn' && c.name === 'AI key' && /credits|balance|failed/.test(c.detail)) out.push({ level: 'high', text: `AI: ${c.detail}` });
     else if (c.level === 'warn' && ['intraday store', 'calibration', 'scoring'].includes(c.name)) out.push({ level: 'info', text: `Health: ${c.name} — ${c.detail}` });
   }
   const held = new Set((r.portfolio?.positions || []).map((p) => p.symbol));

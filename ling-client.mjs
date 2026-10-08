@@ -18,6 +18,20 @@ import { extractJson } from './paper-bot/llm-json.mjs';
  *   is still empty.
  * @returns {Promise<string>}
  */
+/** Last OpenRouter failure seen by this process (for health checks), or null after a success. */
+let lastLlmError = null;
+export const llmStatus = () => lastLlmError;
+
+/** Account balance (free endpoint; doesn't use credits). */
+export async function llmCredits() {
+  const key = process.env[OPENROUTER.apiKeyEnv];
+  if (!key) return null;
+  const res = await fetch(`${OPENROUTER.baseUrl}/credits`, { headers: { Authorization: `Bearer ${key}` } });
+  if (!res.ok) throw new Error(`credits HTTP ${res.status}`);
+  const d = (await res.json())?.data || {};
+  return { totalCredits: Number(d.total_credits) || 0, totalUsage: Number(d.total_usage) || 0, remaining: (Number(d.total_credits) || 0) - (Number(d.total_usage) || 0) };
+}
+
 export async function chat(messages, opts = {}) {
   const key = process.env[OPENROUTER.apiKeyEnv];
   if (!key) {
@@ -54,8 +68,15 @@ export async function chat(messages, opts = {}) {
     });
     if (!res.ok) {
       const body = await res.text().catch(() => '');
+      lastLlmError = { at: new Date().toISOString(), status: res.status };
+      if (res.status === 402) {
+        throw new HttpError(503, 'OpenRouter account is out of credits — add credits at https://openrouter.ai/settings/credits. AI features (Ask, narration, news briefs, sentiment) fall back to non-AI results until then.');
+      }
+      if (res.status === 401) throw new HttpError(503, 'OpenRouter rejected the API key (401) — check or replace the key.');
+      if (res.status === 429) throw new HttpError(503, 'OpenRouter is rate-limiting requests — try again shortly.');
       throw new HttpError(502, `OpenRouter HTTP ${res.status} ${res.statusText}: ${body.slice(0, 400)}`);
     }
+    lastLlmError = null;
     const data = await res.json();
     const msg = data?.choices?.[0]?.message || {};
     const content = typeof msg.content === 'string' ? msg.content : '';

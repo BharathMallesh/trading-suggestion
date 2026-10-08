@@ -61,8 +61,10 @@ test('chat() sends model + messages and returns the assistant text', async () =>
 });
 
 test('chat() surfaces HTTP errors with status and body', async () => {
+  mockFetch('upstream exploded', { ok: false, status: 500, statusText: 'Server Error' });
+  await assert.rejects(() => chat([{ role: 'user', content: 'x' }]), /HTTP 500.*upstream exploded/s);
   mockFetch('rate limited', { ok: false, status: 429, statusText: 'Too Many Requests' });
-  await assert.rejects(() => chat([{ role: 'user', content: 'x' }]), /HTTP 429.*rate limited/s);
+  await assert.rejects(() => chat([{ role: 'user', content: 'x' }]), /rate-limiting/);
 });
 
 test('chat() tolerates a missing content field', async () => {

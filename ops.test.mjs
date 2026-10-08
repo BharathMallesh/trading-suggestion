@@ -137,3 +137,25 @@ test('alerts: held stock with results, rich options, tilt off, health failures, 
   assert.match(text, /coin-flip/);
   assert.match(text, /New event: X\.NS results:beat/);
 });
+
+test('AI: out-of-credits (402) gives a clear message; health shows the balance problem', async () => {
+  const { chat, llmStatus } = await import('./ling-client.mjs');
+  process.env.OPENROUTER_API_KEY = 'sk-or-test';
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: false, status: 402, statusText: 'Payment Required', text: async () => '{"error":{"message":"requires more credits"}}' });
+  try {
+    await assert.rejects(() => chat([{ role: 'user', content: 'x' }]), (e) => e.status === 503 && /out of credits/.test(e.message));
+    assert.equal(llmStatus().status, 402);
+    const h = await healthChecks({ quoteFn: async () => ({ price: 1 }), newsProbe: async () => 1, creditsFn: async () => ({ remaining: 0, totalCredits: 0, totalUsage: 0.18 }) });
+    const ai = h.checks.find((c) => c.name === 'AI key');
+    assert.equal(ai.level, 'warn');
+    assert.match(ai.detail, /no credits left \(used \$0\.18 of \$0\.00 bought\)/);
+    const alerts = computeAlerts({ health: h });
+    assert.ok(alerts.some((a) => a.level === 'high' && /AI:/.test(a.text)));
+    const okH = await healthChecks({ quoteFn: async () => ({ price: 1 }), newsProbe: async () => 1, creditsFn: async () => ({ remaining: 5, totalCredits: 5, totalUsage: 0 }), statusFn: () => null });
+    assert.match(okH.checks.find((c) => c.name === 'AI key').detail, /balance \$5\.00/);
+  } finally {
+    globalThis.fetch = realFetch;
+    delete process.env.OPENROUTER_API_KEY;
+  }
+});

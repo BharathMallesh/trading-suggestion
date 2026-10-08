@@ -656,7 +656,7 @@
             d = await api('/api/describe?symbol=' + encodeURIComponent(sym) + '&' + rp + '&narrate=1');
           } catch (e) {
             // No API key (or narration failed) — still show the deterministic facts.
-            if (/OPENROUTER_API_KEY|401|402/i.test(e.message)) {
+            if (/OPENROUTER_API_KEY|401|402|out of credits|rejected the API key/i.test(e.message)) {
               d = await api('/api/describe?symbol=' + encodeURIComponent(sym) + '&' + rp + '&narrate=0');
               d._noNarrate = true;
             } else throw e;
@@ -665,7 +665,7 @@
           if (d.narrative) {
             html += '<div style="margin-top:12px;white-space:pre-wrap">' + esc(d.narrative) + '</div>';
           } else if (d._noNarrate) {
-            html += '<div class="note">Plain-English description needs OPENROUTER_API_KEY set on the server. Facts above are computed offline.</div>';
+            html += '<div class="note">Plain-English description needs a working OpenRouter key with credits (see the health chips on Today). Facts above are computed offline.</div>';
           }
           html += '<div class="note">Describes what the data shows — not a forecast or a suggestion.</div>';
           out.innerHTML = html;
