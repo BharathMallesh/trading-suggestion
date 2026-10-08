@@ -35,6 +35,7 @@ import { orderCharges, DEFAULT_COSTS } from './costs.mjs';
 import { loadIndexList, SIGNALS } from './ranking.mjs';
 import { mapLimit, badRequest } from '../util.mjs';
 import { FORECASTERS } from './volatility.mjs';
+import { TaxLedger, TAX_RULES, fyOf } from './tax.mjs';
 
 const TD = 252;
 export const ASSUMPTIONS = {
@@ -108,6 +109,7 @@ export function trendStrategy(index, { monthEnd = false, a = ASSUMPTIONS } = {})
   const bench = [{ date: index[start].date, equity: bh }];
   const dailyLiquid = (1 + a.liquidYield) ** (1 / TD) - 1;
   const dailyDiv = a.dividendYield / TD;
+  const path = [invested ? 1 : 0]; // exposure held over day i (index start + k)
   for (let i = start + 1; i < index.length; i++) {
     const r = close[i] / close[i - 1] - 1;
     bh *= 1 + r + dailyDiv;
@@ -126,16 +128,101 @@ export function trendStrategy(index, { monthEnd = false, a = ASSUMPTIONS } = {})
     }
     curve.push({ date: index[i].date, equity });
     bench.push({ date: index[i].date, equity: bh });
+    path.push(invested ? 1 : 0);
   }
   const years = (index.length - start - 1) / TD;
   return {
     name: monthEnd ? 'A · NIFTY trend (month-end check)' : 'A · NIFTY trend (daily check)',
+    path,
+    start,
     ...withHalves(curve),
     benchmark: withHalves(bench),
     switchesPerYear: switches / years,
     pctTimeInvested: (daysIn / (index.length - start - 1)) * 100,
     curve,
     benchCurve: bench,
+  };
+}
+
+/**
+ * After-tax replay of a single-asset (NIFTY ETF) strategy: `path[k]` is the
+ * share of the account in the ETF on day start + k (decided the day before).
+ * Rupee amounts (capital matters for the ₹1.25 lakh LTCG exemption); FIFO
+ * lots; dividends paid to cash and slab-taxed; liquid fund returns
+ * slab-taxed; tax paid from cash each March (selling ETF if cash is short);
+ * everything sold on the last day ("if you cashed out") and that tax paid too.
+ */
+export function afterTaxSingle(index, start, path, { capital = 1e6, a = ASSUMPTIONS, rules = TAX_RULES } = {}) {
+  const L = new TaxLedger(rules);
+  const dailyLiquid = (1 + a.liquidYield) ** (1 / TD) - 1;
+  const dailyDiv = a.dividendYield / TD;
+  // ETF price net of its expense ratio
+  let px = index[start].close;
+  const priceAt = [px];
+  for (let i = start + 1; i < index.length; i++) {
+    px *= (index[i].close / index[i - 1].close) * (1 - a.etfExpense / TD);
+    priceAt.push(px);
+  }
+  let units = 0;
+  let cash = capital;
+  const trade = (k, targetValue) => {
+    const p = priceAt[k];
+    const date = index[start + k].date;
+    const delta = targetValue - units * p;
+    if (Math.abs(delta) < 1) return;
+    const cost = (Math.abs(delta) * a.etfRoundTripPct) / 200;
+    if (delta > 0) {
+      const u = (delta - cost) / p;
+      L.buy('ETF', u, p, date);
+      units += u;
+      cash -= delta;
+    } else {
+      const u = Math.min(units, -delta / p);
+      L.sell('ETF', u, p, date);
+      units -= u;
+      cash += u * p - cost;
+    }
+  };
+  // initial position
+  trade(0, capital * path[0]);
+  const curve = [{ date: index[start].date, equity: cash + units * priceAt[0] }];
+  let target = path[0];
+  for (let k = 1; k < path.length; k++) {
+    const date = index[start + k].date;
+    const p = priceAt[k];
+    // income for the day
+    const interest = cash > 0 ? cash * dailyLiquid : 0;
+    const div = units * p * dailyDiv;
+    cash += interest + div;
+    L.income(interest + div, date);
+    const eq = cash + units * p;
+    // re-size when the strategy changes its exposure, or the drift is > 5 points
+    const want = path[k];
+    const cur = eq > 0 ? (units * p) / eq : 0;
+    if (want !== target || Math.abs(cur - want) > 0.05) {
+      trade(k, eq * want);
+      target = want;
+    }
+    // financial year end: pay tax from cash (sell ETF if needed)
+    const next = index[start + k + 1]?.date;
+    if (next && fyOf(next) !== fyOf(date)) {
+      const tax = L.settle(fyOf(date));
+      if (tax > cash) trade(k, Math.max(0, units * p - (tax - cash) * 1.002));
+      cash -= tax;
+    }
+    curve.push({ date, equity: cash + units * p });
+  }
+  // cash out at the end and pay that year's tax
+  const lastK = path.length - 1;
+  trade(lastK, 0);
+  const finalTax = L.settle(fyOf(index[start + lastK].date));
+  const finalAfterTax = cash - finalTax;
+  const years = lastK / TD;
+  return {
+    ...stats(curve),
+    cagrIfSoldPct: ((finalAfterTax / capital) ** (1 / years) - 1) * 100,
+    taxPaid: L.paid,
+    taxPaidPctOfCapitalPerYear: (L.paid / capital / years) * 100,
   };
 }
 
@@ -165,6 +252,7 @@ export function volTargetStrategy(index, { forecaster = 'har', withTrend = false
   let turnover = 0;
   let sumExp = 0;
   const curve = [{ date: index[start].date, equity }];
+  const path = [exposure];
   for (let i = start + 1; i < index.length; i++) {
     const r = close[i] / close[i - 1] - 1;
     equity *= 1 + exposure * (r + dailyDiv - a.etfExpense / TD) + (1 - exposure) * dailyLiquid;
@@ -180,9 +268,12 @@ export function volTargetStrategy(index, { forecaster = 'har', withTrend = false
       }
     }
     curve.push({ date: index[i].date, equity });
+    path.push(exposure);
   }
   const years = (index.length - start - 1) / TD;
   return {
+    path,
+    start,
     name: `C · vol target ${Math.round(a.volTarget * 100)}% (${forecaster})${withTrend ? ' + trend filter' : ''}`,
     forecaster,
     withTrend,
@@ -198,7 +289,8 @@ export function volTargetStrategy(index, { forecaster = 'har', withTrend = false
  * @param {{symbol, dates:string[], closes:number[], at:Map}[]} series
  * @param {{date, close}[]} index NIFTY
  */
-export function momentumStrategy(series, index, { variant = 'B3', capital = 1e6, a = ASSUMPTIONS } = {}) {
+export function momentumStrategy(series, index, { variant = 'B3', capital = 1e6, a = ASSUMPTIONS, tax = false, rules = TAX_RULES } = {}) {
+  const L = tax ? new TaxLedger(rules) : null;
   const equalWeight = variant === 'EW'; // same universe, same costs — isolates survivorship bias
   const useBuffer = variant !== 'B0' && !equalWeight;
   const useFilter = variant === 'B2' || variant === 'B3';
@@ -225,13 +317,23 @@ export function momentumStrategy(series, index, { variant = 'B3', capital = 1e6,
     const d = dates[i];
     // 1. mark to market (yesterday → today)
     if (i > start) {
+      let div = 0;
       for (const [sym, v] of pos) {
         const s = series.find((x) => x.symbol === sym);
         const p0 = priceAt(s, dates[i - 1]);
         const p1 = priceAt(s, d);
-        if (p0 && p1) pos.set(sym, v * (p1 / p0) * (1 + dailyDiv));
+        if (p0 && p1) {
+          // with tax: dividends are paid out to cash (slab-taxed) instead of compounding in the position
+          pos.set(sym, v * (p1 / p0) * (L ? 1 : 1 + dailyDiv));
+          div += v * (p1 / p0) * dailyDiv;
+        }
       }
-      cash *= 1 + dailyLiquid;
+      const interest = cash > 0 ? cash * dailyLiquid : 0;
+      cash += interest;
+      if (L) {
+        cash += div;
+        L.income(div + interest, d);
+      }
     }
     // 2. rebalance every N trading days
     if (i - lastRebalance >= a.rebalanceDays) {
@@ -297,11 +399,30 @@ export function momentumStrategy(series, index, { variant = 'B3', capital = 1e6,
         charges += c;
         turnover += value;
         cash -= delta + c;
+        if (L) {
+          const px = priceAt(series.find((x) => x.symbol === sym), d);
+          if (px) side === 'buy' ? L.buy(sym, value / px, px, d) : L.sell(sym, value / px, px, d);
+        }
         if (tgt > 0) pos.set(sym, tgt);
         else pos.delete(sym);
       }
     }
+    // financial year end: pay the year's tax from cash
+    if (L && dates[i + 1] && fyOf(dates[i + 1]) !== fyOf(d)) cash -= L.settle(fyOf(d));
     curve.push({ date: d, equity: cash + [...pos.values()].reduce((x, y) => x + y, 0) });
+  }
+  let cagrIfSoldPct = null;
+  if (L) {
+    // cash out on the last day and pay that year's tax
+    const d = dates[dates.length - 1];
+    let fin = cash;
+    for (const [sym, v] of pos) {
+      const px = priceAt(series.find((x) => x.symbol === sym), d);
+      if (px) L.sell(sym, v / px, px, d);
+      fin += v;
+    }
+    fin -= L.settle(fyOf(d));
+    cagrIfSoldPct = ((fin / capital) ** (1 / ((curve.length - 1) / TD)) - 1) * 100;
   }
   const years = (curve.length - 1) / TD;
   return {
@@ -316,6 +437,7 @@ export function momentumStrategy(series, index, { variant = 'B3', capital = 1e6,
     ...withHalves(curve),
     chargesPctPerYear: (charges / capital / years) * 100,
     turnoverPerYear: turnover / capital / years,
+    ...(L ? { cagrIfSoldPct, taxPaidPctOfCapitalPerYear: (L.paid / capital / years) * 100 } : {}),
     curve,
   };
 }
@@ -389,7 +511,19 @@ export async function runStrategyTests({ capital = 1e6, universe = 'nifty200', l
   } catch {
     /* optional */
   }
-  const strip = ({ curve, benchCurve, ...rest }) => rest;
+  // After tax (Indian rules, tax.mjs) — ₹ capital matters for the LTCG exemption.
+  const at = (x) => ({ holdingCagrPct: x.cagrPct, cagrIfSoldPct: x.cagrIfSoldPct, sharpe: x.sharpe, maxDrawdownPct: x.maxDrawdownPct, taxPerYearPct: x.taxPaidPctOfCapitalPerYear });
+  const aStart = A[0].start;
+  const afterTaxA = {
+    benchmark: at(afterTaxSingle(index, aStart, A[0].path.map(() => 1), { capital })),
+    strategies: A.map((x) => ({ name: x.name, ...at(afterTaxSingle(index, x.start, x.path, { capital })) })),
+  };
+  const afterTaxC = C.map((x) => ({ name: x.name, ...at(afterTaxSingle(index, x.start, x.path, { capital })) }));
+  const afterTaxB = ['B2', 'B3', 'EW'].map((v) => {
+    const r = momentumStrategy(series, index, { variant: v, capital, tax: true });
+    return { name: r.name, holdingCagrPct: r.all.cagrPct, cagrIfSoldPct: r.cagrIfSoldPct, sharpe: r.all.sharpe, maxDrawdownPct: r.all.maxDrawdownPct, taxPerYearPct: r.taxPaidPctOfCapitalPerYear };
+  });
+  const strip = ({ curve, benchCurve, path, ...rest }) => rest;
   return {
     capital,
     universe: { name: universe, source: list.source, used: series.length },
@@ -397,6 +531,13 @@ export async function runStrategyTests({ capital = 1e6, universe = 'nifty200', l
     A: A.map((x) => ({ ...strip(x), verdict: verdict(x, x.benchmark) })),
     C: C.map((x) => ({ ...strip(x), verdict: verdict(x, cBench) })),
     benchmarkC: cBench,
+    afterTax: {
+      A: afterTaxA,
+      C: afterTaxC,
+      B: afterTaxB,
+      rules: TAX_RULES,
+      note: `After Indian tax: STCG ${TAX_RULES.after.stcg * 100}% / LTCG ${TAX_RULES.after.ltcg * 100}% above ₹${TAX_RULES.after.ltcgExemption.toLocaleString('en-IN')} (older rates before ${TAX_RULES.change}), + ${TAX_RULES.cess * 100}% cess; dividends and liquid-fund returns at an assumed ${TAX_RULES.slabRate * 100}% slab. "Still holding" = tax on gains realised so far; "if sold at the end" also pays tax on selling everything on the last day.`,
+    },
     B: B.map((x) => ({ ...strip(x), verdict: verdict(x, bBench) })),
     benchmarkB: bBench,
     equalWeight: strip(EW),
@@ -411,7 +552,7 @@ export async function runStrategyTests({ capital = 1e6, universe = 'nifty200', l
     },
     caveats: [
       "B uses today's NIFTY 200 members (survivorship bias: past losers that left the index are missing), so B's results are flattered.",
-      'Taxes are not modelled: frequent switching/rebalancing triggers short-term capital gains tax, which buy-and-hold largely avoids.',
+      'The main tables are before tax; the after-tax table applies Indian capital-gains and slab tax (switching and rebalancing trigger short-term gains that buy-and-hold defers).',
       'Rules were fixed in advance; still, 10 years is one market history. Research only — not investment advice.',
     ],
   };
@@ -441,6 +582,11 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
         row(x.name, x.all, `${x.avgExposurePct.toFixed(0)}% avg exposure · turnover ${x.turnoverPerYear.toFixed(1)}×/yr`);
         console.log(`   halves: Sharpe ${x.firstHalf.sharpe.toFixed(2)} / ${x.secondHalf.sharpe.toFixed(2)} vs NIFTY ${r.benchmarkC.firstHalf.sharpe.toFixed(2)} / ${r.benchmarkC.secondHalf.sharpe.toFixed(2)} → ${x.verdict}`);
       }
+      const t = r.afterTax;
+      console.log(`\nAFTER TAX · ₹${r.capital.toLocaleString('en-IN')} · CAGR still holding / if sold at the end · tax per year · maxDD`);
+      const trow = (n, x) => console.log(`${n.padEnd(46)} ${x.holdingCagrPct.toFixed(1).padStart(5)}% / ${x.cagrIfSoldPct.toFixed(1).padStart(5)}%   tax ${x.taxPerYearPct.toFixed(2)}%/yr   maxDD ${x.maxDrawdownPct.toFixed(1)}%`);
+      trow('NIFTY buy-and-hold (A window)', t.A.benchmark);
+      for (const x of [...t.A.strategies, ...t.C, ...t.B]) trow(x.name, x);
       const b = r.B[0];
       console.log(`\nB · momentum on ${r.universe.name} (${r.universe.used} stocks) · ₹${r.capital.toLocaleString('en-IN')} · ${b.all.from} → ${b.all.to} (${b.all.years.toFixed(1)}y)`);
       head();

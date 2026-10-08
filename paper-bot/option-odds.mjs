@@ -81,11 +81,14 @@ export async function optionOdds({ symbol, type = 'CE', strike, premium, iv, day
   const spot = rows[rows.length - 1].close;
   const h = Math.max(1, Math.round(d * (5 / 7)));
   const fDaily = v.forecastPct / 100 / Math.sqrt(TD);
-  const iDaily = v.impliedPct != null ? v.impliedPct / 100 / Math.sqrt(TD) : null;
+  // Price and judge with the IV that options of THIS expiry actually trade at
+  // (weekly NIFTY ≈ a measured fraction of VIX), falling back to implied vol.
+  const pIv = v.pricingIvPct ?? v.impliedPct;
+  const iDaily = pIv != null ? pIv / 100 / Math.sqrt(TD) : null;
   const tYears = h / TD;
   // premium: given, else priced from implied vol (if known)
   let P = premium != null && premium !== '' ? Number(premium) : null;
-  if (P == null && v.impliedPct != null) P = greeks({ spot, strike: K, tYears, iv: v.impliedPct / 100, type: t }).price;
+  if (P == null && pIv != null) P = greeks({ spot, strike: K, tYears, iv: pIv / 100, type: t }).price;
   if (!(P >= 0)) throw badRequest('Give the option premium, or an implied vol so it can be priced.');
   const breakeven = t === 'CE' ? K + P : K - P;
   const pAbove = (level, sDaily, method) =>
@@ -103,13 +106,14 @@ export async function optionOdds({ symbol, type = 'CE', strike, premium, iv, day
     spot,
     strike: K,
     premium: P,
-    premiumSource: premium != null && premium !== '' ? 'you entered' : `priced from implied vol ${v.impliedPct?.toFixed(1)}%`,
+    premiumSource: premium != null && premium !== '' ? 'you entered' : `priced at implied vol ${pIv?.toFixed(1)}%${v.pricingIvSource && v.pricingIvSource !== v.impliedSource ? ` — ${v.pricingIvSource}` : ''}`,
     days: d,
     tradingDays: h,
     breakeven,
     breakevenMovePct: (breakeven / spot - 1) * 100,
     forecastVolPct: v.forecastPct,
-    impliedVolPct: v.impliedPct,
+    impliedVolPct: pIv,
+    vixPct: v.impliedSource === "India VIX" ? v.impliedPct : null,
     volModel: v.model,
     eventPending: v.eventPending,
     probProfit: {

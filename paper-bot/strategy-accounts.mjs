@@ -9,6 +9,10 @@
 //             monthly, keep holdings while rank ≤ 40, all cash when NIFTY is
 //             below its 200-day average
 //
+// Tax: each account keeps FIFO tax lots (tax.mjs); the previous financial
+// year's tax (capital gains + slab tax on liquid-fund returns) is paid from
+// cash on the first run of a new year, and "after tax if sold today" is shown.
+//
 // State: paper-bot/data/strategy-accounts.json. rebalance() is safe to call
 // every monitor run — each strategy only trades when its own schedule says so.
 // Paper simulation only — no orders are ever sent. Not investment advice.
@@ -21,6 +25,7 @@ import { orderCharges, DEFAULT_COSTS } from './costs.mjs';
 import { loadIndexList, SIGNALS } from './ranking.mjs';
 import { ASSUMPTIONS } from './strategies.mjs';
 import { mapLimit, badRequest } from '../util.mjs';
+import { TaxLedger, fyOf } from './tax.mjs';
 
 const PATH = process.env.STRATEGY_ACCOUNTS_PATH || join(dirname(fileURLToPath(import.meta.url)), 'data', 'strategy-accounts.json');
 const ETF = 'NIFTYBEES.NS';
@@ -59,11 +64,44 @@ export function resetAccounts(capital = 1e6) {
   return st;
 }
 
-/** Cash earns the liquid-fund rate between runs. */
-function accrue(acct, now) {
+/** The account's tax ledger; older saved accounts get lots seeded from their holdings. */
+function ledger(acct, startedAt) {
+  if (!acct._ledger) {
+    if (acct.tax) acct._ledger = TaxLedger.from(acct.tax);
+    else {
+      acct._ledger = new TaxLedger();
+      for (const [sym, h] of Object.entries(acct.holdings)) {
+        const first = acct.trades.find((t) => t.symbol === sym && t.side === 'buy');
+        acct._ledger.buy(sym, h.qty, h.cost / h.qty, first?.date || startedAt.slice(0, 10));
+      }
+    }
+  }
+  return acct._ledger;
+}
+
+/** Cash earns the liquid-fund rate between runs (slab-taxed income). */
+function accrue(acct, now, L) {
   const days = (now - new Date(acct.lastAccrual)) / 86400000;
-  if (days > 0) acct.cash *= (1 + ASSUMPTIONS.liquidYield) ** (days / 365);
+  if (days > 0 && acct.cash > 0) {
+    const interest = acct.cash * ((1 + ASSUMPTIONS.liquidYield) ** (days / 365) - 1);
+    acct.cash += interest;
+    L?.income(interest, istDate(now));
+  }
   acct.lastAccrual = now.toISOString();
+}
+
+/** First run in a new financial year: pay last year's tax from cash. */
+function settleTax(acct, today, L) {
+  const fy = fyOf(today);
+  if (acct.taxFy && acct.taxFy !== fy) {
+    const tax = L.settle(acct.taxFy);
+    if (tax > 0) {
+      acct.cash -= tax;
+      acct.taxPaid = (acct.taxPaid || 0) + tax;
+      acct.trades.push({ date: today, symbol: 'TAX', side: 'tax', qty: 0, price: 0, charges: tax, note: `income tax for FY ${acct.taxFy}` });
+    }
+  }
+  acct.taxFy = fy;
 }
 
 /** Trade one account toward target rupee values {symbol: value} at prices {symbol: price}. */
@@ -88,6 +126,8 @@ function tradeTo(acct, target, prices, product, date, note) {
     if (side === 'buy' && v + c > acct.cash) continue;
     acct.cash += side === 'buy' ? -(v + c) : v - c;
     acct.charges += c;
+    // cost basis includes buy charges; sale proceeds are net of sell charges
+    if (acct._ledger) side === 'buy' ? acct._ledger.buy(sym, qty, (v + c) / qty, date) : acct._ledger.sell(sym, qty, (v - c) / qty, date);
     const h = acct.holdings[sym] || { qty: 0, cost: 0 };
     if (side === 'buy') {
       h.cost += v;
@@ -115,7 +155,11 @@ export async function rebalanceAccounts(opts = {}) {
   const st = loadAccounts() || resetAccounts(1e6);
   const month = istDate(now).slice(0, 7);
   const today = istDate(now);
-  for (const a of Object.values(st.accounts)) accrue(a, now);
+  for (const a of Object.values(st.accounts)) {
+    const L = ledger(a, st.startedAt);
+    accrue(a, now, L);
+    settleTax(a, today, L);
+  }
 
   // NIFTY + its 200-day average (decides trend & momentum filters)
   const idx = await load('^NSEI', { range: '2y', interval: '1d' });
@@ -194,8 +238,26 @@ export async function rebalanceAccounts(opts = {}) {
     if (last && last.date === today) last.equity = eq;
     else a.history.push({ date: today, equity: eq });
   }
+  for (const a of Object.values(st.accounts)) {
+    a.afterTaxIfSold = afterTaxIfSold(a, prices, today);
+    a.tax = a._ledger.toJSON();
+    delete a._ledger;
+  }
   save(st);
   return summarize(st, prices, actions);
+}
+
+/** Equity after selling everything today and paying this year's tax (estimate). */
+function afterTaxIfSold(acct, prices, today) {
+  const L = TaxLedger.from(acct._ledger.toJSON());
+  let cash = acct.cash;
+  for (const [sym, h] of Object.entries(acct.holdings)) {
+    const px = prices[sym];
+    if (!px) continue;
+    L.sell(sym, h.qty, px, today);
+    cash += h.qty * px;
+  }
+  return cash - L.settle(fyOf(today));
 }
 
 export function summarize(st, prices = {}, actions = []) {
@@ -208,6 +270,9 @@ export function summarize(st, prices = {}, actions = []) {
       returnPct: (eq / st.capital - 1) * 100,
       cash: a.cash,
       charges: a.charges,
+      taxPaid: a.taxPaid || 0,
+      afterTaxIfSold: a.afterTaxIfSold ?? null,
+      afterTaxReturnPct: a.afterTaxIfSold != null ? (a.afterTaxIfSold / st.capital - 1) * 100 : null,
       holdings: Object.entries(a.holdings).map(([s, h]) => ({ symbol: s, qty: h.qty, avgCost: h.cost / h.qty, last: prices[s] ?? null })),
       trades: a.trades.slice(-10).reverse(),
       history: a.history,

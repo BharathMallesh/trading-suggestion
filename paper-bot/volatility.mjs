@@ -34,6 +34,16 @@ export function loadVolModel() {
 }
 const HISTORY_MODELS = ['rv20', 'rv60', 'ewma', 'garch', 'har', 'blend'];
 
+/** Merge fields into vol-model.json (keeps the replay winners). */
+export function updateVolModel(patch) {
+  const m = { ...loadVolModel(), ...patch };
+  writeFileSync(MODEL_PATH, JSON.stringify(m, null, 2));
+  return m;
+}
+
+/** Weekly NIFTY options: horizons up to this many calendar days use the weekly IV ratio. */
+export const WEEKLY_MAX_DAYS = 10;
+
 /** Persist the replay's winners: best history model for stocks / NIFTY, and VIX's usual premium. */
 export function saveVolModel(r) {
   const bestOf = (o) => HISTORY_MODELS.filter((k) => o[k]).sort((a, b) => o[a].meanQlike - o[b].meanQlike)[0] || 'ewma';
@@ -308,6 +318,15 @@ export async function volCheck({ symbol, iv, days = 7, expiry, eventPending = fa
   const last = rows[rows.length - 1].close;
   const move = (volPct) => (volPct == null ? null : (volPct / 100) * Math.sqrt(d / TRADING_DAYS) * 100);
   const ratio = impliedPct != null && forecastPct ? impliedPct / forecastPct : null;
+  // Pricing IV. VIX is a 30-day measure; real weekly NIFTY options trade at a
+  // measured fraction of it (from NSE closing prices — vol-premium.mjs).
+  let pricingIvPct = impliedPct;
+  let pricingIvSource = impliedSource;
+  const wk = model.niftyWeeklyIvToVix;
+  if (sym === '^NSEI' && impliedSource === 'India VIX' && d <= WEEKLY_MAX_DAYS && wk?.recentMedian > 0) {
+    pricingIvPct = impliedPct * wk.recentMedian;
+    pricingIvSource = `weekly options ≈ ${wk.recentMedian.toFixed(2)} × India VIX (median of real NSE prices, last ${wk.recentN} weeks to ${wk.to})`;
+  }
   // For NIFTY, judge today's gap against VIX's usual premium over realised vol.
   const typical = sym === '^NSEI' && impliedSource === 'India VIX' ? model.niftyTypicalRatio : null;
   return {
@@ -319,6 +338,8 @@ export async function volCheck({ symbol, iv, days = 7, expiry, eventPending = fa
     forecastPct,
     impliedPct,
     impliedSource,
+    pricingIvPct,
+    pricingIvSource,
     optionChain: chain,
     ratio,
     expectedMovePct: { implied: move(impliedPct), forecast: move(forecastPct) },

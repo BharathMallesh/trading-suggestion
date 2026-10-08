@@ -31,6 +31,7 @@
 //
 //   node paper-bot/vol-premium.mjs           # VIX-priced model (fast)
 //   node paper-bot/vol-premium.mjs --real    # + real option prices (first run downloads ~350 days)
+//   node paper-bot/vol-premium.mjs --save    # both, saved; updates the weekly IV ratio (weekly refit)
 
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { execFile } from 'node:child_process';
@@ -40,7 +41,7 @@ import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { candles } from '../market-data.mjs';
 import { greeks } from '../blackscholes.mjs';
-import { harForecast } from './volatility.mjs';
+import { harForecast, updateVolModel } from './volatility.mjs';
 import { HttpError } from '../util.mjs';
 
 export const VP_ASSUMPTIONS = {
@@ -414,7 +415,7 @@ export async function realPremiumTest({ loadCandles = candles, fetchFn = fetch, 
       // implied vol of the real straddle (≈ 0.8·S·σ·√T) vs VIX that day
       const straddle = chain[K].CE + chain[K].PE;
       const iv = straddle / (0.7979 * spot * Math.sqrt(days / 365));
-      if (vix.get(d)) ivRatio.push(iv / (vix.get(d) / 100));
+      if (vix.get(d)) ivRatio.push({ date: d, ratio: iv / (vix.get(d) / 100) });
       if (kc != null && kp != null && kc > K && kp < K) {
         const fly = [...legs, { type: 'CE', strike: kc, side: 'buy', premium: chain[kc].CE }, { type: 'PE', strike: kp, side: 'buy', premium: chain[kp].PE }];
         const credit = fly.reduce((s, l) => s + (l.side === 'sell' ? 1 : -1) * l.premium, 0);
@@ -447,12 +448,22 @@ export async function realPremiumTest({ loadCandles = candles, fetchFn = fetch, 
     const second = summarise(t.slice(mid), a);
     out[k] = { name: names[k], all, firstHalf: first, secondHalf: second, verdict: judge(all, first, second) };
   }
-  const sorted = [...ivRatio].sort((x, y) => x - y);
+  const med = (a) => {
+    const t = [...a].sort((x, y) => x - y);
+    return t.length ? t[t.length >> 1] : null;
+  };
+  const sorted = ivRatio.map((x) => x.ratio).sort((x, y) => x - y);
+  const recent = ivRatio.slice(-52);
   return {
     from: trades.S1[0]?.date,
     to: trades.S1[trades.S1.length - 1]?.date,
     weeks: trades.S1.length,
-    weeklyIvVsVix: sorted.length ? { median: sorted[sorted.length >> 1], p25: sorted[Math.floor(sorted.length * 0.25)], p75: sorted[Math.floor(sorted.length * 0.75)], n: sorted.length } : null,
+    weeklyIvVsVix: sorted.length
+      ? {
+        median: sorted[sorted.length >> 1], p25: sorted[Math.floor(sorted.length * 0.25)], p75: sorted[Math.floor(sorted.length * 0.75)], n: sorted.length,
+        recentMedian: med(recent.map((x) => x.ratio)), recentN: recent.length, from: ivRatio[0].date, to: ivRatio[ivRatio.length - 1].date,
+      }
+      : null,
     strategies: out,
     blocked,
     note: 'Actual NSE closing prices of the nearest weekly NIFTY options, entered the session after each expiry and held to the next expiry. Closing prices ignore the bid-ask spread, which is charged separately as slippage.',
@@ -473,6 +484,9 @@ export async function runAndSaveVolPremium(opts = {}) {
     real = { error: err.message };
   }
   const r = { at: new Date().toISOString(), model, real, verdict: overallVerdict(model, real) };
+  // Keep the payoff-odds card's weekly pricing in step with real prices.
+  const w = real?.weeklyIvVsVix;
+  if (w?.recentN >= 20) updateVolModel({ niftyWeeklyIvToVix: { ...w, fittedAt: r.at } });
   mkdirSync(dirname(SAVED), { recursive: true });
   writeFileSync(SAVED, JSON.stringify(r, null, 2));
   return r;
@@ -499,7 +513,18 @@ export function overallVerdict(model, real) {
 }
 
 // CLI
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href && process.argv.includes('--save')) {
+  // Weekly refit: fetch new NSE days, re-run both replays, update the weekly IV ratio.
+  runAndSaveVolPremium({})
+    .then((r) => {
+      const w = r.real?.weeklyIvVsVix;
+      console.log(`${r.verdict}${w ? ` · weekly IV = ${w.recentMedian.toFixed(2)} × VIX (last ${w.recentN} weeks to ${w.to})` : ''}`);
+    })
+    .catch((err) => {
+      console.error('Error:', err.message);
+      process.exit(1);
+    });
+} else if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   volPremiumTest()
     .then((r) => {
       console.log(`\nVOLATILITY PREMIUM · NIFTY weekly · ${r.from} → ${r.to}`);

@@ -11,6 +11,7 @@ import { storeStatus } from './collector.mjs';
 import { loadCalibration } from './calibration.mjs';
 import { computeStats } from './prediction-log.mjs';
 import { llmCredits, llmStatus, llmLastModel } from '../ling-client.mjs';
+import { backupStatus } from './backup.mjs';
 import { OPENROUTER } from '../config.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -153,6 +154,17 @@ export async function healthChecks(opts = {}) {
         : check('disk space', 'ok', `${gb.toFixed(1)} GB free`));
   } catch (err) {
     out.push(check('disk space', 'warn', `could not read free space: ${err.message.slice(0, 80)}`));
+  }
+
+  // 9. Backups of the evidence (daily; iCloud copy may be blocked for background jobs)
+  const b = (opts.backupFn || backupStatus)();
+  if (!b) out.push(check('backup', 'warn', 'no backup yet — runs daily at 18:30 (or: node paper-bot/backup.mjs)'));
+  else {
+    const ageH = (now - new Date(b.at)) / 3600000;
+    const mirror = b.mirror?.ok === false ? ` · iCloud copy failed (${b.mirror.detail.split(': ').pop()}) — local copy only` : b.mirror?.ok ? ' · + iCloud copy' : '';
+    out.push(ageH > 50
+      ? check('backup', 'warn', `last backup ${(ageH / 24).toFixed(1)} days ago — check the backup job${mirror}`)
+      : check('backup', b.mirror?.ok === false ? 'warn' : 'ok', `${(b.bytes / 1e6).toFixed(1)} MB, ${b.files} files, ${ageH.toFixed(0)} h ago${mirror}`));
   }
 
   const level = out.some((c) => c.level === 'fail') ? 'fail' : out.some((c) => c.level === 'warn') ? 'warn' : 'ok';

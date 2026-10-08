@@ -4,6 +4,7 @@
 #   scripts/run.sh collect    – save today's intraday bars
 #   scripts/run.sh monitor    – investor monitor (+ macOS notifications)
 #   scripts/run.sh refit      – weekly model refit
+#   scripts/run.sh backup     – daily backup of the evidence (~/trading-research-backups + iCloud copy)
 # Secrets come from the macOS Keychain (encrypted), never from files:
 #   security add-generic-password -U -a "$USER" -s trading-research-openrouter -w   # prompts for the key
 #   security add-generic-password -U -a "$USER" -s trading-research-groww -w        # optional
@@ -34,7 +35,11 @@ case "${1:-}" in
     echo "$(date '+%F %T') monitor"; exec node paper-bot/monitor.mjs --notify ;;
   refit)
     echo "$(date '+%F %T') refit"; node paper-bot/evaluate.mjs --interval 1d --save && node paper-bot/evaluate.mjs --interval 60m --save \
-      && node paper-bot/evaluate.mjs --interval 15m --save && node paper-bot/evaluate.mjs --interval 5m --save ;;
+      && node paper-bot/evaluate.mjs --interval 15m --save && node paper-bot/evaluate.mjs --interval 5m --save
+    # Weekly NIFTY option IV vs VIX from new NSE days (independent of the refits above).
+    node paper-bot/vol-premium.mjs --save ;;
+  backup)
+    echo "$(date '+%F %T') backup"; node paper-bot/backup.mjs ;;
   *)
-    echo "usage: scripts/run.sh server|collect|monitor|refit"; exit 2 ;;
+    echo "usage: scripts/run.sh server|collect|monitor|refit|backup"; exit 2 ;;
 esac

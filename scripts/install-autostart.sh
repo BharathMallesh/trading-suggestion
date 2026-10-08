@@ -4,6 +4,7 @@
 #   collect – weekdays 16:05 (after the close)
 #   monitor – weekdays 10:00, 13:00, 15:00 (macOS notifications for alerts)
 #   refit   – Saturdays 10:00
+#   backup  – every day 18:30 (~/trading-research-backups, last 30 + iCloud copy)
 # Missed runs (Mac asleep) run when it wakes. Logs: ~/Library/Logs/trading-research/
 # Remove with scripts/uninstall-autostart.sh
 set -eu
@@ -38,8 +39,9 @@ for d in 1 2 3 4 5; do C="$C$(cal $d 16 5)"; for h in 10 13 15; do M="$M$(cal $d
 plist collect collect "  <key>StartCalendarInterval</key><array>$C</array>"
 plist monitor monitor "  <key>StartCalendarInterval</key><array>$M</array>"
 plist refit refit "  <key>StartCalendarInterval</key><array>$(cal 6 10 0)</array>"
+plist backup backup "  <key>StartCalendarInterval</key><dict><key>Hour</key><integer>18</integer><key>Minute</key><integer>30</integer></dict>"
 
-for job in server collect monitor refit; do
+for job in server collect monitor refit backup; do
   launchctl bootout "gui/$(id -u)/com.trading-research.$job" 2>/dev/null || true
   launchctl bootstrap "gui/$(id -u)" "$AGENTS/com.trading-research.$job.plist"
 done

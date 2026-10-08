@@ -288,7 +288,7 @@
           Two rule-based strategies fixed in advance, judged against simply holding NIFTY after Indian costs:
           <b>A</b> NIFTY trend filter (hold NIFTY while above its 200-day average, else liquid fund) and
           <b>B2</b> momentum top 20 of NIFTY 200 with the same market filter. The <b>forward test</b> runs them as paper accounts from the start
-          date with ₹ capital and real costs — no hindsight. Taxes not modelled. Not investment advice.
+          date with ₹ capital and real costs — no hindsight. Indian capital-gains tax is tracked (after-tax value shown; backtests include an after-tax table). Not investment advice.
         </p>
         <div class="row" style="gap:8px">
           <button id="stfBtn" type="button">Forward test (paper accounts)</button>
@@ -1823,11 +1823,12 @@
         if (!d.accounts?.length) return `<div class="note">${esc(d.note || 'Not started.')}</div>`;
         let html = `<div class="note">Forward test since ${esc(String(d.startedAt).slice(0, 10))} · ₹${Number(d.capital).toLocaleString('en-IN')} each</div>`;
         if (d.actions?.length) html += `<div class="note">This run: ${d.actions.map((a) => esc(`${a.account}: ${a.action}`)).join(' · ')}</div>`;
-        html += '<table><thead><tr><th style="text-align:left">Account</th><th>Equity</th><th>Return</th><th>Cash</th><th>Charges</th><th style="text-align:left">Holdings</th></tr></thead><tbody>';
+        html += '<table><thead><tr><th style="text-align:left">Account</th><th>Equity</th><th>Return</th><th>After tax if sold today</th><th>Cash</th><th>Charges</th><th>Tax paid</th><th style="text-align:left">Holdings</th></tr></thead><tbody>';
         for (const a of d.accounts) {
           const col = a.returnPct >= 0 ? 'var(--up)' : 'var(--down)';
           html += `<tr><td style="text-align:left">${esc(a.name)}</td><td>₹${a.equity.toFixed(0)}</td><td style="color:${col}">${a.returnPct >= 0 ? '+' : ''}${a.returnPct.toFixed(2)}%</td>
-            <td>₹${a.cash.toFixed(0)}</td><td>₹${a.charges.toFixed(0)}</td>
+            <td>${a.afterTaxIfSold == null ? '–' : `₹${a.afterTaxIfSold.toFixed(0)} (${a.afterTaxReturnPct >= 0 ? '+' : ''}${a.afterTaxReturnPct.toFixed(2)}%)`}</td>
+            <td>₹${a.cash.toFixed(0)}</td><td>₹${a.charges.toFixed(0)}</td><td>₹${(a.taxPaid || 0).toFixed(0)}</td>
             <td style="text-align:left;font-size:12px">${a.holdings.length ? esc(a.holdings.map((h) => h.symbol.replace('.NS', '') + '×' + h.qty).join(', ')) : 'cash / liquid fund'}</td></tr>`;
         }
         html += '</tbody></table>';
@@ -1855,6 +1856,20 @@
           const r = d.realEtf;
           html += `<div style="font-size:13px;margin-top:12px"><b>Reality check (no survivorship bias): real ETFs</b> · ${esc(r.from)} → ${esc(r.to)}</div>` + head +
             row('Momentum 30 ETF (MOMENTUM.NS)', r.momentum, 'actual investable returns, after fund costs') + row('NIFTY 50 ETF (NIFTYBEES)', r.nifty, '') + '</tbody></table>';
+        }
+        if (d.C) {
+          html += `<div style="font-size:13px;margin-top:12px"><b>C · Volatility-targeted NIFTY</b> · ${esc(d.benchmarkC.all.from)} → ${esc(d.benchmarkC.all.to)}</div>` + head + row('NIFTY buy-and-hold (+dividends)', d.benchmarkC.all, 'benchmark');
+          for (const x of d.C) html += row(x.name, x.all, `${x.avgExposurePct.toFixed(0)}% avg exposure · ${esc(x.verdict)}`);
+          html += '</tbody></table>';
+        }
+        if (d.afterTax) {
+          const t = d.afterTax;
+          const p1 = (x) => (x == null ? '–' : x.toFixed(1) + '%');
+          const trow = (n, x) => `<tr><td style="text-align:left">${esc(n)}</td><td>${p1(x.holdingCagrPct)}</td><td>${p1(x.cagrIfSoldPct)}</td><td>${x.taxPerYearPct.toFixed(2)}%</td><td>${x.sharpe?.toFixed(2) ?? '–'}</td><td>${p1(x.maxDrawdownPct)}</td></tr>`;
+          html += `<div style="font-size:13px;margin-top:12px"><b>After Indian tax</b> · ₹${Number(d.capital).toLocaleString('en-IN')}</div>
+            <table><thead><tr><th style="text-align:left">Strategy</th><th>CAGR still holding</th><th>CAGR if sold at the end</th><th>Tax / year (of capital)</th><th>Sharpe</th><th>Max drawdown</th></tr></thead><tbody>` +
+            trow('NIFTY buy-and-hold', t.A.benchmark) + [...t.A.strategies, ...t.C, ...t.B].map((x) => trow(x.name, x)).join('') + '</tbody></table>' +
+            `<div class="note">${esc(t.note)} Momentum rows use the 10-year stock window; the others use NIFTY's.</div>`;
         }
         return html + `<div class="note">${d.caveats.map(esc).join(' ')}</div>`;
       }
