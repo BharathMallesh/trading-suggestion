@@ -37,6 +37,32 @@ Why the limits: no model — finance-tuned or not — can reliably forecast pric
 and executing trades / giving personalized advice is a licensed, high-risk
 activity. Decision-support, never decision-making.
 
+## Run it always (macOS)
+
+The project must live outside ~/Downloads, ~/Desktop and ~/Documents (macOS
+blocks background services there), e.g. `~/trading-research`.
+
+```bash
+# 1. Store your keys in the macOS Keychain (encrypted; prompts for the value)
+security add-generic-password -U -a "$USER" -s trading-research-openrouter -w
+security add-generic-password -U -a "$USER" -s trading-research-groww -w      # optional
+
+# 2. Install the background services (once)
+bash scripts/install-autostart.sh
+```
+
+That installs LaunchAgents: the **server** starts at login and is restarted
+if it stops; the **collector** runs weekdays 16:05, the **monitor** weekdays
+10:00 / 13:00 / 15:00 (macOS notifications for alerts), the **refit**
+Saturdays 10:00. Missed runs happen when the Mac wakes. Logs:
+`~/Library/Logs/trading-research/`.
+
+```bash
+launchctl kickstart -k gui/$(id -u)/com.trading-research.server   # restart (e.g. after changing a key)
+launchctl list | grep trading-research                            # status
+bash scripts/uninstall-autostart.sh                               # remove
+```
+
 ## Setup
 
 Uses Node's built-in `fetch` (Node 18+), no dependencies to install.
