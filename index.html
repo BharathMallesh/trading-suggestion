@@ -167,6 +167,9 @@
             </select>
           </div>
         </div>
+        <label style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:13px">
+          <input type="checkbox" id="pbNews" checked style="width:auto" /> Show news sentiment for NSE/BSE symbols (context only — signals unchanged)
+        </label>
         <div class="row" style="margin-top:8px">
           <button id="pbBtn">Run scan</button>
           <button id="pbBacktestBtn" style="background:#0d1320;color:var(--ink);border:1px solid var(--line)">Run backtest</button>
@@ -244,7 +247,7 @@
           </div>
         </div>
         <label style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:13px">
-          <input type="checkbox" id="gpNews" style="width:auto" /> Include news brief (NSE/BSE; shown + logged, not used in the numbers)
+          <input type="checkbox" id="gpNews" checked style="width:auto" /> Include news sentiment (NSE/BSE): small up/down tilt (≤ Settings → news tilt), logged and auto-disabled if it doesn't help
         </label>
         <button id="gpBtn">Fetch + get probabilities</button>
         <div id="gpStatus" class="note" style="display:none"></div>
@@ -576,7 +579,7 @@
           const d = await api('/api/groww-predict', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ symbol: sym, intervalMinutes: 15, preferYahoo: true }),
+            body: JSON.stringify({ symbol: sym, intervalMinutes: 15, preferYahoo: true, includeNews: true }),
           });
           const p = d.prediction || {};
           const callPct = ((Number(p.probUp) || 0) * 100).toFixed(0);
@@ -602,6 +605,7 @@
               </div>
             </div>
             ${renderEdge(d.edge)}
+            ${renderTilt(d.newsTilt, d.news)}
             <div class="kv">
               <div>Bias</div><div style="color:${biasColor};font-weight:700">${esc(p.bias || '–')}</div>
               <div>Confidence</div><div>${confPct}%</div>
@@ -666,6 +670,7 @@
           symbols,
           techOnly: $('pbMode').value === 'tech',
           interval: $('pbInterval').value,
+          includeNews: $('pbNews').checked,
         };
       }
 
@@ -717,7 +722,7 @@
           </div>`;
           html += `<table><thead><tr>
             <th>Symbol</th><th>Signal</th><th>Conf</th><th>Tech bias</th>
-            <th>Close</th><th>RSI</th><th>Reasoning</th>
+            <th>Close</th><th>RSI</th><th>News</th><th>Reasoning</th>
           </tr></thead><tbody>`;
           for (const s of d.signals || []) {
             const color = s.signal === 'LONG' ? 'var(--up)' : s.signal === 'SHORT' ? 'var(--down)' : 'var(--muted)';
@@ -728,6 +733,7 @@
               <td>${esc(s.techBias || '–')}</td>
               <td>${s.indicators?.close != null ? s.indicators.close.toFixed(2) : '–'}</td>
               <td>${s.indicators?.rsi14 != null ? s.indicators.rsi14.toFixed(1) : '–'}</td>
+              <td>${sentimentBadge(s.news)}</td>
               <td style="text-align:left;max-width:280px;font-size:12px">${esc((s.reasoning || '').slice(0, 140))}</td>
             </tr>`;
           }
@@ -1035,6 +1041,7 @@
           </div>`;
 
           html += renderEdge(d.edge);
+          html += renderTilt(d.newsTilt, d.news);
           html += `<div class="kv">
             <div>Symbol</div><div>${esc(d.symbol)} · last ${Number(d.lastClose || 0).toFixed(2)}</div>
             <div>Bias</div><div style="color:${biasColor};font-weight:700">${esc(p.bias || '–')}</div>
@@ -1158,6 +1165,10 @@
         } else {
           html += '<div class="note" style="margin-top:8px">Ling adjustment value: no evaluated AI-adjusted predictions yet.</div>';
         }
+        const tilt = stats.newsValue?.tilt;
+        if (tilt?.n) {
+          html += `<div class="note">News tilt <b>${esc(tilt.verdict)}</b>: Brier ${tilt.brierWithTilt.toFixed(4)} with vs ${tilt.brierWithout.toFixed(4)} without (n=${tilt.n})${tilt.autoDisabled ? ' — <b>auto-disabled</b>' : tilt.n < 20 ? ' — auto-off check starts at 20 scored' : ''}.</div>`;
+        }
         if (stats.newsValue?.n) {
           html += `<div class="note">News sentiment matched the direction ${(stats.newsValue.directionHitRate * 100).toFixed(0)}% of the time on moves (n=${stats.newsValue.n}; 50% = no information).</div>`;
         }
@@ -1234,7 +1245,7 @@
             const tag = a.action === 'buy' ? `<b style="color:var(--up)">BUY</b> ${a.qty} @ ${Number(a.price).toFixed(2)} (stop ${a.stop?.toFixed(2) ?? '–'}, target ${a.target?.toFixed(2) ?? '–'})`
               : a.action === 'close' ? `<b style="color:var(--down)">SELL</b> @ ${Number(a.price).toFixed(2)} · PnL <span style="color:${col(a.pnl)}">${money(a.pnl)}</span>`
               : esc(a.action);
-            html += `<li>${esc(a.symbol)} — ${tag} <span style="color:var(--muted)">${esc((a.reason || '').slice(0, 90))}</span></li>`;
+            html += `<li>${esc(a.symbol)} — ${tag} · news ${sentimentBadge(a.news)} <span style="color:var(--muted)">${esc((a.reason || '').slice(0, 90))}</span></li>`;
           }
           html += '</ul></div>';
         }
@@ -1246,11 +1257,12 @@
           <div>Since</div><div>${esc((d.createdAt || '').slice(0, 10))} · refreshed ${d.lastRefresh ? esc(new Date(d.lastRefresh).toLocaleString()) : '–'}</div>
         </div>`;
         if (d.positions?.length) {
-          html += '<table><thead><tr><th>Symbol</th><th>Qty</th><th>Entry</th><th>Last</th><th>Unrealised</th><th>Stop</th><th>Target</th><th></th></tr></thead><tbody>';
+          html += '<table><thead><tr><th>Symbol</th><th>Qty</th><th>Entry</th><th>Last</th><th>Unrealised</th><th>Stop</th><th>Target</th><th>News</th><th></th></tr></thead><tbody>';
           for (const p of d.positions) {
             html += `<tr><td>${esc(p.symbol)}</td><td>${p.qty}</td><td>${Number(p.entryPrice).toFixed(2)}</td><td>${Number(p.mark).toFixed(2)}</td>
               <td style="color:${col(p.unrealized)}">${money(p.unrealized)} (${p.unrealizedPct.toFixed(1)}%)</td>
               <td>${p.stop != null ? Number(p.stop).toFixed(2) : '–'}</td><td>${p.target != null ? Number(p.target).toFixed(2) : '–'}</td>
+              <td>${sentimentBadge(p.news)}</td>
               <td><button type="button" data-close="${esc(p.symbol)}" style="margin:0;padding:4px 10px;font-size:12px;background:#0d1320;color:var(--ink);border:1px solid var(--line)">Close</button></td></tr>`;
           }
           html += '</tbody></table>';
@@ -1297,6 +1309,7 @@
         ['maxPositionPct', 'Max per position (%)'],
         ['maxOpenPositions', 'Max open positions'],
         ['minConfidence', 'Min signal confidence (0.5–0.95)'],
+        ['newsTiltPts', 'News tilt max (pts, 0 = off)'],
         ['costs.brokerageIntradayCap', 'Intraday brokerage cap (₹/order)'],
         ['costs.brokerageDeliveryPct', 'Delivery brokerage (%)'],
         ['costs.dpChargePerSell', 'DP charge per delivery sell (₹)'],
@@ -1334,6 +1347,27 @@
         }
       });
       loadSettings();
+
+      // News sentiment chip: −1 … +1, coloured, with event flags on hover.
+      function sentimentBadge(n) {
+        if (!n) return '<span style="color:var(--muted)">–</span>';
+        const s = Number(n.sentiment);
+        const ev = n.events?.length ? ` ⚠` : '';
+        const title = esc([n.headline, n.events?.length ? 'Events: ' + n.events.join(', ') : '', n.note].filter(Boolean).join(' · '));
+        if (!Number.isFinite(s)) return `<span title="${title}" style="color:var(--muted)">n/a${ev}</span>`;
+        const col = s > 0.2 ? 'var(--up)' : s < -0.2 ? 'var(--down)' : 'var(--muted)';
+        return `<span title="${title}" style="color:${col};font-weight:600">${s > 0 ? '+' : ''}${s.toFixed(1)}${ev}</span>`;
+      }
+
+      // What the news tilt did to the numbers.
+      function renderTilt(t, n) {
+        if (!t || (!t.applied && !n)) return '';
+        if (t.applied) {
+          return `<div class="note">News tilt applied: sentiment ${t.sentiment > 0 ? '+' : ''}${Number(t.sentiment).toFixed(2)} moved ${Math.abs(t.shiftPts).toFixed(1)} pts toward ${t.shiftPts > 0 ? 'UP' : 'DOWN'}
+            (before: ${Math.round(t.before.probUp * 100)}/${Math.round(t.before.probDown * 100)}/${Math.round(t.before.probSideways * 100)}).${n?.events?.length ? ` ⚠ Event risk: ${esc(n.events.join(', '))}.` : ''}</div>`;
+        }
+        return `<div class="note">News: sentiment ${sentimentBadge(n)} — no tilt (${esc(t.reason || 'n/a')}).${n?.events?.length ? ` ⚠ Event risk: ${esc(n.events.join(', '))}.` : ''}</div>`;
+      }
 
       // Signal strength vs historical base rates.
       function renderEdge(e) {

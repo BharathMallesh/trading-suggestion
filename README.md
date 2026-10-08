@@ -273,11 +273,17 @@ inputs tell which way the price will go.
   (`paper-bot/portfolio.json`). *Apply today's signals* buys on daily LONG
   signals and exits on FLAT after the minimum hold; stops/targets are checked
   against daily bars since entry.
-- **News**: recent headlines (Google News RSS India edition for NSE/BSE;
-  Yahoo for others) and, with the key, a factual Ling brief with a sentiment
-  score. Sentiment is shown and logged, **not** used in the numbers — the
-  hit-rate panel measures whether it (and Ling's probability adjustment)
-  actually helps.
+- **News sentiment**: recent headlines (Google News RSS India edition for
+  NSE/BSE, with aliases such as SBIN → "SBI"; Yahoo for others), a factual Ling
+  brief, a sentiment score (−1…+1) and event-risk flags (results, dividend,
+  corporate action, rating change, policy). Shown in Call/Put (on by default),
+  the paper scan and the paper portfolio.
+- **News tilt**: in Call/Put, sentiment (|s| ≥ 0.2) moves probability between
+  UP and DOWN by at most `newsTiltPts` × sentiment (default 5 pts, editable in
+  Settings, 0 = off); SIDEWAYS is untouched. Both versions are logged, and the
+  tilt **switches itself off** once 20+ scored predictions show it doesn't
+  improve the Brier score. Sentiment is model-generated and can vary between
+  runs — treat it as context.
 - **Auto-evaluation**: the server scores due predictions every 15 minutes
   (`AUTO_EVALUATE=0` to disable).
 - **Settings**: capital, risk, limits, confidence threshold, symbols and cost

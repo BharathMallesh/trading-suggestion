@@ -49,6 +49,10 @@ export const PAPER = {
   // (1) Confidence threshold — only act at/above this
   minConfidence: 0.60,
 
+  // News sentiment may shift up vs down by at most this many points
+  // (0 = off). Auto-disabled if scored predictions show it hurts.
+  newsTiltPts: 5,
+
   // Indian cash-segment costs (see costs.mjs for the statutory rates). Override
   // brokerage / DP charge / slippage here to match your broker.
   costs: {},

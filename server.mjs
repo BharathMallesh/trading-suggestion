@@ -33,7 +33,7 @@ import { loadCalibration } from './paper-bot/calibration.mjs';
 import { newsBrief } from './paper-bot/news.mjs';
 import { currentSettings, saveSettings, resetSettings } from './paper-bot/settings.mjs';
 import * as portfolio from './paper-bot/portfolio.mjs';
-import { HttpError, badRequest, parseSymbols, parseBool } from './util.mjs';
+import { HttpError, badRequest, parseSymbols, parseBool, mapLimit } from './util.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT) || 3000;
@@ -100,6 +100,23 @@ function guard(req, url) {
 }
 
 const PAPER_INTERVALS = new Set(['1d', '15m', '5m', '1h']);
+
+/**
+ * News sentiment + event flags for NSE/BSE symbols (4 at a time, cached 10 min
+ * in news.mjs). Shown next to signals; never changes them. Failures → null.
+ */
+async function sentimentFor(symbols) {
+  const indian = [...new Set(symbols)].filter((s) => /\.(NS|BO)$/i.test(s));
+  const res = await mapLimit(indian, 4, async (sym) => {
+    try {
+      const n = await newsBrief(sym);
+      return [sym, { sentiment: n.sentiment, events: n.events || [], headline: n.headlines?.[0]?.title || null, note: n.note || null }];
+    } catch {
+      return [sym, null];
+    }
+  });
+  return Object.fromEntries(res);
+}
 
 /** Validate the paper-bot interval and resolve its data settings. */
 function paperData(interval = '1d') {
@@ -256,6 +273,10 @@ const server = http.createServer(async (req, res) => {
       }
 
       const summary = engine.summary();
+      if (parseBool(body.includeNews)) {
+        const news = await sentimentFor(signals.map((s) => s.symbol));
+        for (const s of signals) s.news = news[s.symbol] ?? null;
+      }
       return json(res, 200, {
         mode: techOnly ? 'tech-only' : 'hybrid',
         interval,
@@ -427,11 +448,22 @@ const server = http.createServer(async (req, res) => {
 
     // --- Persistent paper portfolio (delivery, long-only) ---
     if (req.method === 'GET' && url.pathname === '/api/portfolio') {
-      return json(res, 200, await portfolio.refresh());
+      const out = await portfolio.refresh();
+      if (url.searchParams.get('news') !== '0') {
+        const news = await sentimentFor(out.positions.map((p) => p.symbol));
+        for (const p of out.positions) p.news = news[p.symbol] ?? null;
+      }
+      return json(res, 200, out);
     }
     if (req.method === 'POST' && url.pathname === '/api/portfolio/rebalance') {
       const body = await readJson(req);
-      return json(res, 200, await portfolio.rebalance({ techOnly: body.techOnly === undefined ? true : parseBool(body.techOnly), symbols: parseSymbols(body.symbols) }));
+      const out = await portfolio.rebalance({ techOnly: body.techOnly === undefined ? true : parseBool(body.techOnly), symbols: parseSymbols(body.symbols) });
+      if (body.includeNews !== false) {
+        const news = await sentimentFor([...out.actions.map((a) => a.symbol), ...out.positions.map((p) => p.symbol)]);
+        for (const a of out.actions) a.news = news[a.symbol] ?? null;
+        for (const p of out.positions) p.news = news[p.symbol] ?? null;
+      }
+      return json(res, 200, out);
     }
     if (req.method === 'POST' && url.pathname === '/api/portfolio/close') {
       const body = await readJson(req);

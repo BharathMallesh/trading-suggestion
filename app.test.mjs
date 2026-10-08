@@ -155,3 +155,60 @@ test('Call/Put output says how far it is from base rates (signal strength)', asy
     globalThis.fetch = realFetch;
   }
 });
+
+test('news tilt: bounded, up/down only, skipped when weak / off / auto-disabled', async () => {
+  const { applyNewsTilt } = await import('./paper-bot/groww-predict.mjs');
+  const mk = () => ({ probUp: 0.25, probDown: 0.25, probSideways: 0.5, bias: 'SIDEWAYS' });
+  let p = mk();
+  let t = applyNewsTilt(p, 0.6, { maxPts: 5, allowed: true });
+  assert.equal(t.applied, true);
+  assert.ok(Math.abs(t.shiftPts - 3) < 1e-9); // 0.6 × 5 pts
+  assert.ok(Math.abs(p.probUp - 0.28) < 1e-9 && Math.abs(p.probDown - 0.22) < 1e-9 && p.probSideways === 0.5);
+  p = mk();
+  t = applyNewsTilt(p, -1, { maxPts: 10, allowed: true });
+  assert.ok(Math.abs(p.probDown - 0.35) < 1e-9);
+  assert.equal(p.bias, 'SIDEWAYS');
+  p = { probUp: 0.03, probDown: 0.47, probSideways: 0.5 };
+  applyNewsTilt(p, -1, { maxPts: 10, allowed: true });
+  assert.ok(Math.abs(p.probUp - 0.02) < 1e-9, 'floor keeps UP ≥ 2%');
+  assert.equal(applyNewsTilt(mk(), 0.1, { maxPts: 5, allowed: true }).applied, false);
+  assert.equal(applyNewsTilt(mk(), 0.9, { maxPts: 0, allowed: true }).applied, false);
+  assert.match(applyNewsTilt(mk(), 0.9, { maxPts: 5, allowed: false }).reason, /auto-disabled/);
+  assert.equal(applyNewsTilt(mk(), null, { maxPts: 5, allowed: true }).applied, false);
+});
+
+test('news tilt auto-disables after 20 scored predictions where it hurt', async () => {
+  const { newsTiltAllowed } = await import('./paper-bot/prediction-log.mjs');
+  const entries = Array.from({ length: 20 }, (_, i) => ({
+    id: `t${i}`, ts: new Date().toISOString(), symbol: 'X.NS', evaluated: true, realizedLabel: 'DOWN',
+    // tilt pushed toward UP but it went DOWN → tilt hurt
+    probUp: 0.3, probDown: 0.2, probSideways: 0.5, preNews: { probUp: 0.25, probDown: 0.25, probSideways: 0.5 }, newsTiltPts: 5,
+  }));
+  writeFileSync(process.env.PREDICTION_LOG_PATH, JSON.stringify({ version: 1, entries }));
+  assert.equal(newsTiltAllowed(), false);
+  const s = computeStats();
+  assert.equal(s.newsValue.tilt.autoDisabled, true);
+  assert.equal(s.newsValue.tilt.verdict, 'does not help');
+  writeFileSync(process.env.PREDICTION_LOG_PATH, JSON.stringify({ version: 1, entries: entries.slice(0, 19) }));
+  assert.equal(newsTiltAllowed(), true, 'needs 20 before switching off');
+});
+
+test('settings: news tilt is editable within 0–10 pts', () => {
+  assert.throws(() => validate({ newsTiltPts: 50 }), /between 0 and 10/);
+  saveSettings({ newsTiltPts: 0 });
+  assert.equal(PAPER.newsTiltPts, 0);
+  resetSettings();
+  assert.equal(PAPER.newsTiltPts, 5);
+});
+
+test('news: aliased tickers match their headline name, not loose words', () => {
+  const now = Date.now();
+  const t = now / 1000 - 600;
+  const items = [
+    { title: 'Kotak Mahindra Bank gets HSBC upgrade', providerPublishTime: t },
+    { title: 'Kotak Securities picks 3 stocks', providerPublishTime: t },
+    { title: 'SBI raises lending rates', providerPublishTime: t },
+  ];
+  assert.deepEqual(relevantHeadlines(items, ['kotak'], { now, match: /Kotak (Mahindra )?Bank/i }).map((h) => h.title), ['Kotak Mahindra Bank gets HSBC upgrade']);
+  assert.deepEqual(relevantHeadlines(items, ['state'], { now, match: /\bSBI\b|State Bank of India/i }).map((h) => h.title), ['SBI raises lending rates']);
+});

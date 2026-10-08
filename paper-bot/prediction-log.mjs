@@ -64,6 +64,9 @@ export function logPrediction(result) {
       : null,
     llmAdjusted: Boolean(p.adjustmentNote && p.adjustmentNote !== 'No LLM adjustment applied'),
     newsSentiment: result.news?.sentiment ?? null,
+    // Probabilities before the news tilt (null when no tilt was applied).
+    preNews: result.newsTilt?.applied ? result.newsTilt.before : null,
+    newsTiltPts: result.newsTilt?.applied ? result.newsTilt.shiftPts : 0,
     atr: result.indicators?.atr14 ?? result.expectedMove?.atr ?? null,
     timeWindow: result.expectedMove?.timeWindow || null,
     horizonMinutes: horizonFor(result.mode, result.intervalMinutes),
@@ -248,6 +251,29 @@ export function computeStats(entries) {
 }
 
 const KEYS = { UP: 'probUp', DOWN: 'probDown', SIDEWAYS: 'probSideways' };
+
+/** Minimum scored tilted predictions before the auto-off rule can trigger. */
+export const TILT_MIN_EVIDENCE = 20;
+
+/** Brier with vs without the news tilt, on evaluated entries where a tilt was applied. */
+function tiltEvidence(evaluated) {
+  const t = evaluated.filter((e) => e.preNews);
+  if (!t.length) return { n: 0, autoDisabled: false };
+  const withTilt = t.reduce((a, e) => a + brierOf(e, e.realizedLabel), 0) / t.length;
+  const without = t.reduce((a, e) => a + brierOf(e.preNews, e.realizedLabel), 0) / t.length;
+  return {
+    n: t.length,
+    brierWithTilt: withTilt,
+    brierWithout: without,
+    verdict: withTilt < without ? 'helps' : 'does not help',
+    autoDisabled: t.length >= TILT_MIN_EVIDENCE && withTilt >= without,
+  };
+}
+
+/** Is the news tilt allowed right now? (false once evidence shows it hurts) */
+export function newsTiltAllowed() {
+  return !tiltEvidence(loadLog().entries.filter((e) => e.evaluated)).autoDisabled;
+}
 const brierOf = (p, label) => ['UP', 'DOWN', 'SIDEWAYS'].reduce((a, l) => a + ((Number(p?.[KEYS[l]]) || 0) - (l === label ? 1 : 0)) ** 2, 0);
 
 /**
@@ -271,6 +297,7 @@ function valueOfAdditions(evaluated) {
     directionHitRate: moved.length
       ? moved.filter((e) => (e.newsSentiment > 0 ? 'UP' : 'DOWN') === e.realizedLabel).length / moved.length
       : null,
+    tilt: tiltEvidence(evaluated),
   };
   return { llmValue: llm, newsValue: news };
 }

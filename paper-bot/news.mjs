@@ -17,6 +17,23 @@ const SEARCH = 'https://query2.finance.yahoo.com/v1/finance/search';
 const UA = 'Mozilla/5.0 (AutoClaw Trading Research; read-only)';
 const GENERIC = new Set(['limited', 'ltd', 'the', 'and', 'of', 'india', 'company', 'corporation', 'co', 'inc', 'industries', 'services', 'consultancy', 'enterprises', 'holdings']);
 const GNEWS = 'https://news.google.com/rss/search';
+
+// NSE tickers whose headlines use a different short name.
+export const ALIASES = {
+  SBIN: 'SBI', BHARTIARTL: 'Airtel', 'M&M': 'Mahindra', HINDUNILVR: 'HUL', KOTAKBANK: 'Kotak Mahindra Bank',
+  BAJFINANCE: 'Bajaj Finance', ASIANPAINT: 'Asian Paints', ULTRACEMCO: 'UltraTech', NESTLEIND: 'Nestle India',
+  HEROMOTOCO: 'Hero MotoCorp', EICHERMOT: 'Eicher', TATAMOTORS: 'Tata Motors', TATASTEEL: 'Tata Steel',
+  POWERGRID: 'Power Grid', ADANIENT: 'Adani Enterprises', ADANIPORTS: 'Adani Ports', SUNPHARMA: 'Sun Pharma',
+  DRREDDY: "Dr Reddy's", APOLLOHOSP: 'Apollo Hospitals', BAJAJFINSV: 'Bajaj Finserv', INDUSINDBK: 'IndusInd',
+};
+// Headline patterns for aliased names (whole phrase; a few need variants).
+const ALIAS_MATCH = {
+  SBIN: /\bSBI\b|State Bank of India/i,
+  KOTAKBANK: /Kotak (Mahindra )?Bank/i,
+  HINDUNILVR: /\bHUL\b|Hindustan Unilever/i,
+  'M&M': /\bM&M\b|Mahindra & Mahindra|Mahindra and Mahindra/i,
+};
+const phrase = (t) => new RegExp(`\\b${t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i');
 // Quote pages / weekly "outlook" listings aren't news.
 const JUNK = /stock price|share price( -|$)|outlook for the week|quote|live updates|price today|stock quote/i;
 const cache = new Map(); // symbol -> { at, value }
@@ -61,9 +78,9 @@ export function nameTokens(name) {
  * Keep headlines that mention the company (first distinctive name word, or
  * the ticker as a whole word), are recent, and aren't quote-page listings.
  */
-export function relevantHeadlines(items, tokens, { maxAgeDays = 7, now = Date.now(), ticker = '' } = {}) {
-  const first = tokens[0];
-  const tick = ticker ? new RegExp(`\\b${ticker.replace(/[^A-Za-z0-9&]/g, '')}\\b`, 'i') : null;
+export function relevantHeadlines(items, tokens, { maxAgeDays = 7, now = Date.now(), ticker = '', match = null } = {}) {
+  const first = match ? null : tokens[0];
+  const tick = match || (ticker ? new RegExp(`\\b${ticker.replace(/[^A-Za-z0-9&]/g, '')}\\b`, 'i') : null);
   const seen = new Set();
   return items
     .filter((n) => {
@@ -109,8 +126,9 @@ export async function newsBrief(symbol, { useLlm = true } = {}) {
   const ticker = String(q.symbol || sym).replace(/\.(NS|BO)$/i, '');
   const indian = /\.(NS|BO)$/i.test(q.symbol || sym);
   let items = [];
+  const alias = ALIASES[ticker.toUpperCase()];
   try {
-    items = indian ? await googleNews(`${ticker} share`) : [];
+    items = indian ? await googleNews(`${alias || ticker} share`) : [];
   } catch {
     items = [];
   }
@@ -121,7 +139,9 @@ export async function newsBrief(symbol, { useLlm = true } = {}) {
       items = [];
     }
   }
-  const headlines = relevantHeadlines(items, tokens, { ticker }).slice(0, 8).map((n) => ({
+  // Aliased names match on their full phrase (e.g. "Kotak Mahindra Bank", not any "Kotak").
+  const match = alias ? ALIAS_MATCH[ticker.toUpperCase()] || phrase(alias) : null;
+  const headlines = relevantHeadlines(items, tokens, { ticker, match }).slice(0, 8).map((n) => ({
     title: n.title,
     publisher: n.publisher,
     time: new Date((n.providerPublishTime || 0) * 1000).toISOString(),

@@ -19,6 +19,7 @@ export const NUMERIC = {
   maxPositionPct: [1, 100],
   maxOpenPositions: [1, 20],
   minConfidence: [0.5, 0.95],
+  newsTiltPts: [0, 10],
   'costs.brokerageIntradayCap': [0, 100],
   'costs.brokerageDeliveryPct': [0, 1],
   'costs.dpChargePerSell': [0, 50],

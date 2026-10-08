@@ -5,7 +5,8 @@ import { chat } from '../ling-client.mjs';
 import { historicalCandles } from '../groww-data.mjs';
 import { candles as yahooCandles } from '../market-data.mjs';
 import { computeIndicators } from './indicators.mjs';
-import { logPrediction } from './prediction-log.mjs';
+import { logPrediction, newsTiltAllowed } from './prediction-log.mjs';
+import { PAPER } from './config.mjs';
 import { extractJson, normalizeConfidence } from './llm-json.mjs';
 import { calibratedProbs, intervalKey, loadCalibration } from './calibration.mjs';
 import { prepare, featuresAt, isIndianListing, MARKET_INDEX, VIX_INDEX } from './features.mjs';
@@ -325,6 +326,31 @@ export function parseProb(raw, base, llmError = null) {
   };
 }
 
+/**
+ * Small, bounded news tilt: moves probability between UP and DOWN only (by at
+ * most PAPER.newsTiltPts × sentiment), leaves SIDEWAYS alone, and re-derives
+ * the bias. Skipped for weak sentiment (|s| < 0.2), when set to 0 in
+ * Settings, or once scored predictions show the tilt hurts (auto-off).
+ * Mutates `prediction`; returns what happened for display + logging.
+ */
+export function applyNewsTilt(prediction, sentiment, { maxPts = PAPER.newsTiltPts ?? 5, allowed = newsTiltAllowed } = {}) {
+  const s = Number(sentiment);
+  const before = { probUp: prediction.probUp, probDown: prediction.probDown, probSideways: prediction.probSideways };
+  if (!Number.isFinite(s)) return { applied: false, reason: 'no sentiment' };
+  if (!(maxPts > 0)) return { applied: false, reason: 'tilt off in Settings', sentiment: s };
+  if (Math.abs(s) < 0.2) return { applied: false, reason: 'sentiment too weak (|s| < 0.2)', sentiment: s };
+  if (!(typeof allowed === 'function' ? allowed() : allowed)) {
+    return { applied: false, reason: 'auto-disabled: scored predictions show the tilt does not help', sentiment: s };
+  }
+  const floor = 0.02;
+  let shift = (Math.max(-1, Math.min(1, s)) * maxPts) / 100;
+  shift = shift > 0 ? Math.min(shift, prediction.probDown - floor) : Math.max(shift, -(prediction.probUp - floor));
+  prediction.probUp += shift;
+  prediction.probDown -= shift;
+  prediction.bias = topLabel(prediction);
+  return { applied: true, sentiment: s, shiftPts: shift * 100, before };
+}
+
 /** Weights for multi-horizon blend (must sum ~1). Longer horizons = structure; short = timing. */
 const HORIZON_WEIGHTS = {
   m2: 0.2, // ~2 months daily
@@ -550,6 +576,11 @@ export async function growwProbability(symbol, opts = {}) {
 
   const ind = computeIndicators(meta.rows);
 
+  // News brief (NSE/BSE) runs in parallel with the scoring + Ling call below.
+  const newsP = opts.includeNews && /\.(NS|BO)$/i.test(meta.symbol)
+    ? newsBrief(meta.symbol).catch((err) => ({ headlines: [], brief: null, sentiment: null, events: [], note: `News unavailable: ${err.message.slice(0, 100)}` }))
+    : null;
+
   const cal = loadCalibration();
   let score = techScore(ind);
   const primaryCal =
@@ -633,6 +664,8 @@ export async function growwProbability(symbol, opts = {}) {
   }
 
   const prediction = parseProb(raw, base, llmError);
+  const news = newsP ? await newsP : null;
+  const newsTilt = applyNewsTilt(prediction, news?.sentiment);
   const last = meta.rows[meta.rows.length - 1];
   const move = expectedMoveEstimate({
     close: last.close,
@@ -721,15 +754,8 @@ export async function growwProbability(symbol, opts = {}) {
         : 'Single-timeframe hybrid + ATR range estimate. Experimental research only. Not investment advice. Ranges are volatility bands, not promises.',
   };
 
-  // Optional news brief: shown and logged (so its value can be measured), but
-  // it does not change the probabilities.
-  if (opts.includeNews && /\.(NS|BO)$/i.test(out.symbol)) {
-    try {
-      out.news = await newsBrief(out.symbol);
-    } catch (err) {
-      out.news = { headlines: [], brief: null, sentiment: null, note: `News unavailable: ${err.message.slice(0, 100)}` };
-    }
-  }
+  if (news) out.news = news;
+  out.newsTilt = newsTilt;
 
   // Auto-log for hit-rate calibration (research)
   try {
