@@ -1364,7 +1364,7 @@
         if (!t || (!t.applied && !n)) return '';
         if (t.applied) {
           return `<div class="note">News tilt applied: sentiment ${t.sentiment > 0 ? '+' : ''}${Number(t.sentiment).toFixed(2)} moved ${Math.abs(t.shiftPts).toFixed(1)} pts toward ${t.shiftPts > 0 ? 'UP' : 'DOWN'}
-            (before: ${Math.round(t.before.probUp * 100)}/${Math.round(t.before.probDown * 100)}/${Math.round(t.before.probSideways * 100)}).${n?.events?.length ? ` ⚠ Event risk: ${esc(n.events.join(', '))}.` : ''}</div>`;
+            (before: ${Math.round(t.before.probUp * 100)}/${Math.round(t.before.probDown * 100)}/${Math.round(t.before.probSideways * 100)})${t.note ? ` — ${esc(t.note)}` : ''}.${n?.events?.length ? ` ⚠ Event risk: ${esc(n.events.join(', '))}.` : ''}</div>`;
         }
         return `<div class="note">News: sentiment ${sentimentBadge(n)} — no tilt (${esc(t.reason || 'n/a')}).${n?.events?.length ? ` ⚠ Event risk: ${esc(n.events.join(', '))}.` : ''}</div>`;
       }

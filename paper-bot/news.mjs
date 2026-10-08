@@ -104,9 +104,15 @@ const EVENT_WORDS = [
 ];
 
 /** Event types mentioned in recent headlines — these usually mean bigger moves. */
+/** Market-wide roundups ("Top stocks to watch: TCS, Tata Steel, Reliance…") aren't company events. */
+export const isRoundup = (title) => /stocks to (watch|buy)|stock picks|top (stocks|gainers|losers)|market (live|wrap)|sensex|nifty/i.test(title) || (String(title).match(/,/g) || []).length >= 2;
+
 export function detectEvents(headlines) {
   const found = new Set();
-  for (const h of headlines) for (const [name, re] of EVENT_WORDS) if (re.test(h.title)) found.add(name);
+  for (const h of headlines) {
+    if (isRoundup(h.title)) continue;
+    for (const [name, re] of EVENT_WORDS) if (re.test(h.title)) found.add(name);
+  }
   return [...found];
 }
 

@@ -289,6 +289,16 @@ inputs tell which way the price will go.
 - **Settings**: capital, risk, limits, confidence threshold, symbols and cost
   overrides, saved to `paper-bot/settings.json`.
 
+### Investor monitor
+
+`npm run monitor` (with the dashboard running) does what an investor would
+check, and records it: Call/Put + news for the whole watchlist (each prediction
+is logged for scoring), scores due predictions, applies daily signals to the
+paper portfolio, and prints a scorecard — hit-rate, Brier vs a coin-flip,
+whether Ling's adjustment and the news tilt help. Reports go to
+`paper-bot/monitor/<date-time IST>.json` and a running `journal.md`. Read the
+scorecard only after ~30+ scored predictions.
+
 ### API endpoints
 
 | Endpoint | Method | Purpose |

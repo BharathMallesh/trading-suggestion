@@ -16,7 +16,7 @@ after(() => rmSync(TMP, { recursive: true, force: true }));
 const portfolio = await import('./paper-bot/portfolio.mjs');
 const { currentSettings, saveSettings, resetSettings, validate } = await import('./paper-bot/settings.mjs');
 const { PAPER } = await import('./paper-bot/config.mjs');
-const { nameTokens, relevantHeadlines, parseRss, detectEvents } = await import('./paper-bot/news.mjs');
+const { nameTokens, relevantHeadlines, parseRss, detectEvents, isRoundup } = await import('./paper-bot/news.mjs');
 const { logPrediction, computeStats } = await import('./paper-bot/prediction-log.mjs');
 
 /** Steady uptrend daily bars ending today, so the tech signal goes LONG. */
@@ -211,4 +211,26 @@ test('news: aliased tickers match their headline name, not loose words', () => {
   ];
   assert.deepEqual(relevantHeadlines(items, ['kotak'], { now, match: /Kotak (Mahindra )?Bank/i }).map((h) => h.title), ['Kotak Mahindra Bank gets HSBC upgrade']);
   assert.deepEqual(relevantHeadlines(items, ['state'], { now, match: /\bSBI\b|State Bank of India/i }).map((h) => h.title), ['SBI raises lending rates']);
+});
+
+test('news: market-wide roundups do not raise company event flags', () => {
+  assert.equal(isRoundup('Top stocks to watch today: TCS, Tata Steel, Reliance, Sun Pharma'), true);
+  assert.equal(isRoundup('RBI MPC meeting: Why TCS, HDFC Bank, ICICI Lombard may gain'), true);
+  assert.equal(isRoundup('TCS Q2 results preview'), false);
+  assert.deepEqual(detectEvents([{ title: 'RBI MPC meeting: Why TCS, HDFC Bank, ICICI Lombard may gain if rates rise' }]), []);
+  assert.deepEqual(detectEvents([{ title: 'TCS Q2 results preview' }]), ['results']);
+});
+
+test('monitor: NSE market hours in IST and an honest scorecard', async () => {
+  const { marketStatus, scorecard } = await import('./paper-bot/monitor.mjs');
+  assert.equal(marketStatus(new Date('2026-10-08T05:00:00Z')).open, true); // Thu 10:30 IST
+  assert.equal(marketStatus(new Date('2026-10-08T11:00:00Z')).open, false); // Thu 16:30 IST
+  assert.equal(marketStatus(new Date('2026-10-10T05:00:00Z')).open, false); // Saturday
+  assert.equal(scorecard([]).scored, 0);
+  const e = (label, p) => ({ evaluated: true, realizedLabel: label, hitBias: p.bias === label, ...p });
+  const card = scorecard([e('UP', { probUp: 0.5, probDown: 0.2, probSideways: 0.3, bias: 'UP' }), e('SIDEWAYS', { probUp: 0.2, probDown: 0.2, probSideways: 0.6, bias: 'SIDEWAYS' })]);
+  assert.equal(card.scored, 2);
+  assert.equal(card.hitRatePct, 100);
+  assert.ok(card.brier.app < card.brier.uniform);
+  assert.match(card.verdict, /Too early/);
 });

@@ -665,7 +665,13 @@ export async function growwProbability(symbol, opts = {}) {
 
   const prediction = parseProb(raw, base, llmError);
   const news = newsP ? await newsP : null;
-  const newsTilt = applyNewsTilt(prediction, news?.sentiment);
+  // Around results, pre-results "preview" sentiment says little about the
+  // outcome — halve the tilt while a results event is in the headlines.
+  const resultsPending = (news?.events || []).includes('results');
+  const newsTilt = applyNewsTilt(prediction, news?.sentiment, {
+    maxPts: (PAPER.newsTiltPts ?? 5) * (resultsPending ? 0.5 : 1),
+  });
+  if (resultsPending && newsTilt.applied) newsTilt.note = 'halved: results event in headlines';
   const last = meta.rows[meta.rows.length - 1];
   const move = expectedMoveEstimate({
     close: last.close,
