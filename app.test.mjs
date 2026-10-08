@@ -11,6 +11,7 @@ process.env.PORTFOLIO_PATH = join(TMP, 'portfolio.json');
 process.env.SETTINGS_PATH = join(TMP, 'settings.json');
 process.env.PREDICTION_LOG_PATH = join(TMP, 'prediction-history.json');
 process.env.CALIBRATION_PATH = join(TMP, 'calibration.json');
+process.env.NEWS_CACHE_PATH = join(TMP, 'news-daily.json');
 after(() => rmSync(TMP, { recursive: true, force: true }));
 
 const portfolio = await import('./paper-bot/portfolio.mjs');
@@ -180,7 +181,7 @@ test('news tilt: bounded, up/down only, skipped when weak / off / auto-disabled'
 test('news tilt auto-disables after 20 scored predictions where it hurt', async () => {
   const { newsTiltAllowed } = await import('./paper-bot/prediction-log.mjs');
   const entries = Array.from({ length: 20 }, (_, i) => ({
-    id: `t${i}`, ts: new Date().toISOString(), symbol: 'X.NS', evaluated: true, realizedLabel: 'DOWN',
+    id: `t${i}`, ts: new Date().toISOString(), symbol: `X${i}.NS`, mode: 'multi', intervalMinutes: 15, evaluated: true, realizedLabel: 'DOWN',
     // tilt pushed toward UP but it went DOWN → tilt hurt
     probUp: 0.3, probDown: 0.2, probSideways: 0.5, preNews: { probUp: 0.25, probDown: 0.25, probSideways: 0.5 }, newsTiltPts: 5,
   }));
@@ -227,10 +228,60 @@ test('monitor: NSE market hours in IST and an honest scorecard', async () => {
   assert.equal(marketStatus(new Date('2026-10-08T11:00:00Z')).open, false); // Thu 16:30 IST
   assert.equal(marketStatus(new Date('2026-10-10T05:00:00Z')).open, false); // Saturday
   assert.equal(scorecard([]).scored, 0);
-  const e = (label, p) => ({ evaluated: true, realizedLabel: label, hitBias: p.bias === label, ...p });
-  const card = scorecard([e('UP', { probUp: 0.5, probDown: 0.2, probSideways: 0.3, bias: 'UP' }), e('SIDEWAYS', { probUp: 0.2, probDown: 0.2, probSideways: 0.6, bias: 'SIDEWAYS' })]);
+  const e = (sym, label, p) => ({ symbol: sym, mode: 'multi', intervalMinutes: 15, ts: '2026-10-08T05:00:00Z', evaluated: true, realizedLabel: label, hitBias: p.bias === label, ...p });
+  const card = scorecard([e('A.NS', 'UP', { probUp: 0.5, probDown: 0.2, probSideways: 0.3, bias: 'UP' }), e('B.NS', 'SIDEWAYS', { probUp: 0.2, probDown: 0.2, probSideways: 0.6, bias: 'SIDEWAYS' })]);
   assert.equal(card.scored, 2);
   assert.equal(card.hitRatePct, 100);
   assert.ok(card.brier.app < card.brier.uniform);
   assert.match(card.verdict, /Too early/);
+});
+
+test('scoring counts one prediction per stock per day', async () => {
+  const { dedupeDaily } = await import('./paper-bot/prediction-log.mjs');
+  const mk = (sym, ts) => ({ symbol: sym, mode: 'multi', intervalMinutes: 15, ts, evaluated: true });
+  const out = dedupeDaily([
+    mk('A.NS', '2026-10-08T04:30:00Z'), mk('A.NS', '2026-10-08T07:30:00Z'), // same IST day
+    mk('A.NS', '2026-10-08T20:00:00Z'), // 01:30 IST next day
+    mk('B.NS', '2026-10-08T04:30:00Z'),
+  ]);
+  assert.equal(out.length, 3);
+  assert.equal(out[0].ts, '2026-10-08T04:30:00Z');
+});
+
+test('news facts: only known keys and values survive', async () => {
+  const { cleanFacts } = await import('./paper-bot/news.mjs');
+  assert.deepEqual(cleanFacts({ results: 'Beat', guidance: 'flat', rating: null, orderWin: 'true', ceo: 'new', regulatoryAction: false }), { results: 'beat', orderWin: true });
+  assert.deepEqual(cleanFacts(null), {});
+});
+
+test('news: one AI reading per stock per day (no drift between runs)', async () => {
+  const { newsBrief } = await import('./paper-bot/news.mjs');
+  process.env.OPENROUTER_API_KEY = 'sk-or-test';
+  let llmCalls = 0;
+  const pub = new Date(Date.now() - 3600_000).toUTCString();
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const u = String(url);
+    if (u.includes('openrouter')) {
+      llmCalls++;
+      const s = llmCalls === 1 ? 0.6 : -0.9; // a second call would disagree
+      return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: JSON.stringify({ brief: 'b', sentiment: s, facts: { results: 'beat' } }) } }] }) };
+    }
+    if (u.includes('news.google.com')) {
+      return { ok: true, status: 200, text: async () => `<rss><item><title>Zeta Q2 results beat estimates - Mint</title><pubDate>${pub}</pubDate><source url="x">Mint</source></item></rss>` };
+    }
+    return { ok: true, status: 200, json: async () => ({ chart: { error: null, result: [{ meta: { symbol: 'ZETA.NS', longName: 'Zeta Limited', regularMarketPrice: 1 }, timestamp: [1], indicators: { quote: [{ open: [1], close: [1] }] } }] } }) };
+  };
+  try {
+    const a = await newsBrief('ZETA.NS', { refresh: true });
+    const b = await newsBrief('ZETA.NS');
+    assert.equal(a.sentiment, 0.6);
+    assert.equal(b.sentiment, 0.6, 'second read must reuse today\'s reading');
+    assert.equal(b.cachedForDay, true);
+    assert.deepEqual(b.facts, { results: 'beat' });
+    assert.equal(llmCalls, 1);
+  } finally {
+    globalThis.fetch = realFetch;
+    delete process.env.OPENROUTER_API_KEY;
+  }
 });

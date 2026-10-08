@@ -299,6 +299,44 @@ whether Ling's adjustment and the news tilt help. Reports go to
 `paper-bot/monitor/<date-time IST>.json` and a running `journal.md`. Read the
 scorecard only after ~30+ scored predictions.
 
+### Stock ranking (weeks–months)
+
+`node paper-bot/ranking.mjs --horizon 60` (or dashboard → Stock ranking →
+Evidence) replays 5 years of NIFTY 50 rankings at non-overlapping dates for
+fixed-rule signals — 12-1 / 6-1 month momentum, 3-month momentum, 1-month
+reversal, low volatility, nearness to 52-week high, trend, and a composite —
+and reports the information coefficient (rank correlation with the following
+return), t-stat, stability across halves, top-minus-bottom spread, and a
+top-5 portfolio net of costs vs equal weight and NIFTY. `--live` prints today's
+ranking. Oct 2026 result: no signal reached "strong" evidence in this sample
+(5 years, large caps, survivorship-biased universe).
+
+### Intraday history collector
+
+`npm run collect` after the close merges the day's 5-min / 15-min bars into
+`paper-bot/data/candles/` so intraday history grows beyond Yahoo's ~1 month;
+the replay harness uses it automatically. With `GROWW_ACCESS_TOKEN`,
+`node paper-bot/collector.mjs --groww-backfill 120` adds older history.
+`--status` shows what is stored.
+
+### Volatility check
+
+Dashboard → Volatility check (or `node paper-bot/volatility.mjs ^NSEI`):
+forecast volatility (EWMA, 20/60-day) vs what options price (India VIX for
+NIFTY, or the IV you enter for a stock), with ±1σ moves to expiry.
+`--eval` scores forecasters on 5 years (QLIKE): India VIX was the best NIFTY
+forecaster, yet averaged ~15% vs ~12% realised and sat above realised ~79% of
+the time (the usual volatility risk premium).
+
+### News stability & facts
+
+One AI news reading per stock per day (cached in `paper-bot/data/`), so
+sentiment doesn't drift between runs. Ling also extracts structured facts —
+results beat/miss/inline (actual results only), guidance raised/cut,
+upgrade/downgrade, order win, management change, regulatory action — shown as
+chips and logged; the hit-rate panel shows what followed each fact type.
+Scoring counts one prediction per stock per day.
+
 ### API endpoints
 
 | Endpoint | Method | Purpose |
@@ -327,6 +365,10 @@ scorecard only after ~30+ scored predictions.
 | `/api/portfolio/close` | POST | Close one paper position `{symbol}` |
 | `/api/portfolio/reset` | POST | Fresh paper account `{capital?}` |
 | `/api/settings` | GET/POST | Read / save settings `{settings}` or `{reset:true}` |
+| `/api/rankings` | GET | Current composite ranking `?symbols=` |
+| `/api/ranking-eval` | POST | Ranking replay `{horizon: 20|40|60, symbols?}` |
+| `/api/vol-check` | GET | Implied vs forecast vol `?symbol=&iv=&days=` |
+| `/api/vol-eval` | POST | Volatility forecast replay |
 
 Bad input returns **400** with a readable message, unknown symbols **404**,
 a missing API key **503**.

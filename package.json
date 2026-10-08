@@ -19,6 +19,7 @@
     "test": "node --test",
     "eval": "node paper-bot/evaluate.mjs",
     "calibrate": "node paper-bot/evaluate.mjs --interval 1d --save && node paper-bot/evaluate.mjs --interval 60m --save && node paper-bot/evaluate.mjs --interval 15m --save && node paper-bot/evaluate.mjs --interval 5m --save",
-    "monitor": "node paper-bot/monitor.mjs"
+    "monitor": "node paper-bot/monitor.mjs",
+    "collect": "node paper-bot/collector.mjs"
   }
 }

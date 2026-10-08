@@ -31,11 +31,12 @@ import { pathToFileURL } from 'node:url';
 import { candles } from '../market-data.mjs';
 import { computeIndicators } from './indicators.mjs';
 import { techScore, baseProbabilities, shortWindowScore } from './groww-predict.mjs';
-import { PAPER } from './config.mjs';
+import { PAPER, EVAL_UNIVERSE } from './config.mjs';
 import { fitBuckets, frequencies, lookup, saveCalibration, SCORE_EDGES } from './calibration.mjs';
 import { badRequest } from '../util.mjs';
 import { prepare, featuresAt, FEATURE_GROUPS, ALL_FEATURES, MARKET_INDEX, VIX_INDEX, isIndianListing } from './features.mjs';
 import { fitLogistic, predictLogistic, toRow, moveOnly } from './context-model.mjs';
+import { historyCandles } from './collector.mjs';
 
 /** Data window + horizon per interval (horizon matches live scoring). */
 export const EVAL_SETTINGS = {
@@ -45,11 +46,8 @@ export const EVAL_SETTINGS = {
   '5m': { range: '1mo', interval: '5m', horizon: 4, label: '5-min · next 4 bars (~20 min)' },
 };
 
-/** Default fitting universe: the paper-bot's 10 symbols plus 8 more NIFTY 50 names, so tables rest on more data. */
-export const EVAL_UNIVERSE = [
-  ...PAPER.symbols,
-  'MARUTI.NS', 'SUNPHARMA.NS', 'HINDUNILVR.NS', 'KOTAKBANK.NS', 'BAJFINANCE.NS', 'ASIANPAINT.NS', 'NTPC.NS', 'TITAN.NS',
-];
+/** Default fitting universe (defined in config.mjs; re-exported for callers). */
+export { EVAL_UNIVERSE };
 
 const LOOKBACK = 60; // bars fed to the indicators, like the live model
 const WARMUP = 55; // SMA-50 + slack
@@ -151,7 +149,8 @@ export async function evaluateModels(opts = {}) {
   const cfg = EVAL_SETTINGS[key];
   if (!cfg) throw badRequest(`Unsupported interval "${key}". Use ${Object.keys(EVAL_SETTINGS).join(', ')}.`);
   const symbols = opts.symbols?.length ? opts.symbols : EVAL_UNIVERSE;
-  const load = opts.loadCandles || candles;
+  // Intraday intervals merge the local collector store (longer than Yahoo's ~1 month).
+  const load = opts.loadCandles || ((s, o) => historyCandles(s, o));
 
   // Market context (NIFTY 50 + India VIX at the same interval). The context
   // model is evaluated only when every symbol is an Indian listing, so all

@@ -268,6 +268,46 @@
         <div id="hrOut" style="margin-top:12px"></div>
       </section>
 
+      <!-- Cross-sectional ranking -->
+      <section class="card span2">
+        <h2>Stock ranking <span style="font-size:12px;color:var(--warn);font-weight:500">WEEKS–MONTHS · RESEARCH</span></h2>
+        <p class="hint">
+          Ranks stocks against each other (not "up or down tomorrow"): composite of 12-1 month momentum, low volatility and nearness to the
+          52-week high. <b>Check the evidence first</b> — the replay shows whether each signal actually lined up with later returns in the past
+          5 years (information coefficient, t-stat, both halves). Relative ranking only; not a forecast or a recommendation.
+        </p>
+        <div class="row">
+          <div><label>Replay horizon</label><select id="rkHorizon"><option value="20">1 month (20 days)</option><option value="60" selected>3 months (60 days)</option></select></div>
+          <div style="flex:2"><label>Universe (blank = NIFTY 50)</label><input id="rkSyms" placeholder="RELIANCE.NS, TCS.NS, …" /></div>
+        </div>
+        <div class="row" style="gap:8px">
+          <button id="rkLiveBtn" type="button">Current ranking</button>
+          <button id="rkEvalBtn" type="button" style="background:#0d1320;color:var(--ink);border:1px solid var(--line)">Evidence (replay)</button>
+        </div>
+        <div id="rkStatus" class="note" style="display:none"></div>
+        <div id="rkOut" style="margin-top:12px"></div>
+      </section>
+
+      <!-- Volatility: implied vs forecast -->
+      <section class="card span2">
+        <h2>Volatility check <span style="font-size:12px;color:var(--warn);font-weight:500">OPTIONS · RESEARCH</span></h2>
+        <p class="hint">
+          Compares the volatility options are pricing (implied) with a forecast from recent price behaviour. NIFTY uses India VIX automatically;
+          for a stock, enter the option's IV % from your broker. Volatility is where this app has shown measurable skill — direction is not.
+          Factual comparison, not a trade suggestion.
+        </p>
+        <div class="row">
+          <div><label>Symbol</label><input id="vcSym" value="^NSEI" /></div>
+          <div><label>Implied vol % (blank = India VIX for NIFTY)</label><input id="vcIv" type="number" step="any" placeholder="e.g. 28" /></div>
+          <div><label>Days to expiry</label><input id="vcDays" type="number" value="7" /></div>
+        </div>
+        <div class="row" style="gap:8px">
+          <button id="vcBtn" type="button">Check</button>
+          <button id="vcEvalBtn" type="button" style="background:#0d1320;color:var(--ink);border:1px solid var(--line)">Forecast accuracy (replay)</button>
+        </div>
+        <div id="vcOut" style="margin-top:12px"></div>
+      </section>
+
       <!-- Persistent paper portfolio -->
       <section class="card span2">
         <h2>Paper portfolio <span style="font-size:12px;color:var(--warn);font-weight:500">SIMULATED · PERSISTENT</span></h2>
@@ -1169,6 +1209,10 @@
         if (tilt?.n) {
           html += `<div class="note">News tilt <b>${esc(tilt.verdict)}</b>: Brier ${tilt.brierWithTilt.toFixed(4)} with vs ${tilt.brierWithout.toFixed(4)} without (n=${tilt.n})${tilt.autoDisabled ? ' — <b>auto-disabled</b>' : tilt.n < 20 ? ' — auto-off check starts at 20 scored' : ''}.</div>`;
         }
+        const facts = Object.entries(stats.newsValue?.facts || {});
+        if (facts.length) {
+          html += '<div class="note">What followed extracted news facts: ' + facts.map(([k, v]) => `${esc(k)} → UP ${v.UP}/DOWN ${v.DOWN}/SIDE ${v.SIDEWAYS} (n=${v.n})`).join(' · ') + '</div>';
+        }
         if (stats.newsValue?.n) {
           html += `<div class="note">News sentiment matched the direction ${(stats.newsValue.directionHitRate * 100).toFixed(0)}% of the time on moves (n=${stats.newsValue.n}; 50% = no information).</div>`;
         }
@@ -1233,6 +1277,88 @@
       });
 
 
+
+
+      // --- Stock ranking ---
+      const SIG_NAME = { mom12_1: '12-1 month momentum', mom6_1: '6-1 month momentum', mom3: '3-month momentum', reversal1m: '1-month reversal', lowVol: 'Low volatility', high52: 'Near 52-week high', trend: 'Trend (50/200-day)', composite: 'Composite' };
+      async function rkRun(kind) {
+        const out = $('rkOut');
+        const status = $('rkStatus');
+        status.style.display = 'block';
+        status.textContent = kind === 'live' ? 'Loading 5 years of prices for the universe…' : 'Replaying 5 years of rankings…';
+        $('rkLiveBtn').disabled = $('rkEvalBtn').disabled = true;
+        try {
+          const syms = $('rkSyms').value.trim();
+          if (kind === 'live') {
+            const d = await api('/api/rankings' + (syms ? '?symbols=' + encodeURIComponent(syms) : ''));
+            let html = `<div class="note">As of ${esc(d.asOf)} · ${d.universe} stocks${d.skipped?.length ? ' · skipped ' + d.skipped.length : ''}</div>
+              <table><thead><tr><th>#</th><th style="text-align:left">Symbol</th><th>Composite</th><th>12-1m momentum</th><th>Volatility (ann.)</th><th>% of 52w high</th></tr></thead><tbody>`;
+            for (const r of d.ranking) {
+              html += `<tr><td>${r.rank}</td><td style="text-align:left">${esc(r.symbol)}</td><td>${r.composite.toFixed(2)}</td><td>${r.mom12_1Pct?.toFixed(1)}%</td><td>${r.vol60Pct?.toFixed(1)}%</td><td>${r.pctOf52wHigh?.toFixed(0)}%</td></tr>`;
+            }
+            out.innerHTML = html + `</tbody></table><div class="note">${esc(d.note)} Run <b>Evidence</b> to see whether this composite has worked historically.</div>`;
+          } else {
+            const d = await api('/api/ranking-eval', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ horizon: Number($('rkHorizon').value), symbols: syms || undefined }) });
+            const col = (e) => (e === 'strong' ? 'var(--up)' : e === 'weak' ? 'var(--warn)' : 'var(--muted)');
+            let html = `<div class="note">${d.periods} rebalances every ${d.horizon} trading days · ${esc(d.from)} → ${esc(d.to)} · ${d.universe} stocks · top ${d.topN}, ${d.costPct}% cost per replaced name</div>
+              <table><thead><tr><th style="text-align:left">Signal</th><th>Mean IC</th><th>t-stat</th><th>% periods &gt; 0</th><th>IC 1st / 2nd half</th><th>Top − bottom fifth</th><th>Top-${d.topN} CAGR</th><th>Evidence</th></tr></thead><tbody>`;
+            for (const [k, v] of Object.entries(d.summary)) {
+              html += `<tr><td style="text-align:left">${esc(SIG_NAME[k] || k)}</td><td>${v.meanIC.toFixed(3)}</td><td>${v.tStat?.toFixed(2) ?? '–'}</td><td>${v.pctPositive.toFixed(0)}%</td>
+                <td>${v.meanICFirstHalf.toFixed(3)} / ${v.meanICSecondHalf.toFixed(3)}</td><td>${v.spreadPerPeriodPct.toFixed(2)}%</td><td>${v.topNCagrPct.toFixed(1)}%</td>
+                <td style="color:${col(v.evidence)};font-weight:700">${esc(v.evidence)}</td></tr>`;
+            }
+            html += `</tbody></table><div class="note">Benchmarks: equal-weight universe ${d.benchmark.equalWeightCagrPct.toFixed(1)}% CAGR · NIFTY 50 ${d.benchmark.niftyCagrPct?.toFixed(1) ?? '–'}% CAGR.
+              IC = rank correlation between the signal and the following return (0 = none). "Strong" needs t ≥ 2 and positive IC in both halves.</div>
+              <div class="note">${esc(d.caveats.join(' '))}</div>`;
+            out.innerHTML = html;
+          }
+        } catch (e) {
+          out.innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
+        } finally {
+          status.style.display = 'none';
+          $('rkLiveBtn').disabled = $('rkEvalBtn').disabled = false;
+        }
+      }
+      $('rkLiveBtn').addEventListener('click', () => rkRun('live'));
+      $('rkEvalBtn').addEventListener('click', () => rkRun('eval'));
+
+
+      // --- Volatility check ---
+      $('vcBtn').addEventListener('click', async () => {
+        const out = $('vcOut');
+        out.textContent = 'Loading…';
+        try {
+          const q = new URLSearchParams({ symbol: $('vcSym').value.trim(), days: $('vcDays').value });
+          if ($('vcIv').value) q.set('iv', $('vcIv').value);
+          const d = await api('/api/vol-check?' + q.toString());
+          const f = d.forecastsAnnualPct;
+          out.innerHTML = `<div class="kv">
+            <div>Symbol</div><div>${esc(d.symbol)} · ${esc(d.asOf)} · last ${Number(d.last).toFixed(2)}</div>
+            <div>Forecast vol (annual)</div><div><b>${d.forecastPct?.toFixed(1)}%</b> EWMA · 20-day ${f.rv20?.toFixed(1)}% · 60-day ${f.rv60?.toFixed(1)}%</div>
+            <div>Implied vol</div><div>${d.impliedPct != null ? `<b>${d.impliedPct.toFixed(1)}%</b> (${esc(d.impliedSource)}) · ratio ${d.ratio.toFixed(2)}` : '–'}</div>
+            <div>±1σ over ${d.days} days</div><div>forecast ${d.expectedMovePct.forecast?.toFixed(2)}%${d.expectedMovePct.implied != null ? ` · implied ${d.expectedMovePct.implied.toFixed(2)}%` : ''}</div>
+          </div><div style="margin-top:8px;font-size:14px">${esc(d.reading)}</div><div class="note">${esc(d.disclaimer)}</div>`;
+        } catch (e) {
+          out.innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
+        }
+      });
+      $('vcEvalBtn').addEventListener('click', async () => {
+        const out = $('vcOut');
+        out.textContent = 'Replaying 5 years of volatility forecasts…';
+        try {
+          const d = await api('/api/vol-eval', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+          const tbl = (o, best) => '<table><thead><tr><th style="text-align:left">Forecaster</th><th>QLIKE ↓</th><th>n</th></tr></thead><tbody>' +
+            Object.entries(o).map(([k, v]) => `<tr${k === best ? ' style="font-weight:700"' : ''}><td style="text-align:left">${esc(k)}${k === best ? ' ★' : ''}</td><td>${v.meanQlike.toFixed(4)}</td><td>${v.n}</td></tr>`).join('') + '</tbody></table>';
+          const v = d.niftyImpliedVsRealised;
+          out.innerHTML = `<div class="note">Next ${d.horizon} days · ${d.symbols} series · 5 years, non-overlapping</div>
+            <div style="font-size:13px;margin-top:6px"><b>All series</b> (history-based forecasters)</div>${tbl(d.summary, d.best)}
+            <div style="font-size:13px;margin-top:10px"><b>NIFTY only</b> — same dates, including India VIX</div>${tbl(d.niftyHeadToHead, d.niftyBest)}
+            ${v ? `<div style="margin-top:8px;font-size:14px">India VIX averaged <b>${v.avgImpliedPct.toFixed(1)}%</b> vs <b>${v.avgRealisedPct.toFixed(1)}%</b> realised; implied was above realised <b>${v.pctTimeImpliedAbove.toFixed(0)}%</b> of the time (n=${v.n}).</div>` : ''}
+            <div class="note">${esc(d.note)}</div>`;
+        } catch (e) {
+          out.innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
+        }
+      });
 
       // --- Paper portfolio ---
       function renderPortfolio(d) {
@@ -1379,6 +1505,19 @@
           <span style="color:var(--muted)">(base rates ${Math.round((b.probUp || 0) * 100)}/${Math.round((b.probDown || 0) * 100)}/${Math.round((b.probSideways || 0) * 100)})</span></div>`;
       }
 
+      const FACT_LABEL = { results: 'Results', guidance: 'Guidance', rating: 'Rating', orderWin: 'Order win', managementChange: 'Management change', regulatoryAction: 'Regulatory action' };
+      function renderFacts(f) {
+        const keys = Object.keys(f || {});
+        if (!keys.length) return '';
+        return '<div style="margin:6px 0;display:flex;gap:6px;flex-wrap:wrap">' + keys.map((k) => {
+          const v = f[k];
+          const good = ['beat', 'raised', 'upgrade'].includes(v) || (k === 'orderWin' && v === true);
+          const bad = ['miss', 'cut', 'downgrade'].includes(v) || (k === 'regulatoryAction' && v === true);
+          const col = good ? 'var(--up)' : bad ? 'var(--down)' : 'var(--muted)';
+          return `<span style="border:1px solid ${col};color:${col};border-radius:999px;padding:2px 8px;font-size:12px">${esc(FACT_LABEL[k] || k)}${v === true ? '' : ': ' + esc(v)}</span>`;
+        }).join('') + '</div>';
+      }
+
       // --- News brief ---
       function renderNews(n) {
         let html = `<div style="margin-top:12px;padding:12px;border:1px solid var(--line);border-radius:10px;background:#0d1320">
@@ -1388,6 +1527,7 @@
           const sc = Number(n.sentiment);
           const col = sc > 0.2 ? 'var(--up)' : sc < -0.2 ? 'var(--down)' : 'var(--muted)';
           html += `<div style="font-size:13px">${esc(n.brief)}</div>
+            ${renderFacts(n.facts)}
             <div class="note">Headline sentiment: <b style="color:${col}">${Number.isFinite(sc) ? (sc > 0 ? '+' : '') + sc.toFixed(2) : '–'}</b> (−1 negative … +1 positive). Shown for context and logged so its value can be measured — it does not change the probabilities.</div>`;
         }
         if (n.headlines?.length) {
@@ -1396,6 +1536,7 @@
           html += '</ul>';
         }
         if (n.note) html += `<div class="note">${esc(n.note)}</div>`;
+        if (n.cachedForDay) html += '<div class="note">Today\'s AI reading (fixed for the day so it doesn\'t drift between runs).</div>';
         return html + '</div>';
       }
       $('newsBtn').addEventListener('click', async () => {

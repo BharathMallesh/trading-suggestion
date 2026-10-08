@@ -64,6 +64,7 @@ export function logPrediction(result) {
       : null,
     llmAdjusted: Boolean(p.adjustmentNote && p.adjustmentNote !== 'No LLM adjustment applied'),
     newsSentiment: result.news?.sentiment ?? null,
+    newsFacts: result.news?.facts && Object.keys(result.news.facts).length ? result.news.facts : null,
     // Probabilities before the news tilt (null when no tilt was applied).
     preNews: result.newsTilt?.applied ? result.newsTilt.before : null,
     newsTiltPts: result.newsTilt?.applied ? result.newsTilt.shiftPts : 0,
@@ -194,9 +195,28 @@ export async function evaluatePending(opts = {}) {
   return { checked, updated, stats: computeStats(log.entries) };
 }
 
+/**
+ * One scored prediction per stock per mode/interval per IST day (the earliest).
+ * Repeated runs on the same day overlap heavily, so counting each one would
+ * make hit-rates look more certain than they are.
+ */
+export function dedupeDaily(entries) {
+  const seen = new Set();
+  const out = [];
+  for (const e of [...entries].sort((a, b) => (a.ts < b.ts ? -1 : 1))) {
+    const day = new Date(new Date(e.ts).getTime() + 19800_000).toISOString().slice(0, 10);
+    const key = `${e.symbol}|${e.mode}|${e.intervalMinutes}|${day}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(e);
+  }
+  return out;
+}
+
 export function computeStats(entries) {
   const all = entries || loadLog().entries;
-  const evaluated = all.filter((e) => e.evaluated);
+  const evaluatedRaw = all.filter((e) => e.evaluated);
+  const evaluated = dedupeDaily(evaluatedRaw);
   const pending = all.filter((e) => !e.evaluated);
   const hitBias = evaluated.filter((e) => e.hitBias).length;
   const hitTop = evaluated.filter((e) => e.hitTopProb).length;
@@ -228,6 +248,7 @@ export function computeStats(entries) {
 
   return {
     totalLogged: all.length,
+    evaluatedRaw: evaluatedRaw.length, // before one-per-stock-per-day de-duplication
     pending: pending.length,
     evaluated: evaluated.length,
     hitRateBias: evaluated.length ? hitBias / evaluated.length : null,
@@ -270,9 +291,24 @@ function tiltEvidence(evaluated) {
   };
 }
 
+/** For each extracted news fact, what actually followed (measurement only). */
+function factOutcomes(evaluated) {
+  const out = {};
+  for (const e of evaluated) {
+    if (!e.newsFacts) continue;
+    for (const [k, v] of Object.entries(e.newsFacts)) {
+      const key = `${k}:${v}`;
+      out[key] ||= { n: 0, UP: 0, DOWN: 0, SIDEWAYS: 0 };
+      out[key].n++;
+      out[key][e.realizedLabel]++;
+    }
+  }
+  return out;
+}
+
 /** Is the news tilt allowed right now? (false once evidence shows it hurts) */
 export function newsTiltAllowed() {
-  return !tiltEvidence(loadLog().entries.filter((e) => e.evaluated)).autoDisabled;
+  return !tiltEvidence(dedupeDaily(loadLog().entries.filter((e) => e.evaluated))).autoDisabled;
 }
 const brierOf = (p, label) => ['UP', 'DOWN', 'SIDEWAYS'].reduce((a, l) => a + ((Number(p?.[KEYS[l]]) || 0) - (l === label ? 1 : 0)) ** 2, 0);
 
@@ -298,6 +334,7 @@ function valueOfAdditions(evaluated) {
       ? moved.filter((e) => (e.newsSentiment > 0 ? 'UP' : 'DOWN') === e.realizedLabel).length / moved.length
       : null,
     tilt: tiltEvidence(evaluated),
+    facts: factOutcomes(evaluated),
   };
   return { llmValue: llm, newsValue: news };
 }

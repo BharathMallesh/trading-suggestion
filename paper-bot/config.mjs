@@ -78,3 +78,9 @@ export const TECH = {
 
 /** Daily bars → delivery (overnight, long-only); minute/hour bars → intraday (same-day, shorts allowed). */
 export const productFor = (interval) => (interval === '1d' ? 'delivery' : 'intraday');
+
+/** Default replay / collection universe: the paper-bot's 10 symbols plus 8 more NIFTY 50 names. */
+export const EVAL_UNIVERSE = [
+  ...PAPER.symbols,
+  'MARUTI.NS', 'SUNPHARMA.NS', 'HINDUNILVR.NS', 'KOTAKBANK.NS', 'BAJFINANCE.NS', 'ASIANPAINT.NS', 'NTPC.NS', 'TITAN.NS',
+];

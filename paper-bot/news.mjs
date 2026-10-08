@@ -12,6 +12,56 @@ import { quote } from '../market-data.mjs';
 import { chat } from '../ling-client.mjs';
 import { extractJson } from './llm-json.mjs';
 import { badRequest } from '../util.mjs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
+import { dirname, join } from 'path';
+import { fileURLToPath } from 'url';
+
+// One AI reading per stock per IST day, persisted, so sentiment doesn't drift
+// between runs (it moved −0.7 → −1.0 within minutes before this).
+const DAILY_PATH = process.env.NEWS_CACHE_PATH || join(dirname(fileURLToPath(import.meta.url)), 'data', 'news-daily.json');
+const istDate = (d = new Date()) => new Date(d.getTime() + 19800_000).toISOString().slice(0, 10);
+function loadDaily() {
+  try {
+    return existsSync(DAILY_PATH) ? JSON.parse(readFileSync(DAILY_PATH, 'utf8')) : {};
+  } catch {
+    return {};
+  }
+}
+function saveDaily(sym, value) {
+  try {
+    const all = loadDaily();
+    const today = istDate();
+    for (const k of Object.keys(all)) if (all[k].date !== today) delete all[k]; // keep today only
+    all[sym] = { date: today, value };
+    mkdirSync(dirname(DAILY_PATH), { recursive: true });
+    writeFileSync(DAILY_PATH, JSON.stringify(all));
+  } catch {
+    /* cache is best-effort */
+  }
+}
+
+// Structured facts Ling may extract from headlines (enums keep them comparable).
+export const FACTS = {
+  results: ['beat', 'miss', 'inline'],
+  guidance: ['raised', 'cut', 'maintained'],
+  rating: ['upgrade', 'downgrade'],
+  orderWin: [true],
+  managementChange: [true],
+  regulatoryAction: [true],
+};
+
+/** Keep only known fact keys with allowed values; drop nulls / unknowns. */
+export function cleanFacts(raw) {
+  const out = {};
+  if (!raw || typeof raw !== 'object') return out;
+  for (const [k, allowed] of Object.entries(FACTS)) {
+    let v = raw[k];
+    if (typeof v === 'string') v = v.trim().toLowerCase();
+    if (v === 'true') v = true;
+    if (allowed.includes(v)) out[k] = v;
+  }
+  return out;
+}
 
 const SEARCH = 'https://query2.finance.yahoo.com/v1/finance/search';
 const UA = 'Mozilla/5.0 (AutoClaw Trading Research; read-only)';
@@ -120,11 +170,14 @@ export function detectEvents(headlines) {
  * Headlines + (if the key is set) a factual Ling brief with sentiment in [-1, 1].
  * @returns {Promise<{symbol, company, headlines, brief:string|null, sentiment:number|null, note?:string}>}
  */
-export async function newsBrief(symbol, { useLlm = true } = {}) {
+export async function newsBrief(symbol, { useLlm = true, refresh = false } = {}) {
   const sym = String(symbol || '').trim();
   if (!sym) throw badRequest('symbol is required, e.g. HDFCBANK.NS');
+  // Today's AI reading wins (stable all day) unless a refresh is forced.
+  const daily = !refresh && useLlm ? loadDaily()[sym] : null;
+  if (daily && daily.date === istDate() && daily.value?.brief) return { ...daily.value, cachedForDay: true };
   const hit = cache.get(sym);
-  if (hit && Date.now() - hit.at < TTL_MS && (hit.value.brief || !useLlm)) return hit.value;
+  if (!refresh && hit && Date.now() - hit.at < TTL_MS && (hit.value.brief || !useLlm)) return hit.value;
 
   const q = await quote(sym);
   const company = q.name || sym;
@@ -154,7 +207,7 @@ export async function newsBrief(symbol, { useLlm = true } = {}) {
     link: n.link,
   }));
 
-  const out = { symbol: q.symbol || sym, company, headlines, brief: null, sentiment: null, events: detectEvents(headlines) };
+  const out = { symbol: q.symbol || sym, company, headlines, brief: null, sentiment: null, facts: {}, events: detectEvents(headlines), date: istDate() };
   if (!headlines.length) {
     out.note = 'No recent company-specific headlines found in the free news feed.';
   } else if (useLlm) {
@@ -165,17 +218,24 @@ export async function newsBrief(symbol, { useLlm = true } = {}) {
             role: 'system',
             content:
               'You summarise news headlines factually for a research dashboard. Do not predict prices or recommend trades. ' +
-              'Reply ONLY with JSON: {"brief":"2-3 factual sentences","sentiment":number from -1 (clearly negative for the company) to 1 (clearly positive), 0 if mixed/neutral}',
+              'Use ONLY what the headlines state; if something is not stated, use null. Ignore market-wide roundups that merely list the company. ' +
+              'Reply ONLY with JSON: {"brief":"2-3 factual sentences",' +
+              '"sentiment":number from -1 (clearly negative for the company) to 1 (clearly positive), 0 if mixed/neutral,' +
+              '"facts":{"results":"beat"|"miss"|"inline"|null (only if ACTUAL results vs expectations are reported, not previews),' +
+              '"guidance":"raised"|"cut"|"maintained"|null,"rating":"upgrade"|"downgrade"|null,' +
+              '"orderWin":true|null,"managementChange":true|null,"regulatoryAction":true|null}}',
           },
           { role: 'user', content: `Company: ${company}\nHeadlines (newest first):\n${headlines.map((h) => `- ${h.title} (${h.publisher}, ${h.time.slice(0, 10)})`).join('\n')}` },
         ],
-        { temperature: 0.1, timeoutMs: 45_000, jsonKeys: ['sentiment'] },
+        { temperature: 0, timeoutMs: 45_000, jsonKeys: ['sentiment'] },
       );
       const j = extractJson(raw, (o) => 'sentiment' in o || 'brief' in o);
       if (j) {
         out.brief = String(j.brief || '').slice(0, 600);
         const sNum = Number(j.sentiment);
         out.sentiment = Number.isFinite(sNum) ? Math.max(-1, Math.min(1, sNum)) : null;
+        out.facts = cleanFacts(j.facts);
+        saveDaily(sym, out);
       }
     } catch (err) {
       out.note = /OPENROUTER_API_KEY/.test(err.message) ? 'Brief needs OPENROUTER_API_KEY; showing headlines only.' : `Brief unavailable: ${err.message.slice(0, 100)}`;

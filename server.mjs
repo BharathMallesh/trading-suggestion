@@ -33,6 +33,8 @@ import { loadCalibration } from './paper-bot/calibration.mjs';
 import { newsBrief } from './paper-bot/news.mjs';
 import { currentSettings, saveSettings, resetSettings } from './paper-bot/settings.mjs';
 import * as portfolio from './paper-bot/portfolio.mjs';
+import { evaluateRanking, liveRanking } from './paper-bot/ranking.mjs';
+import { volCheck, evaluateVolForecasts } from './paper-bot/volatility.mjs';
 import { HttpError, badRequest, parseSymbols, parseBool, mapLimit } from './util.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -110,7 +112,7 @@ async function sentimentFor(symbols) {
   const res = await mapLimit(indian, 4, async (sym) => {
     try {
       const n = await newsBrief(sym);
-      return [sym, { sentiment: n.sentiment, events: n.events || [], headline: n.headlines?.[0]?.title || null, note: n.note || null }];
+      return [sym, { sentiment: n.sentiment, events: n.events || [], facts: n.facts || {}, headline: n.headlines?.[0]?.title || null, note: n.note || null }];
     } catch {
       return [sym, null];
     }
@@ -446,6 +448,25 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { ...report, saved: parseBool(body.save) });
     }
 
+    // --- Cross-sectional ranking (weeks–months) ---
+    if (req.method === 'GET' && url.pathname === '/api/rankings') {
+      return json(res, 200, await liveRanking({ symbols: parseSymbols(url.searchParams.get('symbols')) }));
+    }
+    if (req.method === 'POST' && url.pathname === '/api/ranking-eval') {
+      const body = await readJson(req);
+      return json(res, 200, await evaluateRanking({ horizon: Number(body.horizon) || 20, symbols: parseSymbols(body.symbols) }));
+    }
+
+    // --- Volatility: implied vs forecast ---
+    if (req.method === 'GET' && url.pathname === '/api/vol-check') {
+      const p = url.searchParams;
+      return json(res, 200, await volCheck({ symbol: p.get('symbol') || '^NSEI', iv: p.get('iv') || undefined, days: Number(p.get('days') || 7) }));
+    }
+    if (req.method === 'POST' && url.pathname === '/api/vol-eval') {
+      const body = await readJson(req);
+      return json(res, 200, await evaluateVolForecasts({ symbols: parseSymbols(body.symbols), horizon: Number(body.horizon) || 5 }));
+    }
+
     // --- Persistent paper portfolio (delivery, long-only) ---
     if (req.method === 'GET' && url.pathname === '/api/portfolio') {
       const out = await portfolio.refresh();
@@ -487,7 +508,7 @@ const server = http.createServer(async (req, res) => {
 
     // GET /api/news?symbol= — recent headlines + factual Ling brief (sentiment shown, not used in numbers)
     if (req.method === 'GET' && url.pathname === '/api/news') {
-      return json(res, 200, await newsBrief(url.searchParams.get('symbol')));
+      return json(res, 200, await newsBrief(url.searchParams.get('symbol'), { refresh: url.searchParams.get('refresh') === '1' }));
     }
 
     // GET /api/calibration — fitted tables currently stored

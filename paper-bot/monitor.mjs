@@ -20,6 +20,7 @@
 import { mkdirSync, writeFileSync, appendFileSync, existsSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
+import { dedupeDaily } from './prediction-log.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const OUT = process.env.MONITOR_DIR || join(HERE, 'monitor');
@@ -52,7 +53,8 @@ const brier = (p, l) => ['UP', 'DOWN', 'SIDEWAYS'].reduce((a, k) => a + ((Number
 
 /** Scorecard over every scored prediction in the log. */
 export function scorecard(entries) {
-  const ev = entries.filter((e) => e.evaluated && e.realizedLabel);
+  // One prediction per stock per day (see prediction-log dedupeDaily).
+  const ev = dedupeDaily(entries.filter((e) => e.evaluated && e.realizedLabel));
   if (!ev.length) return { scored: 0 };
   const avg = (f) => ev.reduce((a, e) => a + f(e), 0) / ev.length;
   const freq = { UP: 0, DOWN: 0, SIDEWAYS: 0 };
@@ -107,6 +109,22 @@ async function main() {
     rows.push(...batch);
   }
 
+  // 1b. Volatility (NIFTY: India VIX vs forecast) and the weeks–months ranking
+  let vol = null;
+  let ranking = null;
+  try {
+    const v = await api('/api/vol-check?symbol=%5ENSEI&days=7');
+    vol = { impliedPct: v.impliedPct, forecastPct: v.forecastPct, ratio: v.ratio, reading: v.reading };
+  } catch (err) {
+    vol = { error: err.message };
+  }
+  try {
+    const r = await api('/api/rankings');
+    ranking = { asOf: r.asOf, top: r.ranking.slice(0, 5).map((x) => x.symbol), bottom: r.ranking.slice(-5).map((x) => x.symbol) };
+  } catch (err) {
+    ranking = { error: err.message };
+  }
+
   // 2. Score due predictions
   const evalRes = await api('/api/prediction-evaluate', {});
   const { entries } = await api('/api/prediction-history?limit=500');
@@ -126,6 +144,8 @@ async function main() {
     startedAt, finishedAt: new Date().toISOString(), market, server: BASE, watchlist: rows,
     evaluation: { checked: evalRes.checked, newlyScored: evalRes.updated, llmValue: evalRes.stats?.llmValue, newsValue: evalRes.stats?.newsValue },
     scorecard: card,
+    volatility: vol,
+    ranking,
     portfolio: pf && !pf.error
       ? { equity: pf.equity, returnPct: pf.returnPct, cash: pf.cash, charges: pf.totalCharges, positions: pf.positions.map((p) => ({ symbol: p.symbol, qty: p.qty, entry: p.entryPrice, last: p.mark, pnl: p.unrealized })), actions: pf.actions.filter((a) => ['buy', 'close'].includes(a.action)) }
       : pf,
@@ -155,6 +175,8 @@ async function main() {
     }
     console.log(`${r.symbol.padEnd(14)} ${String(r.last?.toFixed(1)).padStart(8)}  ${pct(r.up)}/${pct(r.down)}/${pct(r.side)}      ${r.bias.padEnd(8)}  ${String(r.edge).padEnd(5)}  ${r.aiAdjusted ? 'y' : '-'}  ${r.sentiment == null ? '  n/a' : (r.sentiment > 0 ? '+' : '') + r.sentiment.toFixed(1).padStart(4)}  ${r.tiltPts ? (r.tiltPts > 0 ? '+' : '') + r.tiltPts.toFixed(1) : '  0 '}   ${r.atrPct != null ? r.atrPct.toFixed(2) + '%' : '–'}  ${r.events.join(', ')}`);
   }
+  if (vol && !vol.error) console.log(`\nNIFTY volatility: implied (India VIX) ${vol.impliedPct?.toFixed(1)}% vs forecast ${vol.forecastPct?.toFixed(1)}% (ratio ${vol.ratio?.toFixed(2)}) — ${vol.reading}`);
+  if (ranking && !ranking.error) console.log(`Ranking (composite, ${ranking.asOf}): top ${ranking.top.map((s) => s.replace('.NS', '')).join(', ')} · bottom ${ranking.bottom.map((s) => s.replace('.NS', '')).join(', ')} (no historical evidence yet — see Stock ranking → Evidence)`);
   console.log(`\nScoring: checked ${v.checked}, newly scored ${v.newlyScored}. ${card.verdict || 'No scored predictions yet.'}`);
   if (card.scored) {
     console.log(`  Hit-rate ${card.hitRatePct.toFixed(0)}% · Brier app ${f(card.brier.app)} vs coin-flip ${f(card.brier.uniform)} vs hindsight base rates ${f(card.brier.hindsightBaseRates)}${card.brier.beforeLing != null ? ` · before Ling ${f(card.brier.beforeLing)}` : ''}`);
