@@ -451,6 +451,9 @@ test('server answers bad input with 400, not 500', async () => {
     ['/api/candles?symbol=TCS.NS&range=bad'],
     ['/api/intraday?symbol=TCS.NS&date=garbage'],
     ['/api/paper-scan', { method: 'POST', headers: JSONH, body: '{"interval":"3d"}' }],
+    ['/api/foundation?model=gpt&symbol=TCS.NS'],
+    ['/api/foundation-replay?model='],
+    ['/api/foundation-replay', { method: 'POST', headers: JSONH, body: '{"model":"x"}' }],
   ];
   for (const [path, opts] of cases) {
     const r = await call(path, opts);

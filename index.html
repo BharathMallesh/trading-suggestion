@@ -333,6 +333,29 @@
         <div id="evtOut" style="margin-top:12px"></div>
       </section>
 
+      <!-- Local foundation models: Kronos + Chronos-Bolt -->
+      <section class="card span2">
+        <h2>Foundation models <span style="font-size:12px;color:var(--warn);font-weight:500">KRONOS · CHRONOS-BOLT · LOCAL · RESEARCH</span></h2>
+        <p class="hint">
+          Two open-source price-forecasting models run <b>on this Mac</b> (no API, no credits). Each tab shows only that model's own forecast,
+          turned into Call / Put / Sideways odds with the app's usual rule. The replay box under each result shows how that model did on
+          past moments it never saw. A model that hasn't passed is shown for comparison only. Not a recommendation.
+        </p>
+        <div class="tabs" id="fmTabs">
+          <button type="button" class="active" data-model="kronos">Kronos</button>
+          <button type="button" data-model="chronos">Chronos-Bolt</button>
+        </div>
+        <div class="row">
+          <div><label>Symbol</label><input id="fmSym" value="^NSEI" /></div>
+        </div>
+        <div class="row" style="gap:8px">
+          <button id="fmBtn" type="button">Forecast with Kronos</button>
+          <button id="fmReplayBtn" type="button" style="background:#0d1320;color:var(--ink);border:1px solid var(--line)">Re-run replay test (minutes)</button>
+        </div>
+        <div id="fmOut" style="margin-top:12px"></div>
+        <div id="fmReplay" style="margin-top:10px"></div>
+      </section>
+
       <!-- Call / Put payoff odds -->
       <section class="card span2">
         <h2>Call / Put payoff odds <span style="font-size:12px;color:var(--warn);font-weight:500">VOLATILITY-BASED · RESEARCH</span></h2>
@@ -1396,6 +1419,84 @@
       $('rkEvalBtn').addEventListener('click', () => rkRun('eval'));
 
 
+
+      // --- Foundation models (Kronos / Chronos-Bolt tabs) ---
+      const FM_LABEL = { kronos: 'Kronos', chronos: 'Chronos-Bolt' };
+      let fmModel = 'kronos';
+      const fmPct = (x) => (x == null ? '–' : (x * 100).toFixed(0) + '%');
+      const fmSigned = (x) => (x == null ? '–' : (x >= 0 ? '+' : '') + x.toFixed(2) + '%');
+      function fmReplayHtml(r) {
+        if (!r || !r.verdict) return `<div class="note">${FM_LABEL[fmModel]} has not been replay-tested yet — use "Re-run replay test".</div>`;
+        const col = r.verdict === 'helps' ? 'var(--good, #3fb950)' : r.verdict === 'hurts' ? 'var(--bad, #f85149)' : 'var(--warn)';
+        const row = (h, x) => `<tr><td style="text-align:left">${h === '1d' ? 'Next session' : 'Next 5 sessions'}</td>
+          <td>${x.brierModel.toFixed(4)}</td><td>${x.brierCurrent.toFixed(4)}</td><td>${x.brierClimatology.toFixed(4)}</td>
+          <td>${x.tVsCurrent == null ? '–' : x.tVsCurrent.toFixed(2)}</td>
+          <td>${fmPct(x.directionHitRate)} <span style="color:var(--muted)">(n ${x.directionN})</span></td>
+          <td>${fmPct(x.holdout?.directionHitRate)}</td></tr>`;
+        return `<div style="border:1px solid var(--line);border-radius:10px;padding:10px">
+          <div style="font-size:13px"><b>Replay test of ${esc(r.modelLabel)}</b> · ${esc(String(r.at).slice(0, 10))} · ${r.moments} past moments ·
+            verdict <b style="color:${col}">${esc(r.verdict.toUpperCase())}</b></div>
+          <table><thead><tr><th style="text-align:left">Horizon</th><th>${esc(r.modelLabel)} Brier ↓</th><th>App Brier</th><th>Base rates</th><th>t vs app</th><th>Direction right</th><th>…on unseen stocks</th></tr></thead>
+          <tbody>${Object.entries(r.horizons).map(([h, x]) => row(h, x)).join('')}</tbody></table>
+          ${r.horizons['1d']?.confident ? `<div style="font-size:13px;margin-top:6px">When ${esc(r.modelLabel)} was confident (≥ 80%) about the next session it said
+            <b>${fmPct(r.horizons['1d'].confident.avgStated)}</b> on average — it came true <b>${fmPct(r.horizons['1d'].confident.cameTrue)}</b> of the time
+            (${r.horizons['1d'].confident.n} cases). Read its percentages with that in mind.</div>` : ''}
+          ${(r.confirmations || []).map((c) => `<div style="font-size:13px;margin-top:6px">Confirmation on ${c.moments} <i>fresh</i> past moments: verdict
+            <b>${esc(c.verdict.toUpperCase())}</b> · direction right <b>${fmPct(c.directionHitRate)}</b> (z ${c.directionZ?.toFixed(2)}) · on unseen stocks ${fmPct(c.holdoutDirectionHitRate)}.</div>`).join('')}
+          <div class="note">${esc(r.rule)} Direction right ≈ 50% = coin flip; needs z ≥ 2 on fresh data to count.</div></div>`;
+      }
+      async function fmShowReplay() {
+        try {
+          $('fmReplay').innerHTML = fmReplayHtml(await api('/api/foundation-replay?model=' + fmModel));
+        } catch (e) {
+          $('fmReplay').innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
+        }
+      }
+      $('fmTabs').addEventListener('click', (e) => {
+        if (e.target.tagName !== 'BUTTON') return;
+        fmModel = e.target.dataset.model;
+        [...$('fmTabs').children].forEach((b) => b.classList.toggle('active', b === e.target));
+        $('fmBtn').textContent = 'Forecast with ' + FM_LABEL[fmModel];
+        $('fmOut').innerHTML = '';
+        fmShowReplay();
+      });
+      $('fmBtn').addEventListener('click', async () => {
+        const out = $('fmOut');
+        const model = fmModel;
+        out.textContent = `Running ${FM_LABEL[model]} locally… (first run loads the model, ~15 s)`;
+        try {
+          const r = await api('/api/foundation?' + new URLSearchParams({ model, symbol: $('fmSym').value.trim() }));
+          if (model !== fmModel) return; // tab switched meanwhile
+          const box = (h, title) => `<div style="background:#0d1320;border:1px solid var(--line);border-radius:10px;padding:12px">
+              <div style="font-size:12px;color:var(--muted)">${title}</div>
+              <div style="display:flex;gap:14px;margin-top:6px;font-size:14px">
+                <div>Call (up) <b style="font-size:22px">${fmPct(h.probUp)}</b></div>
+                <div>Put (down) <b style="font-size:22px">${fmPct(h.probDown)}</b></div>
+                <div>Sideways <b style="font-size:22px">${fmPct(h.probSideways)}</b></div></div>
+              <div style="font-size:12px;color:var(--muted);margin-top:6px">Median move ${fmSigned(h.medianPct)} · 10–90% range ${fmSigned(h.lowPct)} to ${fmSigned(h.highPct)}</div></div>`;
+          out.innerHTML = `<div style="font-size:13px;margin-bottom:8px"><span style="background:var(--accent);color:#071019;border-radius:6px;padding:2px 8px;font-weight:700">Result from ${esc(r.modelLabel)}</span>
+              <span style="color:var(--muted)">${esc(r.source)}</span></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">${box(r.horizons['1d'], 'Next session')}${box(r.horizons['5d'], 'Next 5 sessions')}</div>
+            <div class="kv" style="margin-top:8px">
+              <div>Stock</div><div>${esc(r.symbol)} · last close ${r.lastClose.toFixed(2)} · data to ${esc(r.asOf)} · ${r.contextBars} daily candles</div>
+              <div>Sideways band</div><div>±${r.sidewaysBandPct.toFixed(2)}% (0.35 × ATR, same rule as the rest of the app)</div>
+              <div>Run time</div><div>${r.seconds.toFixed(1)} s</div></div>
+            <div class="note">${esc(r.note)}</div>`;
+        } catch (e) {
+          out.innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
+        }
+      });
+      $('fmReplayBtn').addEventListener('click', async () => {
+        const model = fmModel;
+        $('fmReplay').textContent = `Replaying ${FM_LABEL[model]} on 200 past moments… (Chronos ~1 min, Kronos ~8 min)`;
+        try {
+          const r = await api('/api/foundation-replay', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model, n: 200 }) });
+          if (model === fmModel) $('fmReplay').innerHTML = fmReplayHtml(r);
+        } catch (e) {
+          $('fmReplay').innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
+        }
+      });
+      fmShowReplay();
 
       // --- Call / Put payoff odds ---
       $('ooBtn').addEventListener('click', async () => {

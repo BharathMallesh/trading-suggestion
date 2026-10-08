@@ -42,6 +42,7 @@ import { loadIndexList } from './paper-bot/ranking.mjs';
 import { runStrategyTests } from './paper-bot/strategies.mjs';
 import { optionOdds, evaluateOptionOdds } from './paper-bot/option-odds.mjs';
 import { testFii } from './paper-bot/fii.mjs';
+import { foundationForecast, foundationReplay, saveReplay, loadReplay, MODELS as FOUNDATION_MODELS } from './paper-bot/foundation.mjs';
 import { rebalanceAccounts, resetAccounts, loadAccounts, summarize as summarizeAccounts } from './paper-bot/strategy-accounts.mjs';
 import { HttpError, badRequest, parseSymbols, parseBool, mapLimit } from './util.mjs';
 
@@ -472,6 +473,27 @@ const server = http.createServer(async (req, res) => {
     // --- FII positioning test ---
     if (req.method === 'POST' && url.pathname === '/api/fii-test') {
       return json(res, 200, await testFii({}));
+    }
+
+    // --- Local foundation models: Kronos + Chronos-Bolt ---
+    if (req.method === 'GET' && url.pathname === '/api/foundation') {
+      const model = url.searchParams.get('model') || '';
+      if (!FOUNDATION_MODELS[model]) throw badRequest('model must be kronos or chronos');
+      return json(res, 200, await foundationForecast({ symbol: (url.searchParams.get('symbol') || '^NSEI').trim(), model }));
+    }
+    if (req.method === 'GET' && url.pathname === '/api/foundation-replay') {
+      const model = url.searchParams.get('model') || '';
+      if (!FOUNDATION_MODELS[model]) throw badRequest('model must be kronos or chronos');
+      return json(res, 200, loadReplay(model) || { model, verdict: null, note: 'Not replayed yet.' });
+    }
+    if (req.method === 'POST' && url.pathname === '/api/foundation-replay') {
+      const body = await readJson(req);
+      if (!FOUNDATION_MODELS[body.model]) throw badRequest('model must be kronos or chronos');
+      const n = Math.min(400, Math.max(30, Number(body.n) || 200));
+      const r = await foundationReplay({ model: body.model, n });
+      saveReplay(r);
+      delete r.samples;
+      return json(res, 200, r);
     }
 
     // --- Call / Put payoff odds (volatility-based) ---
