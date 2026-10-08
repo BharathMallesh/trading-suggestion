@@ -126,11 +126,19 @@ export async function runMonitor({ base = BASE, trade = true, notify: doNotify =
       try {
         const d = await api('/api/groww-predict', { symbol: s, mode: 'multi', includeNews: true });
         const p = d.prediction;
+        // chance of a > ±2% move next session (size, not direction)
+        let big2 = null;
+        try {
+          const b = await api(`/api/big-move?symbol=${encodeURIComponent(d.symbol)}`);
+          big2 = b.horizons?.['1d']?.odds?.find((o) => o.movePct === 2)?.prob ?? null;
+        } catch {
+          /* optional */
+        }
         return {
           symbol: d.symbol, last: d.lastClose, up: p.probUp, down: p.probDown, side: p.probSideways, bias: p.bias,
           edge: d.edge?.level, aiAdjusted: p.adjustmentNote !== 'No LLM adjustment applied',
           sentiment: d.news?.sentiment ?? null, tiltPts: d.newsTilt?.applied ? d.newsTilt.shiftPts : 0,
-          events: d.news?.events || [], atrPct: d.expectedMove?.upside?.typicalPct ?? null, headline: d.news?.headlines?.[0]?.title || null,
+          events: d.news?.events || [], atrPct: d.expectedMove?.upside?.typicalPct ?? null, headline: d.news?.headlines?.[0]?.title || null, big2,
         };
       } catch (err) {
         return { symbol: s, error: err.message };

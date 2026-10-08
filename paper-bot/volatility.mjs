@@ -57,8 +57,10 @@ export function saveVolModel(r) {
     summary: r.summary,
     niftyHeadToHead: r.niftyHeadToHead,
   };
-  writeFileSync(MODEL_PATH, JSON.stringify(model, null, 2));
-  return model;
+  // Keep fields other jobs maintain (e.g. the weekly option IV ratio).
+  const merged = { ...loadVolModel(), ...model };
+  writeFileSync(MODEL_PATH, JSON.stringify(merged, null, 2));
+  return merged;
 }
 
 const TRADING_DAYS = 252;
@@ -141,9 +143,12 @@ export function harForecast(r, h = 5) {
   const beta = solve(XtX, XtY);
   if (!beta) return null;
   const resid = Y.map((y, k) => y - X[k].reduce((s, v, i) => s + v * beta[i], 0));
-  const s2 = resid.reduce((a, e) => a + e * e, 0) / resid.length;
   const f = feats(r.length - 1).reduce((s, v, i) => s + v * beta[i], 0);
-  return Math.sqrt(Math.exp(f + s2 / 2)); // log-normal bias correction
+  // Back from logs with Duan's smearing estimator (mean of exp(residual)).
+  // The log-normal shortcut exp(s²/2) badly overstates short horizons: a
+  // single day's log r² has a heavy left tail (near-zero days), not a normal one.
+  const smear = resid.reduce((a, e) => a + Math.exp(e), 0) / resid.length;
+  return Math.sqrt(Math.exp(f) * smear);
 }
 
 /** Daily-vol forecasters from past log returns (most recent last); h = horizon in days. */

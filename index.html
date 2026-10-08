@@ -380,6 +380,39 @@
         <div id="ooOut" style="margin-top:12px"></div>
       </section>
 
+      <!-- Big-move odds -->
+      <section class="card span2">
+        <h2>Big-move odds <span style="font-size:12px;color:var(--warn);font-weight:500">SIZE, NOT DIRECTION · RESEARCH</span></h2>
+        <p class="hint">
+          The chance the next session or week moves <b>more than ±k%, up or down</b>. This part is predictable: volatility clusters, and results days are known.
+          Odds come from the HAR volatility forecast plus the stock's own past fat-tailed moves, and are compared with how often it happened over the past year.
+          The replay shows whether the odds beat that on history, including stocks never used for fitting. Not a direction call; not a recommendation.
+        </p>
+        <div class="row">
+          <div><label>Symbol</label><input id="bmSym" value="^NSEI" /></div>
+        </div>
+        <div class="row" style="gap:8px">
+          <button id="bmBtn" type="button">Show odds</button>
+          <button id="bmEvalBtn" type="button" style="background:#0d1320;color:var(--ink);border:1px solid var(--line)">Re-run replay (~1–2 min)</button>
+        </div>
+        <div id="bmOut" style="margin-top:12px"></div>
+        <div id="bmEval" style="margin-top:10px"></div>
+      </section>
+
+      <!-- Options positioning test -->
+      <section class="card span2">
+        <h2>Options positioning <span style="font-size:12px;color:var(--warn);font-weight:500">PCR · OI · SKEW → NIFTY · EVIDENCE TEST</span></h2>
+        <p class="hint">
+          Do the signals traders watch in NIFTY options (put-call ratio, open-interest build-up, put skew) predict NIFTY's next day or week?
+          Tested on every session since 2019 from NSE's daily F&amp;O files, with fixed rules, both halves of the period, and a stricter bar because 12 tests are run.
+          Research only.
+        </p>
+        <div class="row" style="gap:8px">
+          <button id="opBtn" type="button">Re-run test (first run downloads ~1,850 NSE files)</button>
+        </div>
+        <div id="opOut" style="margin-top:12px"></div>
+      </section>
+
       <!-- Volatility premium: selling options -->
       <section class="card span2">
         <h2>Selling volatility <span style="font-size:12px;color:var(--warn);font-weight:500">NIFTY WEEKLY OPTIONS · REPLAY · PAPER ONLY</span></h2>
@@ -1442,6 +1475,86 @@
 
 
 
+      // --- Big-move odds ---
+      const bmPct = (x) => (x == null ? '–' : (x * 100).toFixed(x < 0.1 ? 1 : 0) + '%');
+      function bmEvalHtml(r) {
+        if (!r || !r.horizons) return '<div class="note">Not replayed yet — use "Re-run replay".</div>';
+        const col = (v) => (v === 'skill' ? 'var(--up)' : v === 'worse' ? 'var(--down)' : 'var(--warn)');
+        return `<div style="border:1px solid var(--line);border-radius:10px;padding:10px"><div style="font-size:13px"><b>Replay</b> · ${esc(String(r.at).slice(0, 10))} · ${r.series} series</div>
+          <table><thead><tr><th style="text-align:left">Horizon</th><th>Odds Brier ↓</th><th>Past-year rate</th><th>Normal curve</th><th>Skill vs past year</th><th>t</th><th>Unseen stocks skill</th><th>Verdict</th></tr></thead><tbody>${Object.entries(r.horizons).map(([h, x]) =>
+            `<tr><td style="text-align:left">${h === '1d' ? 'Next session' : 'Next 5 sessions'}</td><td>${x.main.brierModel.toFixed(4)}</td><td>${x.main.brierPastYear.toFixed(4)}</td><td>${x.main.brierNormal.toFixed(4)}</td>
+            <td>${x.main.skillPct >= 0 ? '+' : ''}${x.main.skillPct.toFixed(1)}%</td><td>${x.main.tVsPastYear.toFixed(1)}</td><td>${x.holdout ? (x.holdout.skillPct >= 0 ? '+' : '') + x.holdout.skillPct.toFixed(1) + '%' : '–'}</td>
+            <td style="color:${col(x.verdict)};font-weight:600">${esc(x.verdict)}</td></tr>`).join('')}</tbody></table>
+          <div style="font-size:12px;margin-top:6px">Calibration (next session): ${(r.horizons['1d']?.reliability || []).map((b) => `said ${bmPct(b.predicted)} → happened ${bmPct(b.observed)}`).join(' · ')}</div>
+          <div class="note">${esc(r.rule)}</div></div>`;
+      }
+      (async () => {
+        try {
+          $('bmEval').innerHTML = bmEvalHtml(await api('/api/big-move-eval'));
+        } catch (e) {
+          $('bmEval').innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
+        }
+      })();
+      $('bmBtn').addEventListener('click', async () => {
+        $('bmOut').textContent = 'Calculating…';
+        try {
+          const r = await api('/api/big-move?' + new URLSearchParams({ symbol: $('bmSym').value.trim() }));
+          const tbl = (x, title) => `<div style="font-size:13px;margin-top:6px"><b>${title}</b> · typical move ±${x.sigmaPct.toFixed(2)}% (1σ)${x.validated ? ' · <span style="color:var(--up)">validated by replay</span>' : ''}</div>
+            <table><thead><tr><th>Move bigger than</th><th>Chance (up or down)</th><th>…up</th><th>…down</th><th>Past year</th><th>Normal curve</th></tr></thead><tbody>${x.odds.map((o) =>
+              `<tr><td>±${o.movePct}%</td><td style="font-weight:700">${bmPct(o.prob)}</td><td>${bmPct(o.probUp)}</td><td>${bmPct(o.probDown)}</td><td style="color:var(--muted)">${bmPct(o.pastYear)}</td><td style="color:var(--muted)">${bmPct(o.normal)}</td></tr>`).join('')}</tbody></table>`;
+          $('bmOut').innerHTML = `<div class="note">${esc(r.symbol)} · last ${r.last.toFixed(2)} · data to ${esc(r.asOf)}${r.eventPending ? ' · <span style="color:var(--warn)">results due — odds widened</span>' : ''}</div>` +
+            tbl(r.horizons['1d'], 'Next session') + tbl(r.horizons['5d'], 'Next 5 sessions') + `<div class="note">${esc(r.note)} Up and down chances are the tail shares, not a direction forecast.</div>`;
+        } catch (e) {
+          $('bmOut').innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
+        }
+      });
+      $('bmEvalBtn').addEventListener('click', async () => {
+        $('bmEval').textContent = 'Replaying 5 years across ~40 stocks…';
+        try {
+          $('bmEval').innerHTML = bmEvalHtml(await api('/api/big-move-eval', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }));
+        } catch (e) {
+          $('bmEval').innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
+        }
+      });
+
+      // --- Options positioning ---
+      const OP_NAMES = { pcrOi: 'Put-call ratio (open interest)', pcrOiZ: '… vs its last 60 days (z)', pcrVol: 'Put-call ratio (volume)', netDoi: 'Net OI added (puts − calls)', skew: 'Put skew (3% OTM put − call IV)', skewZ: '… vs its last 60 days (z)' };
+      function opHtml(r) {
+        if (!r || !r.horizons) return '<div class="note">Not run yet — click the button (first run downloads NSE data, 20–40 min).</div>';
+        const l = r.latest;
+        let html = `<div style="font-size:14px;margin-bottom:6px"><b>${esc(r.verdict)}</b></div>
+          <div class="note">${r.days} sessions · ${esc(r.from)} → ${esc(r.to)}${r.blocked ? ` · partial: ${esc(r.blocked)}` : ''}</div>
+          <div class="kv" style="margin:6px 0"><div>Latest (${esc(l.date)})</div><div>PCR (OI) ${l.pcrOi?.toFixed(2)} (${l.percentiles.pcrOi?.toFixed(0)}th percentile) · PCR (volume) ${l.pcrVol?.toFixed(2)} · put skew ${l.skew?.toFixed(1)} vol pts (${l.percentiles.skew?.toFixed(0)}th) · ATM IV ${l.atmIv?.toFixed(1)}%</div></div>`;
+        for (const [h, x] of Object.entries(r.horizons)) {
+          html += `<div style="font-size:13px;margin-top:8px"><b>Next ${h === '1d' ? 'session' : '5 sessions'}</b> · ${x.periods} periods · NIFTY up ${(x.baseUpRate * 100).toFixed(0)}% of the time</div>
+            <table><thead><tr><th style="text-align:left">Signal</th><th>IC</th><th>t</th><th>1st / 2nd half</th><th>Up % when high / low</th><th style="text-align:left">Evidence</th></tr></thead><tbody>${Object.entries(x.features).map(([f, v]) =>
+              `<tr><td style="text-align:left">${esc(OP_NAMES[f] || f)}</td><td>${v.ic.toFixed(3)}</td><td>${v.tStat.toFixed(2)}</td><td>${v.icFirstHalf.toFixed(3)} / ${v.icSecondHalf.toFixed(3)}</td><td>${(v.upRateWhenHigh * 100).toFixed(0)}% / ${(v.upRateWhenLow * 100).toFixed(0)}%</td><td style="text-align:left">${esc(v.evidence)}</td></tr>`).join('')}</tbody></table>`;
+        }
+        for (const c of r.robustness || []) {
+          html += `<div style="font-size:13px;margin-top:8px"><b>Robustness check: ${esc(OP_NAMES[c.feature] || c.feature)}</b> · next-morning open→close IC ${c.icNextOpenToClose.toFixed(3)} (t ${c.tNextOpenToClose.toFixed(2)}) ·
+            t after controlling for that day's NIFTY move ${c.tAfterControllingTodaysMove.toFixed(2)} → <b>${esc(c.verdict)}</b></div>`;
+        }
+        return html + `<div class="note">${esc(r.rule)} A signal that passes must also work from the next morning's open (the NSE data is published after the close) and survive controlling for that day's NIFTY move.</div>`;
+      }
+      (async () => {
+        try {
+          $('opOut').innerHTML = opHtml(await api('/api/options-positioning'));
+        } catch (e) {
+          $('opOut').innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
+        }
+      })();
+      $('opBtn').addEventListener('click', async () => {
+        $('opOut').textContent = 'Running… (downloads any missing NSE days first)';
+        $('opBtn').disabled = true;
+        try {
+          $('opOut').innerHTML = opHtml(await api('/api/options-positioning', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }));
+        } catch (e) {
+          $('opOut').innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
+        } finally {
+          $('opBtn').disabled = false;
+        }
+      });
+
       // --- Selling volatility (premium replay) ---
       function vpRender(r) {
         if (!r || !r.model) return '<div class="note">Not run yet — click the button.</div>';
@@ -1922,15 +2035,16 @@
         }
         const v = r.volatility;
         if (v && !v.error) html += `<div style="font-size:14px;margin:6px 0"><b>NIFTY volatility:</b> India VIX ${v.impliedPct?.toFixed(1)}% vs forecast ${v.forecastPct?.toFixed(1)}% (ratio ${v.ratio?.toFixed(2)}). ${esc(v.reading)}</div>`;
-        html += '<table><thead><tr><th style="text-align:left">Stock</th><th>Last</th><th>Up/Down/Side</th><th>Signal</th><th>News</th><th>±1 ATR</th><th style="text-align:left">Events</th></tr></thead><tbody>';
+        html += '<table><thead><tr><th style="text-align:left">Stock</th><th>Last</th><th>Up/Down/Side</th><th>Signal</th><th>News</th><th>±1 ATR</th><th title="Chance of a move bigger than ±2% next session, up or down (big-move odds)">Move &gt; ±2%</th><th style="text-align:left">Events</th></tr></thead><tbody>';
         for (const w of r.watchlist || []) {
           if (w.error) {
-            html += `<tr><td style="text-align:left">${esc(w.symbol)}</td><td colspan="6" class="err">${esc(w.error)}</td></tr>`;
+            html += `<tr><td style="text-align:left">${esc(w.symbol)}</td><td colspan="7" class="err">${esc(w.error)}</td></tr>`;
             continue;
           }
           html += `<tr><td style="text-align:left">${esc(w.symbol)}</td><td>${Number(w.last).toFixed(1)}</td>
             <td>${Math.round(w.up * 100)}/${Math.round(w.down * 100)}/${Math.round(w.side * 100)}</td><td>${esc(w.edge || '')}</td>
             <td>${sentimentBadge({ sentiment: w.sentiment, events: w.events })}</td><td>${w.atrPct != null ? w.atrPct.toFixed(2) + '%' : '–'}</td>
+            <td>${w.big2 != null ? Math.round(w.big2 * 100) + '%' : '–'}</td>
             <td style="text-align:left;font-size:12px">${esc((w.events || []).join(', '))}</td></tr>`;
         }
         html += '</tbody></table>';

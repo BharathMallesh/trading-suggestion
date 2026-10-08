@@ -44,6 +44,8 @@ import { runStrategyTests } from './paper-bot/strategies.mjs';
 import { optionOdds, evaluateOptionOdds } from './paper-bot/option-odds.mjs';
 import { testFii } from './paper-bot/fii.mjs';
 import { runAndSaveVolPremium, loadVolPremium } from './paper-bot/vol-premium.mjs';
+import { bigMove, evaluateBigMove, saveBigMoveEval, loadBigMoveEval } from './paper-bot/big-move.mjs';
+import { testPositioning, saveResult as savePositioning, loadResult as loadPositioning } from './paper-bot/options-positioning.mjs';
 import { llmLastModel } from './ling-client.mjs';
 import { foundationForecast, foundationReplay, saveReplay, loadReplay, MODELS as FOUNDATION_MODELS } from './paper-bot/foundation.mjs';
 import { rebalanceAccounts, resetAccounts, loadAccounts, summarize as summarizeAccounts } from './paper-bot/strategy-accounts.mjs';
@@ -476,6 +478,38 @@ const server = http.createServer(async (req, res) => {
     // --- FII positioning test ---
     if (req.method === 'POST' && url.pathname === '/api/fii-test') {
       return json(res, 200, await testFii({}));
+    }
+
+    // --- Big-move odds (size, not direction) ---
+    if (req.method === 'GET' && url.pathname === '/api/big-move') {
+      const symbol = (url.searchParams.get('symbol') || '^NSEI').trim();
+      let eventPending = false;
+      if (/\.(NS|BO)$/i.test(symbol)) {
+        try {
+          eventPending = (await newsBrief(symbol, { useLlm: false })).events?.includes('results') || false;
+        } catch {
+          /* no news → no add-on */
+        }
+      }
+      return json(res, 200, await bigMove({ symbol, eventPending }));
+    }
+    if (req.method === 'GET' && url.pathname === '/api/big-move-eval') {
+      return json(res, 200, loadBigMoveEval() || { horizons: null, note: 'Not replayed yet.' });
+    }
+    if (req.method === 'POST' && url.pathname === '/api/big-move-eval') {
+      const r = await evaluateBigMove({});
+      saveBigMoveEval(r);
+      return json(res, 200, r);
+    }
+
+    // --- Options positioning test (PCR, OI change, skew → NIFTY) ---
+    if (req.method === 'GET' && url.pathname === '/api/options-positioning') {
+      return json(res, 200, loadPositioning() || { verdict: null, note: 'Not run yet.' });
+    }
+    if (req.method === 'POST' && url.pathname === '/api/options-positioning') {
+      const r = await testPositioning({});
+      savePositioning(r);
+      return json(res, 200, r);
     }
 
     // --- Volatility premium: is selling NIFTY options profitable after costs? ---

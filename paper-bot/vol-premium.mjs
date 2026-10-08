@@ -266,8 +266,8 @@ export function parseFoBhav(text) {
   const out = { underlying: null, expiries: {} };
   const neu = col('TckrSymb') >= 0;
   const c = neu
-    ? { sym: col('TckrSymb'), tp: col('FinInstrmTp'), exp: col('XpryDt'), k: col('StrkPric'), opt: col('OptnTp'), close: col('ClsPric'), vol: col('TtlTradgVol'), und: col('UndrlygPric') }
-    : { sym: col('SYMBOL'), tp: col('INSTRUMENT'), exp: col('EXPIRY_DT'), k: col('STRIKE_PR'), opt: col('OPTION_TYP'), close: col('CLOSE'), vol: col('CONTRACTS'), und: -1 };
+    ? { sym: col('TckrSymb'), tp: col('FinInstrmTp'), exp: col('XpryDt'), k: col('StrkPric'), opt: col('OptnTp'), close: col('ClsPric'), vol: col('TtlTradgVol'), und: col('UndrlygPric'), oi: col('OpnIntrst'), doi: col('ChngInOpnIntrst') }
+    : { sym: col('SYMBOL'), tp: col('INSTRUMENT'), exp: col('EXPIRY_DT'), k: col('STRIKE_PR'), opt: col('OPTION_TYP'), close: col('CLOSE'), vol: col('CONTRACTS'), und: -1, oi: col('OPEN_INT'), doi: col('CHG_IN_OI') };
   for (const l of lines.slice(1)) {
     const f = l.split(',');
     if (f[c.sym] !== 'NIFTY') continue;
@@ -280,6 +280,8 @@ export function parseFoBhav(text) {
     const row = (e[k] ||= {});
     row[typ] = Number(f[c.close]);
     row[typ === 'CE' ? 'ceVol' : 'peVol'] = Number(f[c.vol]) || 0;
+    row[typ === 'CE' ? 'ceOi' : 'peOi'] = Number(f[c.oi]) || 0;
+    row[typ === 'CE' ? 'ceDoi' : 'peDoi'] = Number(f[c.doi]) || 0;
     if (c.und >= 0 && !out.underlying) out.underlying = Number(f[c.und]) || null;
   }
   return Object.keys(out.expiries).length ? out : null;
@@ -289,11 +291,12 @@ export function parseFoBhav(text) {
  * NIFTY option closes for one date, keeping only the nearest expiry within
  * 10 days (cached). null = no file (holiday). Blocks throw FoBlockedError.
  */
-export async function foBhav(date, { fetchFn = fetch } = {}) {
-  const f = join(FO_DIR, `${date}.json`);
-  if (existsSync(f)) return JSON.parse(readFileSync(f, 'utf8'));
-  let parsed = null;
-  let sawFile = false;
+/**
+ * Download and unzip one day's F&O bhavcopy CSV (either NSE format).
+ * → { csv } · { missing: true } (no file: holiday) · null (network trouble —
+ * try again later). Blocks throw FoBlockedError.
+ */
+export async function downloadBhav(date, { fetchFn = fetch } = {}) {
   for (const url of bhavUrls(date)) {
     let res;
     let buf = null;
@@ -310,33 +313,47 @@ export async function foBhav(date, { fetchFn = fetch } = {}) {
         buf = null;
       }
     }
-    if (!res) return null; // network: retry another time
+    if (!res) return null;
     if (!res.ok) continue;
-    if (!buf) return null; // kept failing mid-download: don't cache
+    if (!buf) return null; // kept failing mid-download
     if (buf.slice(0, 2).toString() !== 'PK') {
       if (/Access Denied/i.test(buf.toString('utf8', 0, 500))) throw new FoBlockedError('NSE is temporarily blocking downloads — try again later.');
       continue;
     }
-    sawFile = true;
-    const tmp = join(tmpdir(), `fo-${date}-${process.pid}.zip`);
+    const tmp = join(tmpdir(), `fo-${date}-${process.pid}-${Math.random().toString(36).slice(2)}.zip`);
     writeFileSync(tmp, buf);
     try {
       const { stdout } = await run('unzip', ['-p', tmp], { maxBuffer: 200 * 1024 * 1024 });
-      parsed = parseFoBhav(stdout);
+      return { csv: stdout };
     } finally {
       unlinkSync(tmp);
     }
-    break;
   }
-  if (!sawFile) {
+  return { missing: true };
+}
+
+/**
+ * NIFTY option closes for one date, keeping only the nearest expiry within
+ * 10 days (cached). null = no file (holiday). Blocks throw FoBlockedError.
+ */
+export async function foBhav(date, { fetchFn = fetch } = {}) {
+  const f = join(FO_DIR, `${date}.json`);
+  if (existsSync(f)) return JSON.parse(readFileSync(f, 'utf8'));
+  const d = await downloadBhav(date, { fetchFn });
+  if (!d) return null; // network: retry another time
+  if (d.missing) {
     mkdirSync(FO_DIR, { recursive: true });
     writeFileSync(f, 'null'); // genuine "no file for this date"
     return null;
   }
+  const parsed = parseFoBhav(d.csv);
   if (!parsed) return null; // unexpected format: don't cache
   const near = Object.keys(parsed.expiries).filter((e) => e > date && (Date.parse(e) - Date.parse(date)) / 86400000 <= 10).sort();
   const keep = { underlying: parsed.underlying, expiries: {} };
-  for (const e of near.slice(0, 2)) keep.expiries[e] = parsed.expiries[e];
+  for (const e of near.slice(0, 2)) {
+    // keep the cache compact: prices + volumes only
+    keep.expiries[e] = Object.fromEntries(Object.entries(parsed.expiries[e]).map(([k, r]) => [k, { CE: r.CE, PE: r.PE, ceVol: r.ceVol, peVol: r.peVol }]));
+  }
   mkdirSync(FO_DIR, { recursive: true });
   writeFileSync(f, JSON.stringify(keep));
   return keep;
