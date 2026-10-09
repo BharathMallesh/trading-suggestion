@@ -7,7 +7,7 @@ import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { PAPER } from './config.mjs';
 import { DEFAULT_COSTS } from './costs.mjs';
-import { badRequest, parseSymbols } from '../util.mjs';
+import { badRequest, parseSymbols, readJsonSafe, writeJsonAtomic } from '../util.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const PATH = process.env.SETTINGS_PATH || join(__dir, 'settings.json');
@@ -73,18 +73,14 @@ function apply(patch) {
 }
 
 function loadSaved() {
-  try {
-    return existsSync(PATH) ? JSON.parse(readFileSync(PATH, 'utf8')) : {};
-  } catch {
-    return {};
-  }
+  return readJsonSafe(PATH, {});
 }
 
 /** Save + apply a patch (merged with what was saved before). */
 export function saveSettings(patch) {
   const clean = validate(patch);
   const merged = { ...loadSaved(), ...clean };
-  writeFileSync(PATH, JSON.stringify(merged, null, 2));
+  writeJsonAtomic(PATH, merged);
   apply(clean);
   return currentSettings();
 }
@@ -92,7 +88,7 @@ export function saveSettings(patch) {
 /** Forget saved settings and go back to config.mjs defaults. */
 export function resetSettings() {
   try {
-    writeFileSync(PATH, '{}');
+    writeJsonAtomic(PATH, {});
   } catch {
     /* ignore */
   }

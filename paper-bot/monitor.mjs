@@ -24,6 +24,7 @@
 //
 // Research / paper simulation only. Not investment advice.
 
+import { writeJsonAtomic } from '../util.mjs';
 import { mkdirSync, writeFileSync, appendFileSync, existsSync, readdirSync, readFileSync } from 'fs';
 import { execFile } from 'child_process';
 import { dirname, join } from 'path';
@@ -224,7 +225,7 @@ export async function runMonitor({ base = BASE, trade = true, notify: doNotify =
 
   mkdirSync(OUT, { recursive: true });
   const stamp = market.ist.replace(' IST', '').replace(/[: ]/g, '-'); // IST, e.g. 2026-10-08-10-29
-  writeFileSync(join(OUT, `${stamp}.json`), JSON.stringify(report, null, 2));
+  writeJsonAtomic(join(OUT, `${stamp}.json`), report);
   const journal = join(OUT, 'journal.md');
   if (!existsSync(journal)) {
     appendFileSync(journal, '# Investor monitor journal\n\n| Run (IST) | Market | Scored | Hit-rate | Brier app / coin-flip / before-Ling | Ling | News tilt | Portfolio | Notes |\n|---|---|---|---|---|---|---|---|---|\n');

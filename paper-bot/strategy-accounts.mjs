@@ -24,7 +24,7 @@ import { candles } from '../market-data.mjs';
 import { orderCharges, DEFAULT_COSTS } from './costs.mjs';
 import { loadIndexList, SIGNALS } from './ranking.mjs';
 import { ASSUMPTIONS } from './strategies.mjs';
-import { mapLimit, badRequest } from '../util.mjs';
+import { mapLimit, badRequest, readJsonSafe, writeJsonAtomic } from '../util.mjs';
 import { TaxLedger, fyOf } from './tax.mjs';
 
 const PATH = process.env.STRATEGY_ACCOUNTS_PATH || join(dirname(fileURLToPath(import.meta.url)), 'data', 'strategy-accounts.json');
@@ -45,16 +45,10 @@ function fresh(capital) {
   };
 }
 export function loadAccounts() {
-  try {
-    if (existsSync(PATH)) return JSON.parse(readFileSync(PATH, 'utf8'));
-  } catch {
-    /* start fresh */
-  }
-  return null;
+  return readJsonSafe(PATH, null);
 }
 function save(st) {
-  mkdirSync(dirname(PATH), { recursive: true });
-  writeFileSync(PATH, JSON.stringify(st, null, 2));
+  writeJsonAtomic(PATH, st);
 }
 export function resetAccounts(capital = 1e6) {
   const c = Number(capital);

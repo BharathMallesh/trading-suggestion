@@ -15,7 +15,7 @@ import { PaperEngine } from './paper-engine.mjs';
 import { PAPER } from './config.mjs';
 import { candles } from '../market-data.mjs';
 import { generateSignal } from './signal.mjs';
-import { HttpError, badRequest } from '../util.mjs';
+import { HttpError, badRequest, readJsonSafe, writeJsonAtomic } from '../util.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const PATH = process.env.PORTFOLIO_PATH || join(__dir, 'portfolio.json');
@@ -25,16 +25,12 @@ function freshState(capital = PAPER.startingCapital) {
 }
 
 export function loadState() {
-  try {
-    if (existsSync(PATH)) return JSON.parse(readFileSync(PATH, 'utf8'));
-  } catch {
-    /* corrupt → start fresh */
-  }
-  return freshState();
+  // Missing → fresh; corrupt → readJsonSafe moves it aside and throws (never overwrite evidence).
+  return readJsonSafe(PATH, null) || freshState();
 }
 
 function saveState(st) {
-  writeFileSync(PATH, JSON.stringify(st, null, 2));
+  writeJsonAtomic(PATH, st);
 }
 
 /** Rebuild an engine from saved state (delivery product). */

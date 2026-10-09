@@ -2,6 +2,7 @@
 // Stores each Call/Put forecast, later scores it against realized price moves.
 // NOT investment advice. Hit-rates are descriptive, not guarantees.
 
+import { readJsonSafe, writeJsonAtomic } from '../util.mjs';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
@@ -12,23 +13,13 @@ const __dir = dirname(fileURLToPath(import.meta.url));
 const LOG_PATH = process.env.PREDICTION_LOG_PATH || join(__dir, 'prediction-history.json');
 
 function loadLog() {
-  try {
-    if (!existsSync(LOG_PATH)) return { version: 1, entries: [] };
-    const j = JSON.parse(readFileSync(LOG_PATH, 'utf8'));
-    if (!Array.isArray(j.entries)) j.entries = [];
-    return j;
-  } catch {
-    return { version: 1, entries: [] };
-  }
+  const j = readJsonSafe(LOG_PATH, { version: 1, entries: [] });
+  if (!j || !Array.isArray(j.entries)) return { version: 1, ...(j || {}), entries: [] };
+  return j;
 }
 
 function saveLog(data) {
-  try {
-    mkdirSync(dirname(LOG_PATH), { recursive: true });
-  } catch {
-    /* ok */
-  }
-  writeFileSync(LOG_PATH, JSON.stringify(data, null, 2), 'utf8');
+  writeJsonAtomic(LOG_PATH, data);
 }
 
 function uid() {

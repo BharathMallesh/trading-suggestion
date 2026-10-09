@@ -17,7 +17,7 @@
 
 import { pathToFileURL } from 'node:url';
 import { candles } from '../market-data.mjs';
-import { badRequest, mapLimit } from '../util.mjs';
+import { badRequest, mapLimit, readJsonSafe, writeJsonAtomic } from '../util.mjs';
 import { optionChain } from '../groww-data.mjs';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -26,18 +26,14 @@ import { fileURLToPath } from 'node:url';
 // Which forecaster won the last replay (saved by `--eval --save`).
 const MODEL_PATH = process.env.VOL_MODEL_PATH || join(dirname(fileURLToPath(import.meta.url)), 'vol-model.json');
 export function loadVolModel() {
-  try {
-    return existsSync(MODEL_PATH) ? JSON.parse(readFileSync(MODEL_PATH, 'utf8')) : {};
-  } catch {
-    return {};
-  }
+  return readJsonSafe(MODEL_PATH, {});
 }
 const HISTORY_MODELS = ['rv20', 'rv60', 'ewma', 'garch', 'har', 'blend'];
 
 /** Merge fields into vol-model.json (keeps the replay winners). */
 export function updateVolModel(patch) {
   const m = { ...loadVolModel(), ...patch };
-  writeFileSync(MODEL_PATH, JSON.stringify(m, null, 2));
+  writeJsonAtomic(MODEL_PATH, m);
   return m;
 }
 
@@ -59,7 +55,7 @@ export function saveVolModel(r) {
   };
   // Keep fields other jobs maintain (e.g. the weekly option IV ratio).
   const merged = { ...loadVolModel(), ...model };
-  writeFileSync(MODEL_PATH, JSON.stringify(merged, null, 2));
+  writeJsonAtomic(MODEL_PATH, merged);
   return merged;
 }
 

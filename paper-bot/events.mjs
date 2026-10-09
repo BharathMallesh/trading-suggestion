@@ -14,7 +14,7 @@ import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { candles } from '../market-data.mjs';
 import { newsBrief } from './news.mjs';
-import { mapLimit } from '../util.mjs';
+import { mapLimit, readJsonSafe, writeJsonAtomic } from '../util.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const PATH = process.env.EVENTS_PATH || join(__dir, 'data', 'events.json');
@@ -30,15 +30,10 @@ export function eventsFromFacts(facts = {}) {
 }
 
 export function loadEvents() {
-  try {
-    return existsSync(PATH) ? JSON.parse(readFileSync(PATH, 'utf8')) : [];
-  } catch {
-    return [];
-  }
+  return readJsonSafe(PATH, []);
 }
 function saveEvents(list) {
-  mkdirSync(dirname(PATH), { recursive: true });
-  writeFileSync(PATH, JSON.stringify(list, null, 2));
+  writeJsonAtomic(PATH, list);
 }
 
 /**
