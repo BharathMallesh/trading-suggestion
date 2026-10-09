@@ -1,4 +1,6 @@
 // Small shared helpers for the trading-research module. No dependencies.
+import { mkdirSync, writeFileSync, renameSync, readFileSync, existsSync, openSync, fsyncSync, closeSync } from 'node:fs';
+import { dirname } from 'node:path';
 
 /** An Error carrying an HTTP status, so the server can answer 400/404/503 instead of 500. */
 export class HttpError extends Error {
@@ -39,4 +41,48 @@ export async function mapLimit(items, limit, fn) {
   };
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
   return out;
+}
+
+/**
+ * Write JSON atomically: temp file in the same dir, fsync, rename. A crash
+ * mid-write leaves the old file intact instead of a truncated one.
+ */
+export function writeJsonAtomic(path, obj, space = 2) {
+  mkdirSync(dirname(path), { recursive: true });
+  const tmp = `${path}.tmp-${process.pid}-${Date.now()}`;
+  const fd = openSync(tmp, 'w');
+  try {
+    writeFileSync(fd, JSON.stringify(obj, null, space));
+    try { fsyncSync(fd); } catch { /* fsync is best-effort */ }
+  } finally {
+    closeSync(fd);
+  }
+  renameSync(tmp, path);
+}
+
+/**
+ * Read JSON; `fallback` only when the file does not exist. A file that exists
+ * but won't parse is moved aside (kept as evidence) and we throw, so callers
+ * never silently start fresh and overwrite it.
+ */
+export function readJsonSafe(path, fallback) {
+  if (!existsSync(path)) return fallback;
+  try {
+    return JSON.parse(readFileSync(path, 'utf8'));
+  } catch (e) {
+    const moved = `${path}.corrupt-${Date.now()}`;
+    try { renameSync(path, moved); } catch { /* keep going; the error below is what matters */ }
+    throw new Error(`Corrupt JSON in ${path} (${e.message}); moved to ${moved}`);
+  }
+}
+
+const _locks = new Map();
+/** Serialize async work per key (e.g. a file path) inside this process. */
+export function withFileLock(path, fn) {
+  const prev = _locks.get(path) || Promise.resolve();
+  const run = prev.then(fn, fn);
+  const tail = run.catch(() => {});
+  _locks.set(path, tail);
+  tail.then(() => { if (_locks.get(path) === tail) _locks.delete(path); });
+  return run;
 }

@@ -24,6 +24,7 @@
 //
 // Research / paper simulation only. Not investment advice.
 
+import { writeJsonAtomic } from '../util.mjs';
 import { mkdirSync, writeFileSync, appendFileSync, existsSync, readdirSync, readFileSync } from 'fs';
 import { execFile } from 'child_process';
 import { dirname, join } from 'path';
@@ -38,10 +39,13 @@ const BASE = process.env.MONITOR_URL || 'http://127.0.0.1:3000';
 /** JSON client for the dashboard server at `base`. */
 function client(base) {
   return async function api(path, body) {
-    const res = await fetch(base + path, body === undefined ? {} : {
+    // Long calls (/api/today/run etc.) can take minutes; still bounded so a hung server can't wedge the monitor.
+    const signal = AbortSignal.timeout(300_000);
+    const res = await fetch(base + path, body === undefined ? { signal } : {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
+      signal,
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(`${path}: ${data.error || res.status}`);
@@ -224,7 +228,7 @@ export async function runMonitor({ base = BASE, trade = true, notify: doNotify =
 
   mkdirSync(OUT, { recursive: true });
   const stamp = market.ist.replace(' IST', '').replace(/[: ]/g, '-'); // IST, e.g. 2026-10-08-10-29
-  writeFileSync(join(OUT, `${stamp}.json`), JSON.stringify(report, null, 2));
+  writeJsonAtomic(join(OUT, `${stamp}.json`), report);
   const journal = join(OUT, 'journal.md');
   if (!existsSync(journal)) {
     appendFileSync(journal, '# Investor monitor journal\n\n| Run (IST) | Market | Scored | Hit-rate | Brier app / coin-flip / before-Ling | Ling | News tilt | Portfolio | Notes |\n|---|---|---|---|---|---|---|---|---|\n');

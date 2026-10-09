@@ -6,6 +6,7 @@
 //   - earnings-drift tracker, NIFTY volatility reading, open health issues
 // Research / paper only — not investment advice.
 
+import { writeJsonAtomic } from '../util.mjs';
 import { mkdirSync, writeFileSync, existsSync, readdirSync, readFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
@@ -145,7 +146,7 @@ export function maybeWeekly({ entries, now = new Date(), force = false, notifyFn
   const w = buildWeekly({ reports: reportsBetween(week.from, week.to), entries, week, prevReport: reportBefore(week.from) });
   mkdirSync(WEEKLY_DIR(), { recursive: true });
   writeFileSync(md, w.markdown);
-  writeFileSync(join(WEEKLY_DIR(), `${week.label}.json`), JSON.stringify(w, null, 2));
+  writeJsonAtomic(join(WEEKLY_DIR(), `${week.label}.json`), w);
   if (notifyFn) notifyFn(`Weekly scorecard · ${week.label}`, w.summary);
   return w;
 }

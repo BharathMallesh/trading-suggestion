@@ -2,6 +2,7 @@
 // Stores each Call/Put forecast, later scores it against realized price moves.
 // NOT investment advice. Hit-rates are descriptive, not guarantees.
 
+import { readJsonSafe, writeJsonAtomic, withFileLock } from '../util.mjs';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
@@ -12,23 +13,13 @@ const __dir = dirname(fileURLToPath(import.meta.url));
 const LOG_PATH = process.env.PREDICTION_LOG_PATH || join(__dir, 'prediction-history.json');
 
 function loadLog() {
-  try {
-    if (!existsSync(LOG_PATH)) return { version: 1, entries: [] };
-    const j = JSON.parse(readFileSync(LOG_PATH, 'utf8'));
-    if (!Array.isArray(j.entries)) j.entries = [];
-    return j;
-  } catch {
-    return { version: 1, entries: [] };
-  }
+  const j = readJsonSafe(LOG_PATH, { version: 1, entries: [] });
+  if (!j || !Array.isArray(j.entries)) return { version: 1, ...(j || {}), entries: [] };
+  return j;
 }
 
 function saveLog(data) {
-  try {
-    mkdirSync(dirname(LOG_PATH), { recursive: true });
-  } catch {
-    /* ok */
-  }
-  writeFileSync(LOG_PATH, JSON.stringify(data, null, 2), 'utf8');
+  writeJsonAtomic(LOG_PATH, data);
 }
 
 function uid() {
@@ -148,11 +139,17 @@ async function settlementPrice(entry, now) {
  *
  * @param {{ minAgeMinutes?: number, thresholdPct?: number, limit?: number }} [opts]
  */
-export async function evaluatePending(opts = {}) {
+export function evaluatePending(opts = {}) {
+  // Serialized so two overlapping evaluations don't both settle the same entries.
+  return withFileLock(LOG_PATH, () => evaluatePendingUnlocked(opts));
+}
+
+async function evaluatePendingUnlocked(opts = {}) {
   const minAgeMinutes = Number.isFinite(opts.minAgeMinutes) ? opts.minAgeMinutes : 0;
   const thresholdPct = Number.isFinite(opts.thresholdPct) ? opts.thresholdPct : 0.15; // move larger than this => UP/DOWN else SIDEWAYS
   const limit = Number.isFinite(opts.limit) && opts.limit > 0 ? opts.limit : 30;
   const log = loadLog();
+  const patches = []; // applied to a fresh read at the end: logPrediction may have appended while we awaited prices
   const now = Date.now();
   let checked = 0;
   let updated = 0;
@@ -176,23 +173,34 @@ export async function evaluatePending(opts = {}) {
         thr = Math.max(thresholdPct, atrPct * 0.35);
       }
       const realizedLabel = labelFromReturn(retPct, thr);
-      entry.evaluated = true;
-      entry.evalTs = new Date().toISOString();
-      entry.settledAt = settled.at;
-      entry.futureClose = settled.price;
-      entry.realizedRetPct = retPct;
-      entry.realizedLabel = realizedLabel;
-      entry.hitBias = realizedLabel === entry.bias;
-      entry.hitTopProb = realizedLabel === topProbLabel(entry);
-      entry.evalThresholdPct = thr;
+      patches.push({
+        id: entry.id,
+        fields: {
+          evaluated: true,
+          evalTs: new Date().toISOString(),
+          settledAt: settled.at,
+          futureClose: settled.price,
+          realizedRetPct: retPct,
+          realizedLabel,
+          hitBias: realizedLabel === entry.bias,
+          hitTopProb: realizedLabel === topProbLabel(entry),
+          evalThresholdPct: thr,
+        },
+      });
       updated++;
     } catch {
       /* skip this entry */
     }
   }
 
-  saveLog(log);
-  return { checked, updated, stats: computeStats(log.entries) };
+  const fresh = loadLog();
+  const byId = new Map(fresh.entries.map((e) => [e.id, e]));
+  for (const { id, fields } of patches) {
+    const e = byId.get(id);
+    if (e) Object.assign(e, fields);
+  }
+  saveLog(fresh);
+  return { checked, updated, stats: computeStats(fresh.entries) };
 }
 
 /**

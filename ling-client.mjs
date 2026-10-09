@@ -26,7 +26,7 @@ export const llmStatus = () => lastLlmError;
 export async function llmCredits() {
   const key = process.env[OPENROUTER.apiKeyEnv];
   if (!key) return null;
-  const res = await fetch(`${OPENROUTER.baseUrl}/credits`, { headers: { Authorization: `Bearer ${key}` } });
+  const res = await fetch(`${OPENROUTER.baseUrl}/credits`, { headers: { Authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(15_000) });
   if (!res.ok) throw new Error(`credits HTTP ${res.status}`);
   const d = (await res.json())?.data || {};
   return { totalCredits: Number(d.total_credits) || 0, totalUsage: Number(d.total_usage) || 0, remaining: (Number(d.total_credits) || 0) - (Number(d.total_usage) || 0) };

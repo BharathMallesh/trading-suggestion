@@ -3,7 +3,10 @@
 // forward-test accounts, paper portfolio, earnings events, monitor reports and
 // weekly scorecards, settings, fitted models, and the collected intraday bars
 // (Yahoo only keeps ~1 month of those). Re-downloadable caches (NSE files,
-// replays, news) are left out.
+// news) are left out. Expensive-to-rebuild results (paper-bot/data/*.json, e.g.
+// replays) are included; NSE download caches (fo-bhav/, fii/, fo-positioning/)
+// and news-daily.json are not. Every .json is parse-checked first: a corrupt
+// file fails the backup loudly instead of replacing a good snapshot.
 //
 //   ~/trading-research-backups/trading-research-YYYY-MM-DD.tar.gz  (last 30 kept)
 //   + a copy in iCloud Drive (BACKUP_MIRROR to change; "" to turn off). macOS
@@ -16,7 +19,8 @@
 
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { existsSync, mkdirSync, readdirSync, statSync, unlinkSync, copyFileSync, writeFileSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, statSync, unlinkSync, copyFileSync, renameSync, readFileSync } from 'node:fs';
+import { writeJsonAtomic } from '../util.mjs';
 import { dirname, join } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -39,6 +43,22 @@ export const INCLUDE = [
   'paper-bot/data/candles',
   'paper-bot/monitor',
 ];
+
+/** Top-level paper-bot/data/*.json results worth keeping (everything but the news cache). */
+function dataResultFiles(root) {
+  const d = join(root, 'paper-bot', 'data');
+  if (!existsSync(d)) return [];
+  return readdirSync(d)
+    .filter((f) => f.endsWith('.json') && f !== 'news-daily.json')
+    .map((f) => `paper-bot/data/${f}`);
+}
+
+/** All .json files under the included paths (recursive). */
+function jsonFilesUnder(root, rel) {
+  const abs = join(root, rel);
+  if (statSync(abs).isDirectory()) return readdirSync(abs).flatMap((f) => jsonFilesUnder(root, `${rel}/${f}`));
+  return rel.endsWith('.json') ? [rel] : [];
+}
 
 const statusPath = () => join(BACKUP_DIR(), 'status.json');
 
@@ -68,18 +88,45 @@ function prune(dir, keep = KEEP) {
  * Create today's archive (overwrites today's if re-run), verify it, prune, mirror.
  * @returns {Promise<{file, bytes, files, mirror}>}
  */
-export async function backup({ root = ROOT, now = new Date() } = {}) {
+export async function backup(opts = {}) {
+  try {
+    return await backupInner(opts);
+  } catch (err) {
+    // Keep the last good status fields, add the error so the health check can shout.
+    try {
+      mkdirSync(BACKUP_DIR(), { recursive: true });
+      writeJsonAtomic(statusPath(), { ...(backupStatus() || {}), error: { at: new Date().toISOString(), message: err.message } });
+    } catch { /* reporting must not mask the real error */ }
+    throw err;
+  }
+}
+
+async function backupInner({ root = ROOT, now = new Date() } = {}) {
   const dir = BACKUP_DIR();
   mkdirSync(dir, { recursive: true });
   const date = new Date(now.getTime() + 19800_000).toISOString().slice(0, 10); // IST date
   const file = join(dir, `trading-research-${date}.tar.gz`);
-  const parts = INCLUDE.filter((p) => existsSync(join(root, p)));
+  const parts = [...new Set([...INCLUDE, ...dataResultFiles(root)])].filter((p) => existsSync(join(root, p)));
   if (!parts.length) throw new Error('Nothing to back up — no data files found.');
-  await run('tar', ['-czf', file, '-C', root, ...parts]);
-  // verify: the archive must list every included path
-  const { stdout } = await run('tar', ['-tzf', file], { maxBuffer: 50 * 1024 * 1024 });
-  const listed = stdout.split('\n').filter(Boolean);
-  for (const p of parts) if (!listed.some((l) => l === p || l.startsWith(`${p}/`))) throw new Error(`Backup verification failed: ${p} missing`);
+  // Parse-check first: never snapshot (and prune good history in favor of) a corrupt file.
+  const bad = [];
+  for (const rel of parts.flatMap((p) => jsonFilesUnder(root, p))) {
+    try { JSON.parse(readFileSync(join(root, rel), 'utf8')); } catch (e) { bad.push(`${rel} (${e.message.slice(0, 60)})`); }
+  }
+  if (bad.length) throw new Error(`Corrupt JSON, backup aborted: ${bad.join('; ')}`);
+  // Build under a temp name; only replace today's archive once it is verified.
+  const tmp = `${file}.tmp-${process.pid}`;
+  let listed;
+  try {
+    await run('tar', ['-czf', tmp, '-C', root, ...parts]);
+    const { stdout } = await run('tar', ['-tzf', tmp], { maxBuffer: 50 * 1024 * 1024 });
+    listed = stdout.split('\n').filter(Boolean);
+    for (const p of parts) if (!listed.some((l) => l === p || l.startsWith(`${p}/`))) throw new Error(`Backup verification failed: ${p} missing`);
+    renameSync(tmp, file);
+  } catch (err) {
+    try { unlinkSync(tmp); } catch { /* may not exist */ }
+    throw err;
+  }
   prune(dir);
   let mirror = { ok: null, detail: 'off' };
   const m = BACKUP_MIRROR();
@@ -94,7 +141,7 @@ export async function backup({ root = ROOT, now = new Date() } = {}) {
     }
   }
   const status = { at: now.toISOString(), file, bytes: statSync(file).size, files: listed.filter((l) => !l.endsWith('/')).length, mirror };
-  writeFileSync(statusPath(), JSON.stringify(status, null, 2));
+  writeJsonAtomic(statusPath(), status);
   return status;
 }
 

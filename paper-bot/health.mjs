@@ -73,7 +73,7 @@ export async function healthChecks(opts = {}) {
   // 2. News feed
   try {
     const n = await (opts.newsProbe || (async () => {
-      const res = await fetch('https://news.google.com/rss/search?q=NIFTY%20when:2d&hl=en-IN&gl=IN&ceid=IN:en', { headers: { 'User-Agent': 'Mozilla/5.0' } });
+      const res = await fetch('https://news.google.com/rss/search?q=NIFTY%20when:2d&hl=en-IN&gl=IN&ceid=IN:en', { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(15_000) });
       return res.ok ? (await res.text()).split('<item>').length - 1 : 0;
     }))();
     out.push(check('news feed', n > 0 ? 'ok' : 'warn', n > 0 ? `${n} recent market headlines` : 'news feed returned nothing'));
@@ -159,6 +159,7 @@ export async function healthChecks(opts = {}) {
   // 9. Backups of the evidence (daily; iCloud copy may be blocked for background jobs)
   const b = (opts.backupFn || backupStatus)();
   if (!b) out.push(check('backup', 'warn', 'no backup yet — runs daily at 18:30 (or: node paper-bot/backup.mjs)'));
+  else if (b.error) out.push(check('backup', 'fail', `last backup FAILED (${String(b.error.message).slice(0, 120)}) — fix and re-run: node paper-bot/backup.mjs`));
   else {
     const ageH = (now - new Date(b.at)) / 3600000;
     const mirror = b.mirror?.ok === false ? ` · iCloud copy failed (${b.mirror.detail.split(': ').pop()}) — local copy only` : b.mirror?.ok ? ' · + iCloud copy' : '';

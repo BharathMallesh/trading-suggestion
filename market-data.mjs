@@ -35,7 +35,11 @@ export const isIntraday = (interval) => INTRADAY.has(interval);
 // Tiny in-memory cache so repeated clicks / parallel panels don't hammer Yahoo
 // (it rate-limits with HTTP 429). Successful payloads only, short TTL.
 const CACHE_TTL_MS = 30_000;
+export const CACHE_MAX_ENTRIES = 500;
 const cache = new Map(); // url -> { at, result }
+
+/** Number of cached chart payloads (used by tests). */
+export const marketCacheSize = () => cache.size;
 
 /** Drop all cached chart payloads (used by tests). */
 export function clearMarketCache() {
@@ -69,11 +73,11 @@ export async function fetchChart(symbol, opts = {}) {
   const hit = cache.get(url);
   if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.result;
 
-  let res = await fetch(url, { headers: { 'User-Agent': UA }, signal: opts.signal });
+  let res = await fetch(url, { headers: { 'User-Agent': UA }, signal: opts.signal || AbortSignal.timeout(15_000) });
   if (res.status === 429) {
     // Rate-limited: back off once before giving up.
     await sleep(800);
-    res = await fetch(url, { headers: { 'User-Agent': UA }, signal: opts.signal });
+    res = await fetch(url, { headers: { 'User-Agent': UA }, signal: opts.signal || AbortSignal.timeout(15_000) });
   }
   if (!res.ok) {
     const body = await res.text().catch(() => '');
@@ -85,6 +89,8 @@ export async function fetchChart(symbol, opts = {}) {
   const result = data?.chart?.result?.[0];
   if (!result) throw new HttpError(404, `No market data found for "${sym}". Check the ticker symbol.`);
   cache.set(url, { at: Date.now(), result });
+  // Bound memory: Map keeps insertion order, so the first key is the oldest.
+  while (cache.size > CACHE_MAX_ENTRIES) cache.delete(cache.keys().next().value);
   return result;
 }
 
@@ -121,7 +127,7 @@ function chartHttpError(sym, status, statusText, body) {
  */
 export async function quote(symbol, opts = {}) {
   // range=1d/interval=1d is enough to populate the meta block cheaply.
-  const { meta } = await fetchChart(symbol, { range: '1d', interval: '1d', signal: opts.signal });
+  const { meta } = await fetchChart(symbol, { range: '1d', interval: '1d', signal: opts.signal || AbortSignal.timeout(15_000) });
   return {
     symbol: meta.symbol,
     name: meta.longName || meta.shortName || meta.symbol,
@@ -194,7 +200,7 @@ export async function intraday(symbol, opts = {}) {
   }
   // 1m/2m data spans only a few days on Yahoo; coarser intervals reach further.
   const range = ['1m', '2m'].includes(interval) ? '5d' : ['5m', '15m', '30m', '60m', '90m', '1h'].includes(interval) ? '1mo' : '5d';
-  const result = await fetchChart(symbol, { range, interval, signal: opts.signal });
+  const result = await fetchChart(symbol, { range, interval, signal: opts.signal || AbortSignal.timeout(15_000) });
   const off = result.meta?.gmtoffset || 0; // seconds; shifts UTC into exchange-local
   const ts = result.timestamp || [];
   const q = result.indicators?.quote?.[0] || {};

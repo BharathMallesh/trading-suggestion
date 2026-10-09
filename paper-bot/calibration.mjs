@@ -5,6 +5,7 @@
 // held-out bars (`useCalibrated`).
 // Research calibration only — not investment advice.
 
+import { readJsonSafe, writeJsonAtomic } from '../util.mjs';
 import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
@@ -78,19 +79,14 @@ export function lookup(table, score) {
 
 /** Read calibration.json (or {} when missing / unreadable). */
 export function loadCalibration() {
-  try {
-    if (!existsSync(CAL_PATH)) return {};
-    return JSON.parse(readFileSync(CAL_PATH, 'utf8')) || {};
-  } catch {
-    return {};
-  }
+  return readJsonSafe(CAL_PATH, {}) || {};
 }
 
 /** Store one interval's fitted table + validation report. */
 export function saveCalibration(key, entry) {
   const all = loadCalibration();
   all[key] = entry;
-  writeFileSync(CAL_PATH, JSON.stringify(all, null, 2));
+  writeJsonAtomic(CAL_PATH, all);
   return all;
 }
 
