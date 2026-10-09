@@ -85,7 +85,8 @@ export async function scanEvents(symbols, { brief = newsBrief, quoteRows = (s) =
  * Fill in returns that have become measurable (h trading days after the
  * event), raw and vs NIFTY.
  */
-export async function updateEventReturns({ load = candles } = {}) {
+export async function updateEventReturns({ load = candles, now = new Date() } = {}) {
+  const today = new Date(now.getTime() + 19800_000).toISOString().slice(0, 10); // IST date
   const list = loadEvents();
   const open = list.filter((e) => HORIZONS.some((h) => e.returns[h] == null));
   if (!open.length) return { updated: 0 };
@@ -108,7 +109,11 @@ export async function updateEventReturns({ load = candles } = {}) {
     if (i < 0) continue;
     for (const h of HORIZONS) {
       if (e.returns[h] != null || i + h >= rows.length) continue;
-      const ret = rows[i + h].close / e.price - 1;
+      // Only settle on a COMPLETED past session (today's bar may still be forming).
+      if (!(rows[i + h].date < today)) continue;
+      // Same base bar and close for the stock and NIFTY legs, so the abnormal
+      // return isn't skewed by a stock price taken at a different time.
+      const ret = rows[i + h].close / rows[i].close - 1;
       const i0 = idxAt.get(rows[i].date);
       const i1 = idxAt.get(rows[i + h].date);
       e.returns[h] = { ret, abnormal: i0 && i1 ? ret - (i1 / i0 - 1) : null, through: rows[i + h].date };
@@ -129,23 +134,32 @@ export function eventStats(list = loadEvents()) {
       const r = e.returns?.[h];
       if (!r) continue;
       const k = `d${h}`;
-      by[e.type][k] ||= { n: 0, sumRet: 0, sumAbn: 0, nAbn: 0, positive: 0 };
+      by[e.type][k] ||= { n: 0, sumRet: 0, sumRet2: 0, sumAbn: 0, sumAbn2: 0, nAbn: 0, positive: 0 };
       const s = by[e.type][k];
       s.n++;
       s.sumRet += r.ret;
+      s.sumRet2 += r.ret * r.ret;
       if (r.abnormal != null) {
         s.sumAbn += r.abnormal;
+        s.sumAbn2 += r.abnormal * r.abnormal;
         s.nAbn++;
         if (r.abnormal > 0) s.positive++;
       }
     }
   }
+  // t-stat of the mean: mean / (sd / sqrt(n)); null with n < 2 or zero spread.
+  const tStat = (n, sum, sum2) => {
+    if (n < 2) return null;
+    const mean = sum / n;
+    const sd = Math.sqrt(Math.max(0, (sum2 - n * mean * mean) / (n - 1)));
+    return sd > 0 ? mean / (sd / Math.sqrt(n)) : null;
+  };
   return Object.values(by).map((t) => {
     const out = { type: t.type, events: t.n };
     for (const h of HORIZONS) {
       const s = t[`d${h}`];
       out[`d${h}`] = s
-        ? { n: s.n, avgRetPct: (s.sumRet / s.n) * 100, avgAbnormalPct: s.nAbn ? (s.sumAbn / s.nAbn) * 100 : null, pctBeatNifty: s.nAbn ? (s.positive / s.nAbn) * 100 : null }
+        ? { n: s.n, avgRetPct: (s.sumRet / s.n) * 100, avgAbnormalPct: s.nAbn ? (s.sumAbn / s.nAbn) * 100 : null, pctBeatNifty: s.nAbn ? (s.positive / s.nAbn) * 100 : null, nAbnormal: s.nAbn, tStatRet: tStat(s.n, s.sumRet, s.sumRet2), tStatAbnormal: tStat(s.nAbn, s.sumAbn, s.sumAbn2) }
         : null;
     }
     return out;

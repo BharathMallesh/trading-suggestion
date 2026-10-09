@@ -10,6 +10,7 @@ const TMP = mkdtempSync(join(tmpdir(), 'trading-statsfix-'));
 process.env.CALIBRATION_PATH = join(TMP, 'calibration.json');
 process.env.STRATEGY_ACCOUNTS_PATH = join(TMP, 'accounts.json');
 process.env.INDEX_LIST_DIR = TMP;
+process.env.EVENTS_PATH = join(TMP, 'events.json');
 process.env.PREDICTION_LOG_PATH = join(TMP, 'prediction-history.json');
 after(() => rmSync(TMP, { recursive: true, force: true }));
 
@@ -118,4 +119,39 @@ test('tax lots exclude STT and DP charges from the cost basis', async () => {
   const gross = buy.price;
   const withAll = gross + buy.charges / buy.qty;
   assert.ok(perUnit >= gross && perUnit < withAll - 1e-9, `basis/unit ${perUnit} between ${gross} and ${withAll}`);
+});
+
+// ---- 4. earnings drift: shared base close, completed sessions only, t-stats ----
+test('events: both legs use the base bar close, only completed sessions settle, stats carry n and t', async () => {
+  const ev = await import('./paper-bot/events.mjs');
+  const days = Array.from({ length: 30 }, (_, i) => new Date(Date.UTC(2026, 0, 5 + i)).toISOString().slice(0, 10));
+  const stock = days.map((d, i) => ({ date: d, close: 100 * (1 + 0.01 * i) }));
+  const nifty = days.map((d, i) => ({ date: d, close: 20000 * (1 + 0.002 * i) }));
+  // recorded price (stale/intraday) deliberately differs from the day's close
+  ev.recordEvents('Q.NS', { results: 'beat' }, { price: 90, date: days[0] });
+  ev.recordEvents('R.NS', { results: 'beat' }, { price: 100, date: days[0] });
+  const load = async (s) => (s === '^NSEI' ? nifty : stock);
+  // "now" = during the session of bar 5: bar 5 is not yet a completed past session
+  await ev.updateEventReturns({ load, now: new Date(`${days[5]}T08:00:00Z`) });
+  const e = ev.loadEvents().find((x) => x.symbol === 'Q.NS');
+  assert.equal(e.returns[5], undefined, 'today\'s bar must not settle');
+  assert.ok(e.returns[1], 'yesterday\'s bar settles');
+  assert.ok(Math.abs(e.returns[1].ret - 0.01 / 1) < 1e-9 * 100 + 1e-6);
+  assert.ok(Math.abs(e.returns[1].abnormal - (e.returns[1].ret - 0.002)) < 1e-6);
+  await ev.updateEventReturns({ load, now: new Date(`${days[29]}T08:00:00Z`) });
+  const st = ev.eventStats().find((t) => t.type === 'results:beat');
+  assert.equal(st.d5.n, 2);
+  assert.equal(st.d5.nAbnormal, 2);
+  assert.ok(Math.abs(st.d5.avgRetPct - 5) < 1e-6);
+  assert.equal(st.d5.tStatRet, null, 'identical returns have zero spread');
+});
+
+test('events: t-stat is mean over standard error', async () => {
+  const ev = await import('./paper-bot/events.mjs');
+  const mk = (abn) => ({ type: 't:x', returns: { 1: { ret: abn, abnormal: abn } } });
+  const st = ev.eventStats([mk(0.01), mk(0.03), mk(0.02), mk(0.04)]).find((t) => t.type === 't:x');
+  const xs = [1, 3, 2, 4];
+  const mean = 2.5;
+  const sd = Math.sqrt(xs.reduce((a, x) => a + (x - mean) ** 2, 0) / 3);
+  assert.ok(Math.abs(st.d1.tStatAbnormal - mean / (sd / 2)) < 1e-9);
 });
