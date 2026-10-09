@@ -40,6 +40,8 @@ export function updateVolModel(patch) {
 /** Weekly NIFTY options: horizons up to this many calendar days use the weekly IV ratio. */
 export const WEEKLY_MAX_DAYS = 10;
 
+const chosenHistory = (model) => model.bestNifty || 'blend';
+
 /** Persist the replay's winners: best history model for stocks / NIFTY, and VIX's usual premium. */
 export function saveVolModel(r) {
   const bestOf = (o) => HISTORY_MODELS.filter((k) => o[k]).sort((a, b) => o[a].meanQlike - o[b].meanQlike)[0] || 'ewma';
@@ -310,6 +312,9 @@ export async function volCheck({ symbol, iv, days = 7, expiry, eventPending = fa
   // head-to-head confirms it beats every history model (forecastsAnnualPct keeps
   // the history forecasts for reference).
   let vixScaledUsed = false;
+  // The history-model forecast stays the yardstick for "is VIX unusually rich?"
+  // (VIX ÷ VIX-scaled would equal the usual ratio by construction).
+  const historyForecastPct = forecastPct;
   const h2h = model.niftyHeadToHead;
   if (sym === '^NSEI' && impliedSource === 'India VIX' && impliedPct > 0 && model.niftyTypicalRatio > 0 && h2h?.vixScaled?.meanQlike != null) {
     const bestKey = Object.keys(h2h).filter((k) => h2h[k]?.meanQlike != null).sort((a, b) => h2h[a].meanQlike - h2h[b].meanQlike)[0];
@@ -332,7 +337,8 @@ export async function volCheck({ symbol, iv, days = 7, expiry, eventPending = fa
   }
   const last = rows[rows.length - 1].close;
   const move = (volPct) => (volPct == null ? null : (volPct / 100) * Math.sqrt(d / TRADING_DAYS) * 100);
-  const ratio = impliedPct != null && forecastPct ? impliedPct / forecastPct : null;
+  const yardstick = vixScaledUsed ? historyForecastPct : forecastPct;
+  const ratio = impliedPct != null && yardstick ? impliedPct / yardstick : null;
   // Pricing IV. VIX is a 30-day measure; real weekly NIFTY options trade at a
   // measured fraction of it (from NSE closing prices — vol-premium.mjs).
   let pricingIvPct = impliedPct;
@@ -357,15 +363,16 @@ export async function volCheck({ symbol, iv, days = 7, expiry, eventPending = fa
     pricingIvSource,
     optionChain: chain,
     ratio,
+    ratioBasis: vixScaledUsed ? `India VIX ÷ history-model forecast (${chosenHistory(model)})` : 'implied ÷ forecast',
     expectedMovePct: { implied: move(impliedPct), forecast: move(forecastPct) },
     model: chosen,
     eventPending,
     eventAddOnPct,
     typicalRatio: typical,
     reading:
-      vixScaledUsed
-        ? `Forecast ${forecastPct.toFixed(1)}% is India VIX scaled down by its usual premium (×${model.niftyTypicalRatio.toFixed(2)}) — the replay's best NIFTY model — so it matches VIX by construction; compare it with the history models in forecastsAnnualPct instead.`
-        : ratio == null
+      (vixScaledUsed
+        ? `Forecast ${forecastPct.toFixed(1)}% = India VIX ÷ its usual premium (×${model.niftyTypicalRatio.toFixed(2)}), the replay's best NIFTY model. Against the history-based forecast (${historyForecastPct?.toFixed(1)}%): `
+        : '') + (ratio == null
         ? 'Enter the option\'s implied volatility (IV %) from your broker to compare.'
         : typical
           ? ratio > typical * 1.15
@@ -377,7 +384,7 @@ export async function volCheck({ symbol, iv, days = 7, expiry, eventPending = fa
           ? `Implied vol is ${((ratio - 1) * 100).toFixed(0)}% above the forecast: options are pricing bigger moves than recent behaviour suggests (relatively expensive).`
           : ratio < 0.87
             ? `Implied vol is ${((1 - ratio) * 100).toFixed(0)}% below the forecast: options are pricing smaller moves than recent behaviour suggests (relatively cheap).`
-            : 'Implied vol is close to the forecast: options are priced roughly in line with recent behaviour.',
+            : 'Implied vol is close to the forecast: options are priced roughly in line with recent behaviour.'),
     disclaimer: 'Volatility comparison for research. Forecasts can be wrong, especially around results/events. Not a trade suggestion.',
   };
 }
