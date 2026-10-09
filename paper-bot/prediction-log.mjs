@@ -120,6 +120,7 @@ function topProbLabel(entry) {
   const u = entry.probUp || 0;
   const d = entry.probDown || 0;
   const s = entry.probSideways || 0;
+  if (Math.abs(u - d) < 0.005) return 'SIDEWAYS'; // up/down tied: no direction lean
   if (u >= d && u >= s) return 'UP';
   if (d >= s) return 'DOWN';
   return 'SIDEWAYS';
@@ -397,4 +398,63 @@ export function getHistory(limit = 50) {
   const n = Math.min(500, Math.max(1, Math.floor(Number(limit)) || 50));
   const log = loadLog();
   return log.entries.slice(-n).reverse();
+}
+
+/**
+ * Live scorecard for the Call / Put card: how often its leaning came true,
+ * from the app's own scored predictions (no hindsight; nothing re-fitted).
+ *   lean = the highest of Call (up) / Put (down) / Sideways at prediction time
+ * @param {object[]} entries  prediction log entries
+ * @param {{ mode?: '15m'|'multi'|'all' }} [opts]
+ */
+export function liveScorecard(entries = null, { mode = 'all' } = {}) {
+  if (!entries) entries = loadLog().entries;
+  const ev = entries.filter((e) => e.evaluated && e.realizedLabel && (mode === 'all' || (mode === '15m' ? e.mode === '15m' : e.mode !== '15m')));
+  const lean = (e) => topProbLabel(e);
+  const name = { UP: 'Call (up)', DOWN: 'Put (down)', SIDEWAYS: 'Sideways / no lean' };
+  const by = {};
+  for (const l of ['UP', 'DOWN', 'SIDEWAYS']) {
+    const g = ev.filter((e) => lean(e) === l);
+    const happened = { UP: 0, DOWN: 0, SIDEWAYS: 0 };
+    for (const e of g) happened[e.realizedLabel]++;
+    by[l] = {
+      label: name[l],
+      calls: g.length,
+      cameTrue: g.length ? happened[l] / g.length : null,
+      avgStated: g.length ? g.reduce((a, e) => a + (e[{ UP: 'probUp', DOWN: 'probDown', SIDEWAYS: 'probSideways' }[l]] || 0), 0) / g.length : null,
+      happened,
+    };
+  }
+  // direction only: Call/Put-leaning calls where the stock actually moved up or down
+  const dirCalls = ev.filter((e) => lean(e) !== 'SIDEWAYS' && e.realizedLabel !== 'SIDEWAYS');
+  const dirRight = dirCalls.filter((e) => lean(e) === e.realizedLabel).length;
+  const freq = { UP: 0, DOWN: 0, SIDEWAYS: 0 };
+  for (const e of ev) freq[e.realizedLabel]++;
+  const most = Object.entries(freq).sort((a, b) => b[1] - a[1])[0]?.[0] || 'SIDEWAYS';
+  const B = (p, l) => ['UP', 'DOWN', 'SIDEWAYS'].reduce((a, k) => a + ((Number(p?.[{ UP: 'probUp', DOWN: 'probDown', SIDEWAYS: 'probSideways' }[k]]) || 0) - (k === l ? 1 : 0)) ** 2, 0);
+  const n = ev.length;
+  const topHit = n ? ev.filter((e) => lean(e) === e.realizedLabel).length / n : null;
+  const out = {
+    mode,
+    scored: n,
+    pending: entries.filter((e) => !e.evaluated && (mode === 'all' || (mode === '15m' ? e.mode === '15m' : e.mode !== '15m'))).length,
+    topCallRight: topHit,
+    alwaysMostCommonRight: n ? freq[most] / n : null,
+    mostCommon: name[most],
+    directionCalls: dirCalls.length,
+    directionRight: dirCalls.length ? dirRight / dirCalls.length : null,
+    brierApp: n ? ev.reduce((a, e) => a + B(e, e.realizedLabel), 0) / n : null,
+    brierCoin: n ? ev.reduce((a, e) => a + B({ probUp: 1 / 3, probDown: 1 / 3, probSideways: 1 / 3 }, e.realizedLabel), 0) / n : null,
+    byLean: by,
+    recent: ev.slice(-12).reverse().map((e) => ({
+      ts: e.ts, symbol: e.symbol, mode: e.mode, lean: name[lean(e)], stated: Math.max(e.probUp || 0, e.probDown || 0, e.probSideways || 0),
+      happened: name[e.realizedLabel], retPct: e.realizedRetPct, right: lean(e) === e.realizedLabel,
+    })),
+  };
+  out.verdict = n < 30
+    ? `Too early: ${n} scored prediction${n === 1 ? '' : 's'} (need 30+ before reading much into it; 100+ to be fair).`
+    : out.directionRight != null && dirCalls.length >= 30
+      ? `When it leaned Call or Put and the stock moved, it picked the right direction ${(out.directionRight * 100).toFixed(0)}% of the time (coin flip = 50%). Its top call was right ${(topHit * 100).toFixed(0)}% vs ${(out.alwaysMostCommonRight * 100).toFixed(0)}% for always saying "${out.mostCommon}".`
+      : `Top call right ${(topHit * 100).toFixed(0)}% vs ${(out.alwaysMostCommonRight * 100).toFixed(0)}% for always saying "${out.mostCommon}".`;
+  return out;
 }

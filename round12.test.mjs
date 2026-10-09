@@ -176,3 +176,20 @@ test('Groww: key + secret → daily token with SHA-256 checksum; refusals trip t
   delete process.env.GROWW_API_SECRET;
   assert.equal(g.growwStatus().state, 'off');
 });
+
+test('Call/Put live scorecard: hits by lean, direction-only rate, too-early verdict', async () => {
+  const { liveScorecard } = await import('./paper-bot/prediction-log.mjs');
+  const mk = (pu, pd, ps, real, mode = '15m') => ({ evaluated: true, realizedLabel: real, probUp: pu, probDown: pd, probSideways: ps, mode, ts: '2026-10-09T05:00:00Z', symbol: 'X.NS', realizedRetPct: 0.1 });
+  const entries = [mk(0.5, 0.3, 0.2, 'UP'), mk(0.5, 0.3, 0.2, 'DOWN'), mk(0.2, 0.5, 0.3, 'DOWN'), mk(0.2, 0.3, 0.5, 'SIDEWAYS', 'multi'), { evaluated: false, mode: '15m' }];
+  const r = liveScorecard(entries);
+  assert.equal(r.scored, 4);
+  assert.equal(r.pending, 1);
+  assert.equal(r.byLean.UP.calls, 2);
+  assert.equal(r.byLean.UP.cameTrue, 0.5);
+  assert.equal(r.byLean.DOWN.cameTrue, 1);
+  assert.equal(r.directionCalls, 3);
+  assert.ok(Math.abs(r.directionRight - 2 / 3) < 1e-9);
+  assert.match(r.verdict, /Too early/);
+  assert.equal(liveScorecard(entries, { mode: 'multi' }).scored, 1);
+  assert.equal(r.recent.length, 4);
+});

@@ -331,6 +331,13 @@
         <button id="gpBtn">Fetch + get probabilities</button>
         <div id="gpStatus" class="note" style="display:none"></div>
         <div id="gpOut" style="margin-top:12px"></div>
+        <div style="margin-top:12px;border:1px solid var(--line);border-radius:10px;padding:10px">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+            <b style="font-size:14px">Live scorecard — how often this card was right</b>
+            <select id="gpScoreMode" style="width:auto"><option value="all">All modes</option><option value="15m">15-min only</option><option value="multi">Multi-horizon</option></select>
+          </div>
+          <div id="gpScore" style="margin-top:6px"></div>
+        </div>
       </section>
 
       <!-- Hit-rate calibration (research) -->
@@ -1409,8 +1416,39 @@
           out.innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
         } finally {
           $('gpBtn').disabled = false;
+          gpScoreLoad();
         }
       });
+
+      // --- Live scorecard for the Call / Put card (its own scored predictions) ---
+      async function gpScoreLoad() {
+        const out = $('gpScore');
+        try {
+          const r = await api('/api/callput-scorecard?mode=' + $('gpScoreMode').value);
+          const p = (x) => (x == null ? '–' : Math.round(x * 100) + '%');
+          let html = `<div style="font-size:13px"><b>${esc(r.verdict)}</b></div>
+            <div class="note">${r.scored} scored · ${r.pending} waiting for their time window to finish (scored automatically every 15 min).</div>`;
+          if (r.scored) {
+            html += `<table style="margin-top:6px"><thead><tr><th style="text-align:left">When it leaned…</th><th>Times</th><th>It said (avg)</th><th>Came true</th><th style="text-align:left">What actually happened</th></tr></thead><tbody>${Object.values(r.byLean).map((g) =>
+              `<tr><td style="text-align:left">${esc(g.label)}</td><td>${g.calls}</td><td>${p(g.avgStated)}</td><td><b>${p(g.cameTrue)}</b></td>
+               <td style="text-align:left;font-size:12px">${g.calls ? `up ${g.happened.UP} · down ${g.happened.DOWN} · sideways ${g.happened.SIDEWAYS}` : '–'}</td></tr>`).join('')}</tbody></table>
+              <div class="kv" style="margin-top:6px">
+                <div>Right direction (when it moved)</div><div><b>${p(r.directionRight)}</b> of ${r.directionCalls} Call/Put calls — a coin flip is 50%</div>
+                <div>Top call right</div><div>${p(r.topCallRight)} — always saying "${esc(r.mostCommon)}" would have been right ${p(r.alwaysMostCommonRight)}</div>
+                <div>Accuracy score (Brier, lower = better)</div><div>${r.brierApp?.toFixed(3)} vs ${r.brierCoin?.toFixed(3)} for a coin flip</div>
+              </div>`;
+            html += `<table style="margin-top:6px;font-size:12px"><thead><tr><th style="text-align:left">Recent</th><th>Stock</th><th>Leaned</th><th>Said</th><th>Happened</th><th>Move</th><th></th></tr></thead><tbody>${r.recent.map((x) =>
+              `<tr><td style="text-align:left">${esc(new Date(x.ts).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }))}</td><td>${esc(String(x.symbol).replace('.NS', ''))}</td><td>${esc(x.lean)}</td><td>${p(x.stated)}</td><td>${esc(x.happened)}</td>
+               <td>${x.retPct == null ? '–' : (x.retPct >= 0 ? '+' : '') + Number(x.retPct).toFixed(2) + '%'}</td><td style="color:${x.right ? 'var(--up)' : 'var(--down)'}">${x.right ? '✓' : '✗'}</td></tr>`).join('')}</tbody></table>`;
+          }
+          out.innerHTML = html;
+        } catch (e) {
+          out.innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
+        }
+      }
+      $('gpScoreMode').addEventListener('change', gpScoreLoad);
+      gpScoreLoad();
+      setInterval(gpScoreLoad, 5 * 60 * 1000); // refresh every 5 minutes
 
       // --- Hit-rate calibration ---
       function renderHitStats(stats, note) {

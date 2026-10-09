@@ -26,7 +26,7 @@ import { researchAgent } from './agents/research-agent.mjs';
 import { signalAgent } from './agents/signal-agent.mjs';
 import { candlePredict } from './paper-bot/candle-predict.mjs';
 import { growwProbability } from './paper-bot/groww-predict.mjs';
-import { evaluatePending, computeStats, getHistory } from './paper-bot/prediction-log.mjs';
+import { evaluatePending, computeStats, getHistory, liveScorecard } from './paper-bot/prediction-log.mjs';
 import { runBacktest } from './paper-bot/backtest.mjs';
 import { evaluateModels, saveReport } from './paper-bot/evaluate.mjs';
 import { loadCalibration } from './paper-bot/calibration.mjs';
@@ -515,6 +515,10 @@ const server = http.createServer(async (req, res) => {
       // history changes slowly: cache for a day
       if (!expectCache || Date.now() - expectCache.at > 86400000) expectCache = { at: Date.now(), data: await expectations({}) };
       return json(res, 200, expectCache.data);
+    }
+    if (req.method === 'GET' && url.pathname === '/api/callput-scorecard') {
+      const mode = ['15m', 'multi'].includes(url.searchParams.get('mode')) ? url.searchParams.get('mode') : 'all';
+      return json(res, 200, liveScorecard(null, { mode }));
     }
     if (req.method === 'GET' && url.pathname === '/api/intraday-test') {
       return json(res, 200, loadIntradayTest() || { note: 'Not run yet (node paper-bot/intraday-test.mjs).' });

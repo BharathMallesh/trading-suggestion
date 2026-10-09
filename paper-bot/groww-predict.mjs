@@ -290,6 +290,8 @@ export function clampToBase(adjusted, base, maxDelta = ADJUST_MAX) {
 
 /** Which leg is largest. */
 export function topLabel(pr) {
+  // Up and Down tied (they are symmetrised — no direction skill): no direction lean.
+  if (Math.abs(pr.probUp - pr.probDown) < 0.005) return 'SIDEWAYS';
   if (pr.probUp >= pr.probDown && pr.probUp >= pr.probSideways) return 'UP';
   if (pr.probDown >= pr.probSideways) return 'DOWN';
   return 'SIDEWAYS';
@@ -690,6 +692,15 @@ export async function growwProbability(symbol, opts = {}) {
     ];
   }
 
+  // Symmetrise Up / Down. The calibration's base rates carry the drift of the
+  // period they were fitted on (e.g. a falling month made the 15-min table lean
+  // Put on almost every reading; the live scorecard caught it: Put came true 2
+  // of 22 times). With no direction skill anywhere, the honest split of the
+  // non-sideways share is 50 / 50; the sideways estimate is kept.
+  {
+    const half = (base.probUp + base.probDown) / 2;
+    base = { ...base, probUp: half, probDown: half };
+  }
   const { prediction } = await lingAdjust({ meta, rows: meta.rows, ind, base, score, horizons });
   const news = newsP ? await newsP : null;
   // Around results, pre-results "preview" sentiment says little about the
