@@ -1699,7 +1699,7 @@
               <div>Volatility</div><div>forecast ${o.forecastVolPct.toFixed(1)}% (${esc(o.volModel)})${o.impliedVolPct != null ? ` · implied ${o.impliedVolPct.toFixed(1)}%` : ''}${o.eventPending ? ' · <span style="color:var(--warn)">results due — widened</span>' : ''}</div>
               <div>Chance in the money</div><div>forecast ${pct(o.probItm.forecast)}${o.probItm.implied != null ? ` · implied ${pct(o.probItm.implied)}` : ''}</div>
               <div>Profit odds (normal model)</div><div>${pct(o.probProfit.forecastNormal)} · history-based ${pct(o.probProfit.forecastHistory)}</div>
-              <div>Fair value at forecast vol</div><div>${o.fairValueForecast.toFixed(2)} vs premium ${o.premium.toFixed(2)}${o.premiumVsFairPct != null ? ` (${o.premiumVsFairPct >= 0 ? '+' : ''}${o.premiumVsFairPct.toFixed(0)}%)` : ''}</div>
+              <div>Fair value at forecast vol</div><div>${o.fairValueForecast.toFixed(2)} vs premium ${o.premium.toFixed(2)} (${o.premiumVsFairPct != null ? (o.premiumVsFairPct >= 0 ? '+' : '') + o.premiumVsFairPct.toFixed(0) + '%' : '–'})</div>
             </div>
             <div style="margin-top:8px;font-size:14px">${esc(o.reading)}</div><div class="note">${esc(o.disclaimer)}</div>`;
         } catch (e) {

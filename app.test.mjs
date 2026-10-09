@@ -106,7 +106,7 @@ test('prediction log keeps pre-Ling probabilities and measures whether Ling help
   writeFileSync(process.env.PREDICTION_LOG_PATH, JSON.stringify(log));
   const s = computeStats();
   assert.equal(s.llmValue.n, 1);
-  assert.equal(s.llmValue.verdict, 'helps'); // 0.4 up beats 0.25 up when it went up
+  assert.match(s.llmValue.verdict, /not enough evidence/); // far below 300 scored
   assert.equal(s.newsValue.n, 1);
   assert.equal(s.newsValue.directionHitRate, 1);
 });
