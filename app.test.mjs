@@ -149,7 +149,7 @@ test('Call/Put output says how far it is from base rates (signal strength)', asy
       indicators: { quote: [{ open: rows.map((r) => r.open), high: rows.map((r) => r.high), low: rows.map((r) => r.low), close: rows.map((r) => r.close), volume: rows.map((r) => r.volume) }] } }] } }) });
   try {
     const out = await growwProbability('X.NS', { mode: '15m', intervalMinutes: 15, preferYahoo: true });
-    assert.ok(['none', 'weak', 'moderate'].includes(out.edge.level));
+    assert.equal(out.edge.level, 'none');
     assert.ok(Number.isFinite(out.edge.maxDeviationPts));
     assert.ok(out.edge.note.length > 10);
   } finally {

@@ -704,16 +704,13 @@ export async function growwProbability(symbol, opts = {}) {
     Math.abs(prediction.probDown - clim.probDown),
     Math.abs(prediction.probSideways - clim.probSideways),
   ) * 100;
+  // The replay found no direction skill at any horizon, so the level stays
+  // 'none' until a calibration/replay shows validated skill (none today).
   const edge = {
-    level: devPts < 5 ? 'none' : devPts < 10 ? 'weak' : 'moderate',
+    level: 'none',
     maxDeviationPts: devPts,
     baseRates: clim,
-    note:
-      devPts < 5
-        ? 'Close to historical base rates — no meaningful edge for this stock right now.'
-        : devPts < 10
-          ? 'Slightly different from base rates — a weak lean, treat with caution.'
-          : 'Noticeably different from base rates — still a probability, not a forecast.',
+    note: 'No validated direction skill — the replay found next-session direction unpredictable; treat Up/Down/Sideways as base rates.',
   };
 
   // One horizon, stated once: the time window the ATR bands describe. The
