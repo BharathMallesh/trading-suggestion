@@ -26,6 +26,13 @@ export function scorecard(entries) {
       hindsightBaseRates: avg((e) => brier(base, e.realizedLabel)),
     },
   };
+  // Split by horizon cleanliness: 'closed' entries cover exactly the calibrated
+  // one-session horizon; 'in-session' ones run from the live price to the next close.
+  const group = (st) => {
+    const g = ev.filter((e) => (e.sessionState || 'unknown') === st);
+    return g.length ? { n: g.length, brierApp: g.reduce((a, e) => a + brier(e, e.realizedLabel), 0) / g.length, brierCoin: g.reduce((a, e) => a + brier({ probUp: 1 / 3, probDown: 1 / 3, probSideways: 1 / 3 }, e.realizedLabel), 0) / g.length } : null;
+  };
+  out.byHorizon = { closed: group('closed'), inSession: group('in-session'), unknown: group('unknown') };
   out.verdict =
     out.scored < 30
       ? `Too early: ${out.scored} scored predictions (need ~30+ before reading much into it).`

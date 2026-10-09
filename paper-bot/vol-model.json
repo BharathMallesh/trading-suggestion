@@ -1,71 +1,71 @@
 {
-  "fittedAt": "2026-10-08T12:02:15.095Z",
+  "fittedAt": "2026-10-09T06:05:13.825Z",
   "horizon": 5,
-  "bestStock": "har",
+  "bestStock": "blend",
   "bestNifty": "blend",
-  "niftyTypicalRatio": 1.2394201135619538,
+  "niftyTypicalRatio": 1.2423369465649814,
   "summary": {
     "rv20": {
-      "n": 1679,
-      "meanQlike": 0.6548623369198363
+      "n": 1673,
+      "meanQlike": 0.6365410727632517
     },
     "rv60": {
-      "n": 1679,
-      "meanQlike": 0.5617192695681611
+      "n": 1673,
+      "meanQlike": 0.5550653958665555
     },
     "ewma": {
-      "n": 1679,
-      "meanQlike": 0.5671295398916714
+      "n": 1673,
+      "meanQlike": 0.5435911018322725
     },
     "garch": {
-      "n": 1679,
-      "meanQlike": 0.5158580958060517
+      "n": 1673,
+      "meanQlike": 0.4984100269918596
     },
     "har": {
-      "n": 1679,
-      "meanQlike": 0.5104931208710518
+      "n": 1673,
+      "meanQlike": 0.4961343832576411
     },
     "blend": {
-      "n": 1679,
-      "meanQlike": 0.5108353009141416
+      "n": 1673,
+      "meanQlike": 0.490735689507333
     }
   },
   "niftyHeadToHead": {
     "rv20": {
-      "n": 163,
-      "meanQlike": 0.5713786618726697
+      "n": 165,
+      "meanQlike": 0.5411792864357897
     },
     "rv60": {
-      "n": 163,
-      "meanQlike": 0.548248631695862
+      "n": 165,
+      "meanQlike": 0.5431700699012048
     },
     "ewma": {
-      "n": 163,
-      "meanQlike": 0.48864534937822923
+      "n": 165,
+      "meanQlike": 0.4524483124344058
     },
     "garch": {
-      "n": 163,
-      "meanQlike": 0.4768981109025012
+      "n": 165,
+      "meanQlike": 0.45964708334548215
     },
     "har": {
-      "n": 163,
-      "meanQlike": 0.49798479879533863
+      "n": 165,
+      "meanQlike": 0.47730863905817256
     },
     "blend": {
-      "n": 163,
-      "meanQlike": 0.47282762313063453
+      "n": 165,
+      "meanQlike": 0.44780670453492116
     },
     "indiaVix": {
-      "n": 163,
-      "meanQlike": 0.3442605603278082
+      "n": 165,
+      "meanQlike": 0.3830442368083914
     },
     "vixScaled": {
-      "n": 163,
-      "meanQlike": 0.3399369133726017
+      "n": 165,
+      "meanQlike": 0.3950650472750092
     },
     "blendVix": {
-      "n": 163,
-      "meanQlike": 0.38235046725850513
+      "n": 165,
+      "meanQlike": 0.4111054980287335
     }
   },
   "niftyWeeklyIvToVix": {

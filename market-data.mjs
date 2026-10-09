@@ -53,7 +53,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  * convention: bare ticker for US listings (e.g. "AAPL"), suffix for other
  * exchanges (e.g. "HDFCBANK.NS" for NSE India, "BP.L" for London).
  * @param {string} symbol
- * @param {{ range?: string, interval?: string, signal?: AbortSignal }} [opts]
+ * @param {{ range?: string, interval?: string, period1?: number, period2?: number, signal?: AbortSignal }} [opts]
+ *   period1/period2: unix seconds; when given they replace `range`.
  * @returns {Promise<object>} the `chart.result[0]` object from Yahoo
  */
 export async function fetchChart(symbol, opts = {}) {
@@ -70,7 +71,12 @@ export async function fetchChart(symbol, opts = {}) {
     throw badRequest(`Unsupported interval "${interval}". Use one of: ${[...INTERVALS].join(', ')}.`);
   }
 
-  const url = `${CHART_BASE}/${encodeURIComponent(sym)}?interval=${interval}&range=${range}`;
+  // Explicit dates (period1/period2, unix seconds) get full daily history;
+  // range=max silently downgrades to monthly bars.
+  const p1 = Number(opts.period1);
+  const p2 = Number(opts.period2) || Math.floor(Date.now() / 1000);
+  const span = Number.isFinite(p1) && p1 > 0 ? `period1=${Math.floor(p1)}&period2=${Math.floor(p2)}` : `range=${range}`;
+  const url = `${CHART_BASE}/${encodeURIComponent(sym)}?interval=${interval}&${span}`;
   const hit = cache.get(url);
   if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.result;
 

@@ -44,6 +44,21 @@ export function parseIndexCsv(text) {
   return lines.map((l) => l.split(',')[col]?.trim()).filter(Boolean).map((s) => `${s}.NS`);
 }
 
+/** Same CSV → { 'SYMBOL.NS': 'Industry' } (empty when the column is missing). */
+export function parseIndexIndustries(text) {
+  const lines = String(text).trim().split(/\r?\n/);
+  const head = lines.shift().split(',').map((h) => h.trim().toLowerCase());
+  const sc = head.indexOf('symbol');
+  const ic = head.indexOf('industry');
+  if (sc < 0 || ic < 0) return {};
+  const out = {};
+  for (const l of lines) {
+    const f = l.split(',');
+    if (f[sc]?.trim() && f[ic]?.trim()) out[`${f[sc].trim()}.NS`] = f[ic].trim();
+  }
+  return out;
+}
+
 /**
  * Current constituents of an NSE index (cached 7 days in paper-bot/data).
  * Falls back to the built-in NIFTY 50 list if NSE can't be reached.
@@ -55,23 +70,32 @@ export async function loadIndexList(name = 'nifty50', { fetchFn = fetch } = {}) 
   try {
     if (existsSync(cacheFile)) {
       const c = JSON.parse(readFileSync(cacheFile, 'utf8'));
-      if (Date.now() - c.at < 7 * 86400000 && c.symbols?.length) return { symbols: c.symbols, source: 'cache' };
+      if (Date.now() - c.at < 7 * 86400000 && c.symbols?.length && c.industries) return { symbols: c.symbols, industries: c.industries, source: 'cache' };
     }
   } catch {
     /* refetch */
   }
   try {
     const res = await fetchFn(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
-    const symbols = res.ok ? parseIndexCsv(await res.text()) : [];
+    const text = res.ok ? await res.text() : '';
+    const symbols = parseIndexCsv(text);
     if (symbols.length >= 40) {
+      const industries = parseIndexIndustries(text);
       mkdirSync(DATA, { recursive: true });
-      writeFileSync(cacheFile, JSON.stringify({ at: Date.now(), symbols }));
-      return { symbols, source: 'NSE' };
+      writeFileSync(cacheFile, JSON.stringify({ at: Date.now(), symbols, industries }));
+      return { symbols, industries, source: 'NSE' };
     }
   } catch {
     /* fall through */
   }
-  return { symbols: NIFTY50, source: 'built-in NIFTY 50 (NSE list unavailable)' };
+  // NSE unreachable: an older cache (even without industries) beats the built-in list.
+  try {
+    const c = JSON.parse(readFileSync(cacheFile, 'utf8'));
+    if (c.symbols?.length) return { symbols: c.symbols, industries: c.industries || {}, source: 'stale cache' };
+  } catch {
+    /* none */
+  }
+  return { symbols: NIFTY50, industries: {}, source: 'built-in NIFTY 50 (NSE list unavailable)' };
 }
 
 /** NIFTY 50 constituents (approximate, Oct 2026). Missing tickers are skipped. */

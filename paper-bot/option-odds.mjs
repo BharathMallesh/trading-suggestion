@@ -152,6 +152,7 @@ export async function evaluateOptionOdds({ symbols, horizon = 5, loadCandles = c
   const ks = [-1, -0.5, 0.5, 1];
   const methods = { forecastNormal: [], forecastHistory: [], naiveNormal: [] };
   const rel = { forecastHistory: Array.from({ length: 10 }, () => ({ n: 0, p: 0, hit: 0 })) };
+  const byDate = new Map(); // date → [Brier(history) − Brier(naive)] for a date-clustered paired test
   await mapLimit(syms, 4, async (sym) => {
     let rows;
     try {
@@ -169,7 +170,9 @@ export async function evaluateOptionOdds({ symbols, horizon = 5, loadCandles = c
       const spot = c[t];
       const end = c[t + horizon];
       for (const k of ks) {
-        const level = spot * Math.exp(k * f * Math.sqrt(horizon));
+        // Levels from a NEUTRAL yardstick (trailing 1-year vol) — never from the
+        // forecast being judged, which would tilt the test toward it.
+        const level = spot * Math.exp(k * naive * Math.sqrt(horizon));
         const y = end > level ? 1 : 0;
         const pN = probAboveNormal(spot, level, f, horizon);
         const pH = probAboveHistory(spot, level, f, horizon, past);
@@ -183,18 +186,30 @@ export async function evaluateOptionOdds({ symbols, horizon = 5, loadCandles = c
           b.hit += y;
         }
         methods.naiveNormal.push((pZ - y) ** 2);
+        if (pH != null) {
+          const d = rows[t + 1]?.date || String(t);
+          if (!byDate.has(d)) byDate.set(d, []);
+          byDate.get(d).push((pH - y) ** 2 - (pZ - y) ** 2);
+        }
       }
     }
   });
   const summary = Object.fromEntries(Object.entries(methods).map(([k, a]) => [k, { n: a.length, brier: a.reduce((x, y) => x + y, 0) / (a.length || 1) }]));
   const best = Object.entries(summary).sort((a, b) => a[1].brier - b[1].brier)[0][0];
+  // Paired test clustered by date: one averaged difference per date, so the
+  // four levels and the symbols sharing a day don't inflate n.
+  const dm = [...byDate.values()].map((a) => a.reduce((x, y) => x + y, 0) / a.length);
+  const mean = dm.reduce((a, b) => a + b, 0) / (dm.length || 1);
+  const sd = Math.sqrt(dm.reduce((a, b) => a + (b - mean) ** 2, 0) / Math.max(1, dm.length - 1));
+  const historyVsNaive = { dates: dm.length, meanDiff: mean, tStat: sd > 0 ? mean / (sd / Math.sqrt(dm.length)) : null };
   return {
     horizon,
     symbols: syms.length,
     summary,
     best,
+    historyVsNaive,
     reliability: rel.forecastHistory.filter((b) => b.n >= 20).map((b, i) => ({ meanPredicted: b.p / b.n, observed: b.hit / b.n, n: b.n })),
-    note: 'Brier on binary "ends above level" outcomes (lower = better). Levels at ±0.5σ and ±1σ of the forecast move. Reliability: predicted vs observed frequency (history method).',
+    note: 'Brier on binary "ends above level" outcomes (lower = better). Levels at ±0.5σ and ±1σ of the trailing 1-year move (a neutral yardstick, not the forecast being judged). historyVsNaive: paired difference clustered by date (negative = forecast better; |t| ≥ 2 to count). Reliability: predicted vs observed frequency (history method).',
   };
 }
 
@@ -205,6 +220,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     ? evaluateOptionOdds().then((r) => {
         console.log(`\nOPTION ODDS REPLAY · next ${r.horizon} days · ${r.symbols} series`);
         for (const [k, v] of Object.entries(r.summary)) console.log(`  ${k.padEnd(16)} Brier ${v.brier.toFixed(4)} (n=${v.n})${k === r.best ? '  ← best' : ''}`);
+        if (r.historyVsNaive) console.log(`  forecast (history) vs naive: mean Brier diff ${r.historyVsNaive.meanDiff.toFixed(4)} · t ${r.historyVsNaive.tStat?.toFixed(2)} over ${r.historyVsNaive.dates} dates (clustered)`);
         console.log('  reliability (history method): ' + r.reliability.map((b) => `${(b.meanPredicted * 100).toFixed(0)}%→${(b.observed * 100).toFixed(0)}%`).join(' · '));
         console.log(r.note);
       })

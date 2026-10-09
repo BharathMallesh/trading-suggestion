@@ -210,9 +210,17 @@ export async function evaluateBigMove({ loadCandles = candles, symbols = EVAL_UN
     const raw = variants.findIndex((v) => v.scale === 1 && v.shrink === 0);
     const score = (rows, j) => {
       if (!rows.length) return null;
-      const d = rows.map((x) => (x.pv[j] - x.y) ** 2 - (x.clim - x.y) ** 2);
+      // Paired differences averaged per DATE first: the stocks and thresholds
+      // sharing a day are correlated, so per-sample t-stats would be inflated.
+      const per = new Map();
+      for (const x of rows) {
+        const v = (x.pv[j] - x.y) ** 2 - (x.clim - x.y) ** 2;
+        if (!per.has(x.date)) per.set(x.date, []);
+        per.get(x.date).push(v);
+      }
+      const d = [...per.values()].map((a) => a.reduce((p, q) => p + q, 0) / a.length);
       const mean = d.reduce((a, b) => a + b, 0) / d.length;
-      const sd = Math.sqrt(d.reduce((a, b) => a + (b - mean) ** 2, 0) / (d.length - 1));
+      const sd = Math.sqrt(d.reduce((a, b) => a + (b - mean) ** 2, 0) / Math.max(1, d.length - 1));
       return {
         n: rows.length,
         brierModel: brier(rows, (x) => x.pv[j]),
@@ -220,6 +228,7 @@ export async function evaluateBigMove({ loadCandles = candles, symbols = EVAL_UN
         brierPastYear: brier(rows, (x) => x.clim),
         skillPct: (1 - brier(rows, (x) => x.pv[j]) / brier(rows, (x) => x.clim)) * 100,
         tVsPastYear: sd > 0 ? mean / (sd / Math.sqrt(d.length)) : null,
+        dates: d.length,
       };
     };
     const reliability = (rows, j) => [[0, 0.05], [0.05, 0.1], [0.1, 0.2], [0.2, 0.3], [0.3, 0.5], [0.5, 1.01]].map(([lo, hi]) => {
@@ -245,7 +254,7 @@ export async function evaluateBigMove({ loadCandles = candles, symbols = EVAL_UN
     at: new Date().toISOString(),
     series: all.length,
     horizons,
-    rule: 'Calibration (σ scale, optional blend with the past-year rate) chosen on the first half of the fitting universe only; "skill" only if it then beats the past-year rate with t ≤ −2 on the second half AND is better on the unseen holdout stocks (scored from the split date on).',
+    rule: 'Calibration (σ scale, optional blend with the past-year rate) chosen on the first half of the fitting universe only; "skill" only if it then beats the past-year rate with t ≤ −2 (paired, clustered by date) on the second half AND is better on the unseen holdout stocks (scored from the split date on).',
   };
 }
 

@@ -62,6 +62,10 @@ export function logPrediction(result) {
     atr: result.indicators?.atr14 ?? result.expectedMove?.atr ?? null,
     timeWindow: result.expectedMove?.timeWindow || null,
     horizonMinutes: horizonFor(result.mode, result.intervalMinutes),
+    // Session-horizon predictions made while NSE is open are scored from the
+    // live price to the NEXT session's close (~1.3–1.9 sessions); ones made
+    // with the market closed cover exactly one session — the calibrated horizon.
+    sessionState: nseOpen(new Date()) ? 'in-session' : 'closed',
     // Filled later by evaluate
     evaluated: false,
     evalTs: null,
@@ -86,6 +90,24 @@ export function logPrediction(result) {
 export function horizonFor(mode, intervalMinutes = 15) {
   if (mode === 'multi' || intervalMinutes >= 1440) return null;
   return Math.max(5, Number(intervalMinutes) || 15) * 4;
+}
+
+/** IST calendar date and minutes past midnight. */
+function istParts(d) {
+  const t = new Date(d.getTime() + 19800_000);
+  return { date: t.toISOString().slice(0, 10), mins: t.getUTCHours() * 60 + t.getUTCMinutes(), day: t.getUTCDay() };
+}
+
+/** NSE cash session (09:15–15:30 IST, Mon–Fri; holidays not modelled). */
+export function nseOpen(d) {
+  const p = istParts(d);
+  return p.day >= 1 && p.day <= 5 && p.mins >= 555 && p.mins < 930;
+}
+
+/** A daily bar dated `date` is complete once that day's 15:30 IST close (+5 min) has passed. */
+export function sessionComplete(date, now) {
+  const p = istParts(new Date(now));
+  return date < p.date || (date === p.date && p.mins >= 935);
 }
 
 function labelFromReturn(retPct, thresholdPct) {
@@ -127,9 +149,9 @@ async function settlementPrice(entry, now) {
   const rows = await yahooCandles(sym, { range: '1mo', interval: '1d' });
   if (!rows.length) return null;
   // Exchange-local dates: candles() already labels daily bars in local time.
-  const predDate = String(entry.asOf || '').slice(0, 10) || new Date(predMs).toISOString().slice(0, 10);
-  const latest = rows[rows.length - 1].date; // may still be in progress
-  const bar = rows.find((r) => r.date > predDate && r.date < latest);
+  const predDate = String(entry.asOf || '').slice(0, 10) || istParts(new Date(predMs)).date;
+  // First session after the prediction's bar whose close is final (not in progress).
+  const bar = rows.find((r) => r.date > predDate && sessionComplete(r.date, now));
   return bar ? { price: Number(bar.close), at: bar.date } : null;
 }
 

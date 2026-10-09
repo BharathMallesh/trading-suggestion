@@ -30,7 +30,7 @@ export function fyOf(date) {
 }
 
 const DAY = 86400000;
-const longTerm = (buy, sell) => {
+export const longTerm = (buy, sell) => {
   // "more than 12 months": held past the same calendar date a year later
   const b = new Date(`${buy}T00:00:00Z`);
   const anniv = Date.UTC(b.getUTCFullYear() + 1, b.getUTCMonth(), b.getUTCDate());

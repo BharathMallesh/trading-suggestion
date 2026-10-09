@@ -76,6 +76,35 @@
         <div id="tdOut" style="margin-top:12px"></div>
       </section>
 
+      <!-- My portfolio: tax & risk -->
+      <section class="card span2">
+        <h2>My portfolio <span style="font-size:12px;color:var(--warn);font-weight:500">TAX · HARVESTING · RISK · STORED ONLY ON THIS MAC</span></h2>
+        <p class="hint">
+          Enter what you actually own (one row per purchase). The app works out tax if you sold today, how much of this year's ₹1.25 lakh
+          long-term gains exemption is still unused and which shares would use it, losses that could offset gains you've already booked,
+          your typical day / week swing in ₹, and what past crashes would do at today's weights. Arithmetic and risk facts only, not advice.
+          Check with a tax professional before acting.
+        </p>
+        <div class="row">
+          <div><label>Symbol</label><input id="hdSym" placeholder="e.g. RELIANCE" /></div>
+          <div><label>Quantity</label><input id="hdQty" type="number" min="1" step="1" placeholder="shares" /></div>
+          <div><label>Buy price (₹)</label><input id="hdPrice" type="number" step="any" placeholder="per share" /></div>
+          <div><label>Buy date</label><input id="hdDate" type="date" /></div>
+        </div>
+        <div class="row" style="gap:8px">
+          <button id="hdAddBtn" type="button">Add purchase</button>
+          <button id="hdRefreshBtn" type="button" style="background:#0d1320;color:var(--ink);border:1px solid var(--line)">Refresh analysis</button>
+        </div>
+        <details style="margin-top:8px"><summary style="cursor:pointer;font-size:13px">Gains already booked this financial year (for the exemption and set-off)</summary>
+          <div class="row">
+            <div><label>Short-term gains booked (₹, losses negative)</label><input id="hdStcg" type="number" step="any" value="0" /></div>
+            <div><label>Long-term gains booked (₹, losses negative)</label><input id="hdLtcg" type="number" step="any" value="0" /></div>
+          </div>
+          <button id="hdRealBtn" type="button" style="background:#0d1320;color:var(--ink);border:1px solid var(--line)">Save booked gains</button>
+        </details>
+        <div id="hdOut" style="margin-top:12px"></div>
+      </section>
+
       <!-- Ask panel -->
       <section class="card span2">
         <h2>Ask (research · explain · summarize)</h2>
@@ -293,6 +322,7 @@
         <div class="row" style="gap:8px">
           <button id="stfBtn" type="button">Forward test (paper accounts)</button>
           <button id="stbBtn" type="button" style="background:#0d1320;color:var(--ink);border:1px solid var(--line)">10-year backtests</button>
+          <button id="stHistBtn" type="button" style="background:#0d1320;color:var(--ink);border:1px solid var(--line)">Trend filter: 25-year crisis test</button>
           <button id="stResetAcctBtn" type="button" style="background:#0d1320;color:var(--ink);border:1px solid var(--line)">Restart forward test</button>
         </div>
         <div id="stsStatus" class="note" style="display:none"></div>
@@ -361,7 +391,8 @@
         <h2>Call / Put payoff odds <span style="font-size:12px;color:var(--warn);font-weight:500">VOLATILITY-BASED · RESEARCH</span></h2>
         <p class="hint">
           The question an option buyer faces: <b>what is the chance this option ends above breakeven at expiry?</b> Answered from the volatility
-          forecast (where the app has measured skill — replayed calibration: predicted ≈ observed), not from a direction call (where it has none).
+          forecast, not from a direction call (the app has no direction skill). Replay: the odds are roughly calibrated in the middle but
+          overconfident at the extremes (a "90%" came true ~76% of the time), and no more accurate than using the past year's volatility — treat them as a sanity check.
           Compares the forecast with what the option's own price implies, and its fair value at forecast volatility with the premium.
           Leave premium blank to price it from implied vol (India VIX for NIFTY, IV you enter, or Groww's chain). Not a recommendation.
         </p>
@@ -1474,6 +1505,123 @@
       $('rkEvalBtn').addEventListener('click', () => rkRun('eval'));
 
 
+
+      // --- My portfolio (tax & risk) ---
+      const rupee = (x) => (x == null || !Number.isFinite(x) ? '–' : (x < 0 ? '−₹' : '₹') + Math.abs(Math.round(x)).toLocaleString('en-IN'));
+      const pct1 = (x) => (x == null || !Number.isFinite(x) ? '–' : (x >= 0 ? '+' : '') + x.toFixed(1) + '%');
+      function hdRender(a) {
+        if (a.empty) return `<div class="note">${esc(a.note)}</div>`;
+        const t = a.tax;
+        const box = (title, val, sub = '') => `<div style="background:#0d1320;border:1px solid var(--line);border-radius:10px;padding:10px;text-align:center">
+          <div style="font-size:12px;color:var(--muted)">${title}</div><div style="font-size:22px;font-weight:700">${val}</div><div style="font-size:12px;color:var(--muted)">${sub}</div></div>`;
+        let html = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px">
+          ${box('Value', rupee(a.totals.value), `cost ${rupee(a.totals.cost)} · ${pct1(a.totals.gainPct)}`)}
+          ${box('Tax if sold today', rupee(t.taxIfSoldAllToday), `FY ${esc(a.fy)}, on top of gains already booked`)}
+          ${box('LTCG exemption unused', rupee(a.harvest.remaining), `of ${rupee(a.harvest.exemption)} this year`)}
+          ${a.risk ? box('Typical week', '±' + rupee(a.risk.typicalWeek.rupees), `±${a.risk.typicalWeek.pct.toFixed(1)}% · day ±${rupee(a.risk.typicalDay.rupees)}`) : ''}
+        </div>`;
+        if (a.flags.length) html += `<div style="margin-top:8px;color:var(--warn);font-size:13px">⚠ ${a.flags.map(esc).join(' · ')}</div>`;
+        html += `<table style="margin-top:8px"><thead><tr><th style="text-align:left">Stock</th><th>Qty</th><th>Bought</th><th>Last</th><th>Value</th><th>Gain</th><th>Term</th><th></th></tr></thead><tbody>${a.lots.map((l) =>
+          `<tr><td style="text-align:left">${esc(l.symbol)}${l.error ? ` <span class="err" title="${esc(l.error)}">!</span>` : ''}</td><td>${l.qty}</td><td>${rupee(l.price)} · ${esc(l.date)}</td><td>${l.last == null ? '–' : l.last.toFixed(2)}</td>
+           <td>${rupee(l.value)}</td><td style="color:${(l.gain || 0) >= 0 ? 'var(--up)' : 'var(--down)'}">${rupee(l.gain)} (${pct1(l.gainPct)})</td>
+           <td>${l.term === 'long' ? 'long-term' : `short-term → long from ${esc(l.longTermFrom)}`}</td>
+           <td><button type="button" data-lot="${esc(l.id)}" style="margin:0;padding:2px 8px;background:#0d1320;color:var(--muted);border:1px solid var(--line)">remove</button></td></tr>`).join('')}</tbody></table>`;
+        html += `<div class="kv" style="margin-top:8px">
+          <div>Unrealised short-term</div><div>gains ${rupee(t.unrealisedShortGain)} · losses ${rupee(t.unrealisedShortLoss)} (taxed at 20% + cess)</div>
+          <div>Unrealised long-term</div><div>gains ${rupee(t.unrealisedLongGain)} · losses ${rupee(t.unrealisedLongLoss)} (12.5% + cess above ₹1.25 lakh/yr)</div></div>`;
+        if (t.soonLongTerm.length) html += `<div style="margin-top:6px;font-size:13px">⏳ Turning long-term within 60 days: ${t.soonLongTerm.map((x) => `${esc(x.symbol)} ×${x.qty} on ${esc(x.longTermFrom)} (waiting would save ~${rupee(x.taxSavedByWaiting)} if sold)`).join(' · ')}</div>`;
+        const h = a.harvest;
+        html += `<div style="margin-top:10px;font-size:14px"><b>Use the LTCG exemption</b> — ${rupee(h.usedThisYear)} used of ${rupee(h.exemption)} this year.</div>`;
+        html += h.sells.length
+          ? `<div style="font-size:13px">Selling and rebuying ${h.sells.map((x) => `${esc(x.symbol)} ×${x.qty}`).join(', ')} would book ${rupee(h.harvested)} of long-term gains tax-free and raise your cost basis — about ${rupee(h.taxSaved)} less tax later, minus ~${rupee(h.charges)} charges = <b>${rupee(h.netBenefit)}</b>. Oldest shares are sold first (FIFO).</div>`
+          : '<div class="note">No long-term gains available to harvest (or the exemption is already used).</div>';
+        const l = a.lossHarvest;
+        html += `<div style="margin-top:8px;font-size:14px"><b>Offset gains with losses</b></div>`;
+        html += l.lots.length
+          ? `<div style="font-size:13px">Selling the loss-making holdings (${l.lots.map((x) => `${esc(x.symbol)} ${x.term}-term ${rupee(-x.loss)}`).join(', ')}) would cut this year's tax on gains already booked by <b>${rupee(l.taxSavedThisYear)}</b> (charges ~${rupee(l.charges)}). ${esc(l.note)}</div>`
+          : '<div class="note">No holdings entirely at a loss.</div>';
+        if (a.risk) {
+          html += `<div style="margin-top:10px;font-size:14px"><b>Risk at today's weights</b> · ~${a.risk.annualVolPct.toFixed(0)}% a year</div>
+            <div style="font-size:13px">Chance of losing more than ${a.risk.weeklyLossOdds.map((o) => `${o.lossPct}% (${rupee(o.rupees)}) in a week: <b>${(o.prob * 100).toFixed(o.prob < 0.1 ? 1 : 0)}%</b>`).join(' · ')}</div>`;
+        }
+        if (a.scenarios.length) {
+          html += `<table style="margin-top:6px"><thead><tr><th style="text-align:left">If this happened again</th><th>NIFTY</th><th>Your portfolio</th><th>In ₹</th></tr></thead><tbody>${a.scenarios.map((sc) =>
+            `<tr><td style="text-align:left">${esc(sc.name)}${sc.proxiedPct > 0 ? ` <span style="color:var(--muted);font-size:11px">(${sc.proxiedPct.toFixed(0)}% estimated via beta)</span>` : ''}</td><td>${pct1(sc.niftyPct)}</td><td>${pct1(sc.portfolioPct)}</td><td style="color:var(--down)">${rupee(sc.rupees)}</td></tr>`).join('')}</tbody></table>`;
+        }
+        html += `<div style="margin-top:8px;font-size:13px"><b>Spread by industry:</b> ${a.sectors.map((x) => `${esc(x.industry)} ${x.weightPct.toFixed(0)}%`).join(' · ')}</div>`;
+        return html + `<div class="note" style="margin-top:8px">${esc(a.note)}</div>`;
+      }
+      async function hdLoad() {
+        $('hdOut').textContent = 'Analysing… (first load fetches price history, ~10 s)';
+        try {
+          const a = await api('/api/holdings');
+          $('hdOut').innerHTML = hdRender(a);
+          if (a.realized) {
+            $('hdStcg').value = a.realized.stcg || 0;
+            $('hdLtcg').value = a.realized.ltcg || 0;
+          }
+        } catch (e) {
+          $('hdOut').innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
+        }
+      }
+      const hdPost = (path, body) => api(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      $('hdAddBtn').addEventListener('click', async () => {
+        try {
+          await hdPost('/api/holdings/add', { symbol: $('hdSym').value, qty: Number($('hdQty').value), price: Number($('hdPrice').value), date: $('hdDate').value });
+          $('hdSym').value = $('hdQty').value = $('hdPrice').value = '';
+          hdLoad();
+        } catch (e) {
+          $('hdOut').insertAdjacentHTML('afterbegin', `<div class="err">Error: ${esc(e.message)}</div>`);
+        }
+      });
+      $('hdRealBtn').addEventListener('click', async () => {
+        try {
+          await hdPost('/api/holdings/realized', { stcg: Number($('hdStcg').value) || 0, ltcg: Number($('hdLtcg').value) || 0 });
+          hdLoad();
+        } catch (e) {
+          $('hdOut').insertAdjacentHTML('afterbegin', `<div class="err">Error: ${esc(e.message)}</div>`);
+        }
+      });
+      $('hdRefreshBtn').addEventListener('click', hdLoad);
+      $('hdOut').addEventListener('click', async (e) => {
+        const id = e.target?.dataset?.lot;
+        if (!id || !confirm('Remove this purchase from My portfolio?')) return;
+        try {
+          await hdPost('/api/holdings/remove', { id });
+          hdLoad();
+        } catch (err) {
+          $('hdOut').insertAdjacentHTML('afterbegin', `<div class="err">Error: ${esc(err.message)}</div>`);
+        }
+      });
+      hdLoad();
+
+      // --- Trend filter: 25-year crisis test ---
+      function renderTrendHistory(r) {
+        if (!r || !r.indices) return '<div class="note">Not run yet.</div>';
+        let html = `<div style="font-size:14px;margin-bottom:6px"><b>${esc(r.verdict)}</b></div>`;
+        for (const x of r.indices) {
+          const a = x.all;
+          html += `<div style="font-size:13px;margin-top:8px"><b>${esc(x.index)}</b> · ${esc(x.from)} → ${esc(x.to)} · buy-and-hold ${a.buyHold.cagrPct.toFixed(1)}%/yr (max drop ${a.buyHold.maxDrawdownPct.toFixed(0)}%) vs trend month-end ${a.monthEnd.cagrPct.toFixed(1)}%/yr (max drop ${a.monthEnd.maxDrawdownPct.toFixed(0)}%), before tax</div>
+            <table><thead><tr><th style="text-align:left">Crisis</th><th>Buy-and-hold drop</th><th>Trend (month-end) drop</th><th>Trend (daily) drop</th><th>Cut</th></tr></thead><tbody>${x.crises.map((c) =>
+              `<tr><td style="text-align:left">${esc(c.name)}</td><td>${c.buyHold.maxDrawdownPct.toFixed(1)}%</td><td>${c.monthEnd.maxDrawdownPct.toFixed(1)}%</td><td>${c.daily ? c.daily.maxDrawdownPct.toFixed(1) + '%' : '–'}</td><td style="color:${c.cutPts >= 5 ? 'var(--up)' : 'var(--muted)'}">${c.cutPts >= 0 ? '−' : '+'}${Math.abs(c.cutPts).toFixed(1)} pts</td></tr>`).join('')}</tbody></table>
+            ${x.partialCrisesSkipped?.length ? `<div class="note">Skipped (history starts mid-crisis): ${x.partialCrisesSkipped.map(esc).join(', ')}</div>` : ''}`;
+        }
+        return html + `<div class="note">${esc(r.rule)}</div>`;
+      }
+      $('stHistBtn').addEventListener('click', async () => {
+        const out = $('stsOut');
+        out.textContent = 'Loading the saved 25-year test…';
+        try {
+          let r = await api('/api/trend-history');
+          if (!r.indices) {
+            out.textContent = 'Running on Sensex (1997→) and NIFTY (2007→)… ~20 s';
+            r = await api('/api/trend-history', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+          }
+          out.innerHTML = renderTrendHistory(r);
+        } catch (e) {
+          out.innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
+        }
+      });
 
       // --- Big-move odds ---
       const bmPct = (x) => (x == null ? '–' : (x * 100).toFixed(x < 0.1 ? 1 : 0) + '%');

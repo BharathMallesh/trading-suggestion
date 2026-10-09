@@ -44,6 +44,8 @@ import { runStrategyTests } from './paper-bot/strategies.mjs';
 import { optionOdds, evaluateOptionOdds } from './paper-bot/option-odds.mjs';
 import { testFii } from './paper-bot/fii.mjs';
 import { runAndSaveVolPremium, loadVolPremium } from './paper-bot/vol-premium.mjs';
+import { analyzeHoldings, addLot, removeLot, setRealized } from './paper-bot/holdings.mjs';
+import { trendHistory, saveTrendHistory, loadTrendHistory } from './paper-bot/trend-history.mjs';
 import { bigMove, evaluateBigMove, saveBigMoveEval, loadBigMoveEval } from './paper-bot/big-move.mjs';
 import { testPositioning, saveResult as savePositioning, loadResult as loadPositioning } from './paper-bot/options-positioning.mjs';
 import { llmLastModel } from './ling-client.mjs';
@@ -487,6 +489,34 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && url.pathname === '/api/fii-test') {
       await readJson(req);
       return json(res, 200, await testFii({}));
+    }
+
+    // --- My portfolio: tax & risk for the user's own holdings (local only) ---
+    if (req.method === 'GET' && url.pathname === '/api/holdings') {
+      return json(res, 200, await analyzeHoldings({}));
+    }
+    if (req.method === 'POST' && url.pathname === '/api/holdings/add') {
+      const b = await readJson(req);
+      return json(res, 200, addLot({ symbol: b.symbol, qty: b.qty, price: b.price, date: b.date }));
+    }
+    if (req.method === 'POST' && url.pathname === '/api/holdings/remove') {
+      const b = await readJson(req);
+      return json(res, 200, removeLot(b.id));
+    }
+    if (req.method === 'POST' && url.pathname === '/api/holdings/realized') {
+      const b = await readJson(req);
+      return json(res, 200, setRealized({ stcg: b.stcg ?? 0, ltcg: b.ltcg ?? 0 }));
+    }
+
+    // --- Trend filter on 25+ years (crisis by crisis) ---
+    if (req.method === 'GET' && url.pathname === '/api/trend-history') {
+      return json(res, 200, loadTrendHistory() || { verdict: null, note: 'Not run yet.' });
+    }
+    if (req.method === 'POST' && url.pathname === '/api/trend-history') {
+      await readJson(req);
+      const r = await trendHistory({});
+      saveTrendHistory(r);
+      return json(res, 200, r);
     }
 
     // --- Big-move odds (size, not direction) ---

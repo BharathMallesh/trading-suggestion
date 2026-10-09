@@ -203,6 +203,8 @@ export async function evaluateVolForecasts(opts = {}) {
   let vrpAbove = 0;
   let impliedSum = 0;
   let realisedSum = 0;
+  // VIX is a 30-day measure: compare it like-for-like with the next 21 sessions too.
+  const vrp21 = { n: 0, implied: 0, realised: 0, above: 0 };
   const skipped = [];
   await mapLimit(symbols, 4, async (sym) => {
     let rows;
@@ -239,6 +241,13 @@ export async function evaluateVolForecasts(opts = {}) {
         vrpN++;
         impliedSum += iv;
         realisedSum += realisedPct;
+        if (t + 21 <= r.length) {
+          const rv21 = Math.sqrt((r.slice(t, t + 21).reduce((a, x) => a + x * x, 0) / 21) * TRADING_DAYS) * 100;
+          vrp21.n++;
+          vrp21.implied += iv;
+          vrp21.realised += rv21;
+          if (iv > rv21) vrp21.above++;
+        }
         if (iv > realisedPct) vrpAbove++;
       }
     }
@@ -262,7 +271,10 @@ export async function evaluateVolForecasts(opts = {}) {
     niftyImpliedVsRealised: vrpN
       ? { n: vrpN, avgImpliedPct: impliedSum / vrpN, avgRealisedPct: realisedSum / vrpN, pctTimeImpliedAbove: (vrpAbove / vrpN) * 100 }
       : null,
-    note: 'QLIKE: lower = better variance forecast. Implied vs realised: India VIX (30-day) vs NIFTY realised vol over the next horizon. Research only.',
+    niftyImpliedVsRealised21: vrp21.n
+      ? { n: vrp21.n, avgImpliedPct: vrp21.implied / vrp21.n, avgRealisedPct: vrp21.realised / vrp21.n, pctTimeImpliedAbove: (vrp21.above / vrp21.n) * 100 }
+      : null,
+    note: 'QLIKE: lower = better variance forecast (pooled means, no significance test). India VIX is a 30-day measure: niftyImpliedVsRealised compares it with the next-horizon realised vol (mismatched; used only to scale VIX into a horizon forecast), niftyImpliedVsRealised21 with the next 21 sessions (like-for-like). Research only.',
   };
 }
 
@@ -318,7 +330,11 @@ export async function volCheck({ symbol, iv, days = 7, expiry, eventPending = fa
   const h2h = model.niftyHeadToHead;
   if (sym === '^NSEI' && impliedSource === 'India VIX' && impliedPct > 0 && model.niftyTypicalRatio > 0 && h2h?.vixScaled?.meanQlike != null) {
     const bestKey = Object.keys(h2h).filter((k) => h2h[k]?.meanQlike != null).sort((a, b) => h2h[a].meanQlike - h2h[b].meanQlike)[0];
-    if (bestKey === 'vixScaled') {
+    // The VIX family (raw / scaled / blended) clearly beats the history models,
+    // but its internal order flips with window alignment (raw VIX also gains
+    // from QLIKE's tolerance of over-forecasts). For odds and moves the
+    // unbiased, scaled version is the right member.
+    if (['vixScaled', 'indiaVix', 'blendVix'].includes(bestKey)) {
       forecastPct = impliedPct / model.niftyTypicalRatio;
       chosen = 'vixScaled';
       vixScaledUsed = true;
@@ -400,7 +416,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
         console.log('NIFTY only, same dates (incl. India VIX):');
         for (const [k, v] of Object.entries(r.niftyHeadToHead)) console.log(`  ${k.padEnd(9)} QLIKE ${v.meanQlike.toFixed(4)} (n=${v.n})${k === r.niftyBest ? '  ← best' : ''}`);
         const v = r.niftyImpliedVsRealised;
-        if (v) console.log(`NIFTY: India VIX averaged ${v.avgImpliedPct.toFixed(1)}% vs realised ${v.avgRealisedPct.toFixed(1)}%; implied above realised ${v.pctTimeImpliedAbove.toFixed(0)}% of the time (n=${v.n}).`);
+        if (v) console.log(`NIFTY (next ${r.horizon} days, horizon-mismatched): India VIX averaged ${v.avgImpliedPct.toFixed(1)}% vs realised ${v.avgRealisedPct.toFixed(1)}%; implied above realised ${v.pctTimeImpliedAbove.toFixed(0)}% of the time (n=${v.n}).`);
+        const v21 = r.niftyImpliedVsRealised21;
+        if (v21) console.log(`NIFTY (next 21 sessions, like-for-like): India VIX averaged ${v21.avgImpliedPct.toFixed(1)}% vs realised ${v21.avgRealisedPct.toFixed(1)}%; implied above realised ${v21.pctTimeImpliedAbove.toFixed(0)}% of the time (n=${v21.n}).`);
         console.log(r.note);
         if (args.includes('--save')) {
           const m = saveVolModel(r);
