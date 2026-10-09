@@ -381,7 +381,7 @@ export async function realPremiumTest({ loadCandles = candles, fetchFn = fetch, 
   const closeOn = new Map(nifty.map((r) => [r.date, r.close]));
   const logR = nifty.slice(1).map((r, i) => Math.log(r.close / nifty[i].close));
   const idx = new Map(nifty.map((r, i) => [r.date, i]));
-  const trades = { S1: [], S2: [], S3: [] };
+  const trades = { S1: [], S2: [], S3: [], L1: [], L2: [] };
   const ivRatio = [];
   const ratios = [];
   let blocked = null;
@@ -433,6 +433,16 @@ export async function realPremiumTest({ loadCandles = candles, fetchFn = fetch, 
       const straddle = chain[K].CE + chain[K].PE;
       const iv = straddle / (0.7979 * spot * Math.sqrt(days / 365));
       if (vix.get(d)) ivRatio.push({ date: d, ratio: iv / (vix.get(d) / 100) });
+      // Long straddle (buy CE + PE at the money): profits from a big move either
+      // way. Return on the premium paid (the most it can lose).
+      const longLegs = legs.map((l) => ({ ...l, side: 'buy' }));
+      const paid = straddle + longLegs.reduce((s2, l) => s2 + legCosts({ side: 'buy', premium: l.premium, a }), 0);
+      const longRet = pnlOf(longLegs) / paid;
+      trades.L1.push({ date: d, ret: longRet, movePct });
+      // L2: buy only when the app's forecast move is ≥ 10% bigger than the move
+      // the straddle's price implies (the app's volatility skill vs the market's).
+      const fL = harForecast(logR.slice(0, idx.get(d)), Math.max(1, Math.round((days * 5) / 7)));
+      if (fL && fL * Math.sqrt(252) >= 1.1 * iv) trades.L2.push({ date: d, ret: longRet, movePct });
       if (kc != null && kp != null && kc > K && kp < K) {
         const fly = [...legs, { type: 'CE', strike: kc, side: 'buy', premium: chain[kc].CE }, { type: 'PE', strike: kp, side: 'buy', premium: chain[kp].PE }];
         const credit = fly.reduce((s, l) => s + (l.side === 'sell' ? 1 : -1) * l.premium, 0);
@@ -457,6 +467,8 @@ export async function realPremiumTest({ loadCandles = candles, fetchFn = fetch, 
     S1: 'S1 · short ATM straddle (real prices)',
     S2: 'S2 · short iron fly ±3% (real prices)',
     S3: 'S3 · S2 only when premium is rich (real prices)',
+    L1: 'L1 · buy ATM straddle every week (real prices)',
+    L2: 'L2 · buy straddle only when forecast ≥ 1.1× implied',
   };
   for (const [k, t] of Object.entries(trades)) {
     const mid = Math.floor(t.length / 2);
