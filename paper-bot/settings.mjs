@@ -42,9 +42,12 @@ export function currentSettings() {
 
 /** Validate a partial settings object; returns the normalised patch. */
 export function validate(patch = {}) {
+  if (!patch || typeof patch !== 'object' || Array.isArray(patch)) throw badRequest('settings must be an object.');
   const out = {};
   for (const [k, v] of Object.entries(patch)) {
     if (k === 'symbols') {
+      if (!Array.isArray(v)) throw badRequest('Symbols: must be an array of ticker strings.');
+      if (v.some((s) => typeof s !== 'string')) throw badRequest('Symbols: every entry must be a string.');
       const list = parseSymbols(v).map((s) => s.toUpperCase());
       if (!list.length || list.length > 30) throw badRequest('Symbols: give 1–30 tickers.');
       out.symbols = list;

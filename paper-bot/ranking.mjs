@@ -333,6 +333,7 @@ export async function evaluateRanking(opts = {}) {
 
 /** Current ranking for a universe (latest common date). */
 export async function liveRanking(opts = {}) {
+  if (opts.sortBy != null && !ALL_SIGNALS.includes(opts.sortBy)) throw badRequest(`sortBy must be one of: ${ALL_SIGNALS.join(', ')}.`);
   const load = opts.loadCandles || candles;
   const symbols = opts.symbols?.length ? opts.symbols : (await loadIndexList(opts.universe || 'nifty50')).symbols;
   const { series, skipped } = await loadUniverse(symbols, load);

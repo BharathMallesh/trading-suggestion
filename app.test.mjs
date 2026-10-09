@@ -67,7 +67,7 @@ test('settings: validate, save, apply to PAPER, and restore defaults', () => {
   const before = currentSettings();
   assert.throws(() => validate({ minConfidence: 2 }), /between/);
   assert.throws(() => validate({ hack: 1 }), /Unknown setting/);
-  const s = saveSettings({ maxOpenPositions: 5, 'costs.dpChargePerSell': 0, symbols: 'tcs.ns, infy.ns' });
+  const s = saveSettings({ maxOpenPositions: 5, 'costs.dpChargePerSell': 0, symbols: ['tcs.ns', 'infy.ns'] });
   assert.equal(PAPER.maxOpenPositions, 5);
   assert.equal(PAPER.costs.dpChargePerSell, 0);
   assert.deepEqual(s.symbols, ['TCS.NS', 'INFY.NS']);

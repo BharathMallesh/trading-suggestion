@@ -214,13 +214,18 @@ const server = http.createServer(async (req, res) => {
     // --- offline option maths (no data, no key) ---
     if (req.method === 'GET' && url.pathname === '/api/option') {
       const p = url.searchParams;
-      const type = (p.get('type') || 'CE').toUpperCase();
+      const type = (p.get('type') || 'CE').toUpperCase(); // first value if repeated
+      if (type !== 'CE' && type !== 'PE') throw badRequest('type must be CE or PE.');
       const strike = num(p, 'strike', 'Strike');
+      const days = num(p, 'days', 'Days');
+      if (days < 0 || days > 365) throw badRequest('Days must be between 0 and 365.');
+      const ivPct = num(p, 'iv', 'IV %');
+      if (ivPct < 0 || ivPct > 300) throw badRequest('IV % must be between 0 and 300.');
       const g = greeks({
         spot: num(p, 'spot', 'Spot'),
         strike,
-        tYears: num(p, 'days', 'Days') / 365,
-        iv: num(p, 'iv', 'IV %') / 100,
+        tYears: days / 365,
+        iv: ivPct / 100,
         type,
       });
       const out = { greeks: g };
@@ -477,6 +482,7 @@ const server = http.createServer(async (req, res) => {
 
     // --- FII positioning test ---
     if (req.method === 'POST' && url.pathname === '/api/fii-test') {
+      await readJson(req);
       return json(res, 200, await testFii({}));
     }
 
@@ -497,6 +503,7 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, loadBigMoveEval() || { horizons: null, note: 'Not replayed yet.' });
     }
     if (req.method === 'POST' && url.pathname === '/api/big-move-eval') {
+      await readJson(req);
       const r = await evaluateBigMove({});
       saveBigMoveEval(r);
       return json(res, 200, r);
@@ -507,6 +514,7 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, loadPositioning() || { verdict: null, note: 'Not run yet.' });
     }
     if (req.method === 'POST' && url.pathname === '/api/options-positioning') {
+      await readJson(req);
       const r = await testPositioning({});
       savePositioning(r);
       return json(res, 200, r);
@@ -514,9 +522,11 @@ const server = http.createServer(async (req, res) => {
 
     // --- Volatility premium: is selling NIFTY options profitable after costs? ---
     if (req.method === 'GET' && url.pathname === '/api/vol-premium') {
+      await readJson(req);
       return json(res, 200, loadVolPremium() || { verdict: null, note: 'Not run yet.' });
     }
     if (req.method === 'POST' && url.pathname === '/api/vol-premium') {
+      await readJson(req);
       return json(res, 200, await runAndSaveVolPremium({}));
     }
 
@@ -573,6 +583,7 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, st ? summarizeAccounts(st) : { accounts: [], note: 'Not started yet — run Rebalance (or wait for the monitor).' });
     }
     if (req.method === 'POST' && url.pathname === '/api/strategy-accounts/rebalance') {
+      await readJson(req);
       return json(res, 200, await rebalanceAccounts());
     }
     if (req.method === 'POST' && url.pathname === '/api/strategy-accounts/reset') {
@@ -599,6 +610,7 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { report: latestReport(), health: await healthChecks(), weekly: latestWeekly() });
     }
     if (req.method === 'POST' && url.pathname === '/api/today/run') {
+      await readJson(req);
       // Runs the investor monitor in-process against this same server.
       const report = await runMonitor({ base: `http://127.0.0.1:${PORT}`, trade: true });
       return json(res, 200, { report, health: report.health });
@@ -660,7 +672,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === 'POST' && url.pathname === '/api/settings') {
       const body = await readJson(req);
-      return json(res, 200, { settings: body.reset ? resetSettings() : saveSettings(body.settings || {}) });
+      return json(res, 200, { settings: body.reset ? resetSettings() : saveSettings(body.settings === undefined ? {} : body.settings) });
     }
 
     // GET /api/news?symbol= — recent headlines + factual Ling brief (sentiment shown, not used in numbers)
@@ -684,7 +696,9 @@ const server = http.createServer(async (req, res) => {
 
     // GET /api/prediction-history
     if (req.method === 'GET' && url.pathname === '/api/prediction-history') {
-      const limit = Number(url.searchParams.get('limit') || 30);
+      const rawLimit = url.searchParams.get('limit');
+      if (rawLimit !== null && (rawLimit.trim() === '' || !Number.isFinite(Number(rawLimit)))) throw badRequest('limit must be a number between 1 and 500.');
+      const limit = Math.min(500, Math.max(1, Math.round(rawLimit === null ? 30 : Number(rawLimit))));
       return json(res, 200, { entries: getHistory(limit) });
     }
 
