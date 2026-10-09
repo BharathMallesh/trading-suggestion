@@ -46,7 +46,8 @@ import { testFii } from './paper-bot/fii.mjs';
 import { runAndSaveVolPremium, loadVolPremium } from './paper-bot/vol-premium.mjs';
 import { analyzeHoldings, addLot, removeLot, setRealized, importTradebook } from './paper-bot/holdings.mjs';
 import { trendHistory, saveTrendHistory, loadTrendHistory, crashBrake } from './paper-bot/trend-history.mjs';
-import { expectations } from './paper-bot/expectations.mjs';
+import { expectations, goalPlan, monthlySeries } from './paper-bot/expectations.mjs';
+import { indexFunds } from './paper-bot/index-funds.mjs';
 import { loadDirectionLong } from './paper-bot/direction-long.mjs';
 import { loadIntradayTest } from './paper-bot/intraday-test.mjs';
 import { bigMove, evaluateBigMove, saveBigMoveEval, loadBigMoveEval } from './paper-bot/big-move.mjs';
@@ -59,6 +60,8 @@ import { HttpError, badRequest, parseSymbols, parseBool, mapLimit } from './util
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT) || 3000;
 let expectCache = null; // /api/expectations (daily)
+let fundsCache = null; // /api/index-funds (daily)
+const monthlyCache = {}; // goal planner: index → { at, data }
 // Bind to loopback only — this is a local tool holding a server-side API key,
 // not something to expose on the network.
 const HOST = '127.0.0.1';
@@ -525,6 +528,28 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === 'GET' && url.pathname === '/api/direction-long') {
       return json(res, 200, loadDirectionLong() || { verdict: null, note: 'Not run yet (node paper-bot/direction-long.mjs).' });
+    }
+    if (req.method === 'GET' && url.pathname === '/api/index-funds') {
+      if (!fundsCache || Date.now() - fundsCache.at > 20 * 3600000) fundsCache = { at: Date.now(), data: await indexFunds({}) };
+      return json(res, 200, fundsCache.data);
+    }
+    if (req.method === 'GET' && url.pathname === '/api/goal') {
+      const q = url.searchParams;
+      const target = Number(q.get('target'));
+      const years = Number(q.get('years'));
+      const lumpSum = Number(q.get('lump') || 0);
+      const sip = q.get('sip') ? Number(q.get('sip')) : null;
+      const index = q.get('index') === 'nifty' ? 'nifty' : 'sensex';
+      if (!(target > 0 && target < 1e11)) throw badRequest('Target must be a positive amount in rupees.');
+      if (!(Number.isInteger(years) && years >= 3 && years <= 25)) throw badRequest('Years must be a whole number from 3 to 25.');
+      if (!(lumpSum >= 0 && lumpSum < 1e11)) throw badRequest('Lump sum must be 0 or more.');
+      if (sip != null && !(sip >= 0 && sip < 1e9)) throw badRequest('Monthly SIP must be 0 or more.');
+      const mc = monthlyCache[index];
+      if (!mc || Date.now() - mc.at > 86400000) monthlyCache[index] = { at: Date.now(), data: await monthlySeries(index) };
+      const { monthly, from, to } = monthlyCache[index].data;
+      const plan = goalPlan(monthly, { target, years, lumpSum, sip });
+      if (!plan) throw badRequest(`Not enough history for ${years} years on this index — try fewer years or the Sensex.`);
+      return json(res, 200, { index, from, to, ...plan, note: 'Every past start month in the history; index + ~1.2% dividends − 0.2% fund cost, before tax. Past ranges, not a promise.' });
     }
     if (req.method === 'GET' && url.pathname === '/api/crash-brake') {
       return json(res, 200, await crashBrake({}));

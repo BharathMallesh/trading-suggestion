@@ -143,3 +143,51 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       process.exit(1);
     });
 }
+
+/**
+ * Goal planner on the same history: to reach `target` (₹) in `years`, what
+ * monthly SIP was needed across every past start month? Optional `lumpSum`
+ * invested at the start and an optional `sip` to test (success rate).
+ * Returns the SIP that would have been enough in 50% / 75% / 90% / 100% of
+ * past windows, and, for a given SIP, how often it reached the target and the
+ * worst / median / best ending value.
+ */
+export function goalPlan(monthly, { target, years, lumpSum = 0, sip = null }) {
+  const n = Math.round(years * 12);
+  const need = [];
+  const ends = [];
+  for (let s = 0; s + n < monthly.length; s++) {
+    const w = monthly.slice(s, s + n + 1);
+    let units = 0;
+    for (let k = 0; k < n; k++) units += 1 / w[k].tr;
+    const perRupee = units * w[n].tr; // ₹1/month for n months → value at the end
+    const lumpEnd = lumpSum * (w[n].tr / w[0].tr);
+    need.push(Math.max(0, (target - lumpEnd) / perRupee));
+    if (sip != null) ends.push(lumpEnd + sip * perRupee);
+  }
+  if (!need.length) return null;
+  const s = [...need].sort((a, b) => a - b);
+  const q = (p) => s[Math.min(s.length - 1, Math.ceil(p * s.length) - 1)];
+  const out = {
+    years, windows: need.length, target, lumpSum,
+    sipNeeded: { p50: q(0.5), p75: q(0.75), p90: q(0.9), p100: s[s.length - 1] },
+    invested90: q(0.9) * n + lumpSum,
+  };
+  if (sip != null) {
+    const e = [...ends].sort((a, b) => a - b);
+    out.withSip = {
+      sip,
+      successRate: ends.filter((v) => v >= target * (1 - 1e-9)).length / ends.length, // tolerance: float rounding
+      worst: e[0], median: e[e.length >> 1], best: e[e.length - 1],
+      invested: sip * n + lumpSum,
+    };
+  }
+  return out;
+}
+
+/** Monthly total-return series for one index (Sensex or NIFTY 50). */
+export async function monthlySeries(index = 'sensex', { loadCandles = candles } = {}) {
+  const sym = index === 'nifty' ? '^NSEI' : '^BSESN';
+  const rows = (await loadCandles(sym, { period1: Date.UTC(1990, 0, 1) / 1000, interval: '1d' })).filter((r) => r.close > 0);
+  return { from: rows[0].date, to: rows[rows.length - 1].date, monthly: monthlyTotalReturn(rows) };
+}

@@ -193,3 +193,33 @@ test('Call/Put live scorecard: hits by lean, direction-only rate, too-early verd
   assert.equal(liveScorecard(entries, { mode: 'multi' }).scored, 1);
   assert.equal(r.recent.length, 4);
 });
+
+test('index funds: split adjustment snaps to standard ratios; scheme filters', async () => {
+  const f = await import('./paper-bot/index-funds.mjs');
+  const navs = [{ date: '2024-01-01', nav: 200 }, { date: '2024-01-02', nav: 202 }, { date: '2024-01-03', nav: 20.402 }, { date: '2024-01-04', nav: 20.5 }];
+  const a = f.adjustSplits(navs);
+  assert.ok(Math.abs(a[1].nav - 20.2) < 1e-9, '1:10 split → earlier NAVs ÷ 10 exactly');
+  assert.ok(Math.abs(a[2].nav / a[1].nav - 1.01) < 1e-9, 'the split day keeps its real +1% move');
+  assert.ok(f.matches('UTI Nifty 50 Index Fund - Direct Plan - Growth', 'nifty50'));
+  assert.ok(f.matches('Nippon India ETF Nifty 50 BeES - Direct Plan', 'nifty50'));
+  assert.ok(!f.matches('UTI Nifty 50 Index Fund - Regular Plan - Growth', 'nifty50'));
+  assert.ok(!f.matches('NAVI ELSS TAX SAVER NIFTY50 INDEX FUND - Direct Plan - GROWTH', 'nifty50'));
+  assert.ok(!f.matches('UTI Nifty Next 50 Index Fund - Direct Plan - Growth', 'nifty50'));
+  assert.ok(f.matches('UTI - Nifty Next 50 Index Fund - Direct Plan - Growth', 'next50'));
+  assert.ok(!f.matches('DSP BSE SENSEX Next 30 Index Fund - Direct Plan - Growth', 'sensex'));
+});
+
+test('goal planner on a steady 12% market', async () => {
+  const ex = await import('./paper-bot/expectations.mjs');
+  const monthly = Array.from({ length: 12 * 30 }, (_, i) => ({ month: `m${i}`, tr: 1.12 ** (i / 12) }));
+  // ₹1/month for 10 years at 12% → about ₹231 at the end
+  let fv = 0;
+  for (let k = 0; k < 120; k++) fv += 1.12 ** ((120 - k) / 12);
+  const g = ex.goalPlan(monthly, { target: fv * 10000, years: 10, sip: 10000 });
+  assert.ok(Math.abs(g.sipNeeded.p50 - 10000) < 1e-3, 'steady market: every window needs the same SIP');
+  assert.ok(Math.abs(g.sipNeeded.p100 - 10000) < 1e-3);
+  assert.equal(g.withSip.successRate, 1);
+  const lump = ex.goalPlan(monthly, { target: 1e6 * 1.12 ** 10, years: 10, lumpSum: 1e6 });
+  assert.ok(lump.sipNeeded.p50 < 1e-6, 'the lump sum alone reaches the target');
+  assert.equal(ex.goalPlan(monthly.slice(0, 50), { target: 1, years: 10 }), null);
+});

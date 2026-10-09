@@ -135,6 +135,32 @@
         <div id="exOut" style="margin-top:10px"></div>
       </section>
 
+      <!-- Goal planner -->
+      <section class="card span2" data-view="money">
+        <h2>Goal planner <span style="font-size:12px;color:var(--warn);font-weight:500">WHAT SIP REACHES MY TARGET · FROM EVERY PAST START MONTH</span></h2>
+        <p class="hint">How much a monthly SIP in the index needed to be to reach your target, across every start month in the history — the typical case and the
+          bad cases. Optionally test the SIP you plan to invest. Index + ~1.2% dividends − 0.2% index-fund cost, before tax. Past ranges, not a promise.</p>
+        <div class="row">
+          <div><label>Target (₹)</label><input id="glTarget" type="number" step="100000" value="5000000" /></div>
+          <div><label>Years</label><input id="glYears" type="number" min="3" max="25" value="15" /></div>
+          <div><label>Lump sum now (₹, optional)</label><input id="glLump" type="number" step="10000" value="0" /></div>
+          <div><label>SIP you plan (₹/month, optional)</label><input id="glSip" type="number" step="500" placeholder="e.g. 10000" /></div>
+          <div><label>Index</label><select id="glIdx"><option value="sensex">Sensex (since 1997)</option><option value="nifty">NIFTY 50 (since 2007)</option></select></div>
+        </div>
+        <button id="glBtn" type="button">Plan</button>
+        <div id="glOut" style="margin-top:10px"></div>
+      </section>
+
+      <!-- Index-fund picker -->
+      <section class="card span2" data-view="money">
+        <h2>Index-fund picker <span style="font-size:12px;color:var(--warn);font-weight:500">WHAT EACH FUND ACTUALLY DELIVERED · AMFI NAV DATA</span></h2>
+        <p class="hint">Funds tracking the same index should return the same — the gap to the best one is what costs and sloppy tracking took. Ranked by 3-year
+          return (direct-plan growth options and ETFs; tax-saver, regular and IDCW plans excluded; unit splits adjusted). ETFs trade at market price, so check
+          their liquidity; see each factsheet for the expense ratio. Not a recommendation of any fund.</p>
+        <div class="row"><div><label>Index</label><select id="ifCat"><option value="nifty50">NIFTY 50</option><option value="next50">NIFTY Next 50</option><option value="sensex">Sensex</option></select></div></div>
+        <div id="ifOut" style="margin-top:10px"></div>
+      </section>
+
       <!-- Ask panel -->
       <section class="card span2">
         <h2>Ask (research · explain · summarize)</h2>
@@ -1624,6 +1650,54 @@
       let startView = 'money';
       try { startView = localStorage.getItem('view') || 'money'; } catch { /* default */ }
       showView(startView);
+
+      // --- Goal planner ---
+      $('glBtn').addEventListener('click', async () => {
+        const out = $('glOut');
+        out.textContent = 'Checking every past start month…';
+        try {
+          const q = new URLSearchParams({ target: $('glTarget').value, years: $('glYears').value, lump: $('glLump').value || 0, index: $('glIdx').value });
+          if ($('glSip').value) q.set('sip', $('glSip').value);
+          const g = await api('/api/goal?' + q);
+          const rs = (v) => '₹' + Math.round(v).toLocaleString('en-IN');
+          const lk = (v) => '₹' + (v >= 1e7 ? (v / 1e7).toFixed(2) + ' Cr' : (v / 1e5).toFixed(1) + ' L');
+          let html = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px">${[['Worked half the time', g.sipNeeded.p50], ['Worked 3 times in 4', g.sipNeeded.p75], ['Worked 9 times in 10', g.sipNeeded.p90], ['Worked every time (worst start)', g.sipNeeded.p100]].map(([t, v], i) =>
+            `<div style="background:#0d1320;border:1px solid ${i === 2 ? 'var(--accent)' : 'var(--line)'};border-radius:10px;padding:10px;text-align:center"><div style="font-size:12px;color:var(--muted)">${t}</div><div style="font-size:20px;font-weight:700">${rs(v)}<span style="font-size:12px;color:var(--muted)">/mo</span></div></div>`).join('')}</div>
+            <div style="font-size:13px;margin-top:8px">To reach <b>${lk(g.target)}</b> in <b>${g.years} years</b>${g.lumpSum ? ` (with ${lk(g.lumpSum)} invested now)` : ''}: a SIP of about <b>${rs(g.sipNeeded.p90)}/month</b> would have been enough in 90% of the ${g.windows} past start months (you'd invest ${lk(g.invested90)} in total).</div>`;
+          if (g.withSip) {
+            const w = g.withSip;
+            html += `<div style="font-size:13px;margin-top:6px">With your <b>${rs(w.sip)}/month</b> (${lk(w.invested)} invested): reached the target in <b>${Math.round(w.successRate * 100)}%</b> of past windows · ending value worst ${lk(w.worst)}, typical ${lk(w.median)}, best ${lk(w.best)}.</div>`;
+          }
+          out.innerHTML = html + `<div class="note">${esc(g.index === 'nifty' ? 'NIFTY 50' : 'Sensex')} ${esc(g.from)} → ${esc(g.to)}. ${esc(g.note)} Not investment advice.</div>`;
+        } catch (e) {
+          out.innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
+        }
+      });
+
+      // --- Index-fund picker ---
+      let ifData = null;
+      function ifRender() {
+        if (!ifData) return;
+        const c = ifData.categories[$('ifCat').value];
+        if (!c) return;
+        const p = (x) => (x == null ? '–' : (x >= 0 ? '+' : '') + (x * 100).toFixed(2) + '%');
+        const rows = c.funds.map((f, i) => `<tr><td>${i + 1}</td><td style="text-align:left">${esc(f.name)}</td><td>${esc(f.type)}</td><td>${p(f.r1)}</td><td>${p(f.r3)}</td><td>${p(f.r5)}</td>
+          <td style="color:${(f.gap3 ?? 0) < -0.003 ? 'var(--down)' : 'var(--muted)'}">${f.gap3 == null ? '–' : p(f.gap3)}</td><td>${f.te == null ? '–' : (f.te * 100).toFixed(2) + '%'}</td><td style="font-size:11px;color:var(--muted)">${esc(f.since)}</td></tr>`).join('');
+        const worst = Math.min(...c.funds.map((f) => f.gap3).filter((v) => v != null));
+        $('ifOut').innerHTML = `<div style="font-size:13px">${c.funds.length} ${esc(c.label)} funds. Over 3 years the worst one lagged the best by <b>${(Math.abs(worst) * 100).toFixed(2)}% a year</b> — on ₹10 lakh over 20 years that gap compounds to roughly ₹${Math.round(1e6 * ((1.12) ** 20 - (1.12 + worst) ** 20) / 1e5).toLocaleString('en-IN')} lakh.</div>
+          <div style="max-height:420px;overflow:auto"><table><thead><tr><th>#</th><th style="text-align:left">Fund</th><th>Type</th><th>1y</th><th>3y/yr</th><th>5y/yr</th><th>Gap to best (3y)</th><th>Tracking error</th><th>Since</th></tr></thead><tbody>${rows}</tbody></table></div>
+          <div class="note">${esc(ifData.note)}</div>`;
+      }
+      $('ifCat').addEventListener('change', ifRender);
+      (async () => {
+        $('ifOut').textContent = 'Loading AMFI NAV history (first load ~10–20 s)…';
+        try {
+          ifData = await api('/api/index-funds');
+          ifRender();
+        } catch (e) {
+          $('ifOut').innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
+        }
+      })();
 
       // --- What to expect ---
       let exData = null;
