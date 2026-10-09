@@ -48,6 +48,7 @@ import { analyzeHoldings, addLot, removeLot, setRealized, importTradebook } from
 import { trendHistory, saveTrendHistory, loadTrendHistory, crashBrake } from './paper-bot/trend-history.mjs';
 import { expectations } from './paper-bot/expectations.mjs';
 import { loadDirectionLong } from './paper-bot/direction-long.mjs';
+import { loadIntradayTest } from './paper-bot/intraday-test.mjs';
 import { bigMove, evaluateBigMove, saveBigMoveEval, loadBigMoveEval } from './paper-bot/big-move.mjs';
 import { testPositioning, saveResult as savePositioning, loadResult as loadPositioning } from './paper-bot/options-positioning.mjs';
 import { llmLastModel } from './ling-client.mjs';
@@ -514,6 +515,9 @@ const server = http.createServer(async (req, res) => {
       // history changes slowly: cache for a day
       if (!expectCache || Date.now() - expectCache.at > 86400000) expectCache = { at: Date.now(), data: await expectations({}) };
       return json(res, 200, expectCache.data);
+    }
+    if (req.method === 'GET' && url.pathname === '/api/intraday-test') {
+      return json(res, 200, loadIntradayTest() || { note: 'Not run yet (node paper-bot/intraday-test.mjs).' });
     }
     if (req.method === 'GET' && url.pathname === '/api/direction-long') {
       return json(res, 200, loadDirectionLong() || { verdict: null, note: 'Not run yet (node paper-bot/direction-long.mjs).' });

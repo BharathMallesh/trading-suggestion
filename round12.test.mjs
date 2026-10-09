@@ -132,3 +132,20 @@ test('direction-long: Newey–West regression, out-of-sample R², NSE file parsi
   assert.equal(await dl.niftyValuation('2014-10-02', { fetchFn: async () => ({ ok: false, status: 404 }) }), null);
   assert.equal(await dl.niftyValuation('2014-10-03', { fetchFn: async () => { throw new Error('offline'); } }), undefined);
 });
+
+test('intraday: softmax model learns a planted pattern', async () => {
+  const it = await import('./paper-bot/intraday-test.mjs');
+  let s = 5;
+  const rnd = () => ((s = (s * 16807) % 2147483647) / 2147483647 - 0.5);
+  const X = [];
+  const y = [];
+  for (let i = 0; i < 600; i++) {
+    const f = rnd() * 4;
+    X.push([1, f]);
+    y.push(f > 0.6 ? 0 : f < -0.6 ? 1 : 2);
+  }
+  const W = it.fitSoftmax(X, y, { iters: 400, lr: 1 });
+  assert.ok(it.predictSoftmax(W, [1, 1.5]).probUp > 0.6);
+  assert.ok(it.predictSoftmax(W, [1, -1.5]).probDown > 0.6);
+  assert.ok(it.predictSoftmax(W, [1, 0]).probSideways > 0.5);
+});

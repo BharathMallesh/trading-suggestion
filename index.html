@@ -294,7 +294,9 @@
         <div class="note" style="border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:8px">
           <b>What the audit found:</b> these Up / Down / Sideways numbers are honest but are essentially base rates (~27% up, ~26% down, ~46% sideways) —
           over 31,000 past cases nothing predicted direction better, and "sideways" is measured against the stock's own ATR, so even it can't be
-          forecast beyond its usual rate (14-year test, t −1.3). For the part that <i>is</i> predictable — the chance of a move bigger than ±1% / ±2% — use <b>Big-move odds</b>.
+          forecast beyond its usual rate (14-year test, t −1.3). Intraday is the same: over the next 30–40 minutes these odds did <i>worse</i> than plain base rates,
+          and a model built for 35 minutes lost money after costs (Research lab → Direction over months and years). The 5-minute odds describe only the next ~20 minutes.
+          For the part that <i>is</i> predictable — the chance of a move bigger than ±1% / ±2% — use <b>Big-move odds</b>.
         </div>
         <div class="row" style="gap:8px;margin-bottom:10px">
           <button type="button" id="gpTab15" class="gp-tab" style="margin-top:0;background:var(--accent);color:#071019;font-weight:700">15‑min only</button>
@@ -455,6 +457,7 @@
           plain historical average when used in real time (out-of-sample R² &gt; 0).
         </p>
         <div id="dlOut"></div>
+        <div id="itOut" style="margin-top:12px"></div>
       </section>
 
       <!-- Big-move odds -->
@@ -1779,6 +1782,28 @@
           $('dlOut').innerHTML = html + `<div class="note">* NSE switched index P/E and P/B from standalone to consolidated earnings in 2021, so those series have a level break. ${esc(r.rule)}</div>`;
         } catch (e) {
           $('dlOut').innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
+        }
+      })();
+
+      // --- Next 30–40 minutes test ---
+      (async () => {
+        try {
+          const r = await api('/api/intraday-test');
+          if (!r.model35m) return;
+          const p = (x) => (x == null ? '–' : (x * 100).toFixed(1) + '%');
+          const a = r.currentApp.secondHalf;
+          const m = r.model35m.outOfSample;
+          const im = r.intradayMomentum;
+          $('itOut').innerHTML = `<div style="font-size:14px"><b>Next ${r.horizonMinutes} minutes</b> · ${r.sessions} sessions (${esc(r.from)} → ${esc(r.to)}, all Yahoo keeps)</div>
+            <div class="kv" style="margin-top:4px">
+              <div>Base rates</div><div>up ${p(r.baseRates.UP)} · down ${p(r.baseRates.DOWN)} · sideways ${p(r.baseRates.SIDEWAYS)}</div>
+              <div>App's intraday odds</div><div>Brier ${a.brierApp.toFixed(3)} vs base rates ${a.brierBase.toFixed(3)} (t ${a.t?.toFixed(1)}) — <b>${a.t > 2 ? 'worse than base rates' : 'no better than base rates'}</b> at this horizon</div>
+              <div>Model built for ${r.horizonMinutes} min</div><div>confident calls right ${p(m.callHitRate)}, ${m.avgNetPerCallPct?.toFixed(3)}% per trade after costs → <b>${r.model35m.adopt ? 'adopted' : 'not usable'}</b></div>
+              <div>First 30 min → last 30 min</div><div>same direction ${p(im.stocks?.sameDirectionRate)} of stock-days (NIFTY ${p(im.nifty?.sameDirectionRate)}) — no momentum</div>
+            </div>
+            <div class="note">${esc(r.rule)}</div>`;
+        } catch {
+          /* optional */
         }
       })();
 
