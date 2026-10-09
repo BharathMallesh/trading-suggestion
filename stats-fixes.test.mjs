@@ -8,6 +8,8 @@ import { join } from 'node:path';
 
 const TMP = mkdtempSync(join(tmpdir(), 'trading-statsfix-'));
 process.env.CALIBRATION_PATH = join(TMP, 'calibration.json');
+process.env.STRATEGY_ACCOUNTS_PATH = join(TMP, 'accounts.json');
+process.env.INDEX_LIST_DIR = TMP;
 process.env.PREDICTION_LOG_PATH = join(TMP, 'prediction-history.json');
 after(() => rmSync(TMP, { recursive: true, force: true }));
 
@@ -79,4 +81,41 @@ test('runStrategyTests lists the 4% cash-yield sensitivity row for A', async () 
   const r = await runStrategyTests({ loadCandles: async (s) => (s === '^NSEI' ? idx : []) }).catch((e) => ({ err: e }));
   if (r.err) return; // universe loading needs the network/index list; the A rows are exercised above
   assert.ok(r.A.some((x) => x.name === 'A · NIFTY trend (month-end, 4% cash yield)'));
+});
+
+// ---- 3. momentum account: missing price skips the rebalance; tax basis excludes STT/DP ----
+const dayN = (i) => new Date(Date.UTC(2025, 0, 1) + i * 86400000).toISOString().slice(0, 10);
+const up = (p, slope) => Array.from({ length: 450 }, (_, i) => ({ date: dayN(i), close: p * (1 + i * slope) }));
+
+test('momentum rebalance is skipped (not valued at 0) when a held symbol has no price', async () => {
+  const { rebalanceAccounts, resetAccounts, loadAccounts } = await import('./paper-bot/strategy-accounts.mjs');
+  const { writeFileSync } = await import('node:fs');
+  resetAccounts(1e6);
+  const st = loadAccounts();
+  st.accounts.momentum.holdings = { GONE: { qty: 10, cost: 5000 } };
+  writeFileSync(process.env.STRATEGY_ACCOUNTS_PATH, JSON.stringify(st));
+  const load = async (s) => {
+    if (s === 'GONE') throw new Error('delisted');
+    return s === '^NSEI' ? up(20000, 0.001) : up(1000, 0.002);
+  };
+  const r = await rebalanceAccounts({ now: new Date('2026-10-08T06:00:00Z'), loadCandles: load });
+  assert.ok(r.actions.some((a) => a.account === 'momentum' && /skipped — missing price for GONE/.test(a.action)), JSON.stringify(r.actions));
+  assert.ok(loadAccounts().accounts.momentum.holdings.GONE, 'holding untouched');
+  assert.equal(loadAccounts().accounts.momentum.lastRebalanceMonth, null, 'will retry next run');
+});
+
+test('tax lots exclude STT and DP charges from the cost basis', async () => {
+  const { rebalanceAccounts, resetAccounts, loadAccounts } = await import('./paper-bot/strategy-accounts.mjs');
+  resetAccounts(1e6);
+  const load = async (s) => (s === '^NSEI' ? up(20000, 0.001) : up(1000, 0.002));
+  await rebalanceAccounts({ now: new Date('2026-10-08T06:00:00Z'), loadCandles: load });
+  const m = loadAccounts().accounts.momentum;
+  const buy = m.trades.find((t) => t.side === 'buy');
+  assert.ok(buy, 'momentum bought something');
+  const lots = m.tax.lots[buy.symbol] || (m.tax.lots instanceof Array ? m.tax.lots.find((x) => x[0] === buy.symbol)?.[1] : null);
+  const lot = lots[0];
+  const perUnit = lot.cost; // per-unit price in the ledger
+  const gross = buy.price;
+  const withAll = gross + buy.charges / buy.qty;
+  assert.ok(perUnit >= gross && perUnit < withAll - 1e-9, `basis/unit ${perUnit} between ${gross} and ${withAll}`);
 });

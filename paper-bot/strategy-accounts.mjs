@@ -122,12 +122,19 @@ function tradeTo(acct, target, prices, product, date, note) {
     if (!qty) continue;
     const fill = side === 'buy' ? px * (1 + costs.slippagePct / 100) : px * (1 - costs.slippagePct / 100);
     const v = qty * fill;
-    const c = orderCharges({ side, value: v, product, costs }).total;
+    const oc = orderCharges({ side, value: v, product, costs });
+    const c = oc.total;
+    // Tax basis: only brokerage (+ its GST) and stamp duty are deductible for
+    // capital gains; STT, exchange/SEBI fees and DP charges are not.
+    const b = oc.breakdown;
+    const feeBase = b.brokerage + b.exchange + b.sebi;
+    const gstOnBrokerage = feeBase > 0 ? (b.gst * b.brokerage) / feeBase : 0;
     if (side === 'buy' && v + c > acct.cash) continue;
     acct.cash += side === 'buy' ? -(v + c) : v - c;
     acct.charges += c;
-    // cost basis includes buy charges; sale proceeds are net of sell charges
-    if (acct._ledger) side === 'buy' ? acct._ledger.buy(sym, qty, (v + c) / qty, date) : acct._ledger.sell(sym, qty, (v - c) / qty, date);
+    // tax cost basis = value + deductible buy charges; proceeds = value - deductible sell charges
+    // (cash effects above still use the full charges)
+    if (acct._ledger) side === 'buy' ? acct._ledger.buy(sym, qty, (v + b.brokerage + b.stamp + gstOnBrokerage) / qty, date) : acct._ledger.sell(sym, qty, (v - b.brokerage - gstOnBrokerage) / qty, date);
     const h = acct.holdings[sym] || { qty: 0, cost: 0 };
     if (side === 'buy') {
       h.cost += v;
@@ -205,20 +212,41 @@ export async function rebalanceAccounts(opts = {}) {
     });
     const ranked = loaded.filter((x) => x && x.score != null).sort((a, b) => b.score - a.score);
     momentumPrices = Object.fromEntries(ranked.map((x) => [x.sym, x.price]));
-    const rankOf = new Map(ranked.map((x, i) => [x.sym, i + 1]));
-    let target = [];
-    if (niftyNow >= sma200) {
-      target = Object.keys(m.holdings).filter((s) => (rankOf.get(s) ?? Infinity) <= ASSUMPTIONS.bufferRank);
-      for (const x of ranked) {
-        if (target.length >= ASSUMPTIONS.topN) break;
-        if (!target.includes(x.sym)) target.push(x.sym);
+    // Every held symbol needs a price before trading: a holding outside the
+    // ranked list (or one whose fetch failed) must not be valued at 0.
+    let missing = null;
+    for (const sym of Object.keys(m.holdings)) {
+      if (momentumPrices[sym] > 0) continue;
+      try {
+        const r = await load(sym, { range: '5d', interval: '1d' });
+        const px = r[r.length - 1]?.close;
+        if (px > 0) momentumPrices[sym] = px;
+      } catch {
+        /* handled below */
+      }
+      if (!(momentumPrices[sym] > 0)) {
+        missing = sym;
+        break;
       }
     }
-    const eq = equityOf(m, momentumPrices);
-    const each = target.length ? (eq * 0.995) / target.length : 0;
-    tradeTo(m, Object.fromEntries(target.map((s) => [s, each])), momentumPrices, 'delivery', today, niftyNow >= sma200 ? 'monthly momentum rebalance' : 'market filter: NIFTY below 200-day avg → cash');
-    m.lastRebalanceMonth = month;
-    actions.push({ account: 'momentum', action: target.length ? `holding ${target.length} stocks` : 'all cash (market filter)', universe: ranked.length });
+    if (missing) {
+      actions.push({ account: 'momentum', action: `momentum: skipped — missing price for ${missing}` });
+    } else {
+      const rankOf = new Map(ranked.map((x, i) => [x.sym, i + 1]));
+      let target = [];
+      if (niftyNow >= sma200) {
+        target = Object.keys(m.holdings).filter((s) => (rankOf.get(s) ?? Infinity) <= ASSUMPTIONS.bufferRank);
+        for (const x of ranked) {
+          if (target.length >= ASSUMPTIONS.topN) break;
+          if (!target.includes(x.sym)) target.push(x.sym);
+        }
+      }
+      const eq = equityOf(m, momentumPrices);
+      const each = target.length ? (eq * 0.995) / target.length : 0;
+      tradeTo(m, Object.fromEntries(target.map((s) => [s, each])), momentumPrices, 'delivery', today, niftyNow >= sma200 ? 'monthly momentum rebalance' : 'market filter: NIFTY below 200-day avg → cash');
+      m.lastRebalanceMonth = month;
+      actions.push({ account: 'momentum', action: target.length ? `holding ${target.length} stocks` : 'all cash (market filter)', universe: ranked.length });
+    }
   }
 
   // Mark every account to market and record today's equity.
