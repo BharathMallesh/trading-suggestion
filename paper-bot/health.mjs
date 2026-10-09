@@ -168,6 +168,18 @@ export async function healthChecks(opts = {}) {
       : check('backup', b.mirror?.ok === false ? 'warn' : 'ok', `${(b.bytes / 1e6).toFixed(1)} MB, ${b.files} files, ${ageH.toFixed(0)} h ago${mirror}`));
   }
 
+  // 10. State files that failed to parse were moved aside (*.corrupt-*): the app
+  // restarted that file fresh, so the evidence needs restoring from a backup.
+  try {
+    const roots = [__dir, join(__dir, 'data')];
+    const bad = roots.flatMap((d) => (existsSync(d) ? readdirSync(d).filter((f) => /\.corrupt-\d+$/.test(f)).map((f) => join(d, f)) : []));
+    out.push(bad.length
+      ? check('state files', 'fail', `${bad.length} corrupted file(s) were set aside: ${bad.map((f) => f.split('/').slice(-2).join('/')).join(', ')} — restore from ~/trading-research-backups, then delete the .corrupt file`)
+      : check('state files', 'ok', 'all state files readable'));
+  } catch (err) {
+    out.push(check('state files', 'warn', err.message.slice(0, 100)));
+  }
+
   const level = out.some((c) => c.level === 'fail') ? 'fail' : out.some((c) => c.level === 'warn') ? 'warn' : 'ok';
   return { level, checks: out, at: now.toISOString() };
 }
