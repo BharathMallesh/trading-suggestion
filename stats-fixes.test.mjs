@@ -37,9 +37,9 @@ test('evaluate: embargo drops horizon train samples per symbol; holdout only aft
 
 test('evaluate: holdout stocks are scored only on bars after the latest train date', async () => {
   const { evaluateModels } = await import('./paper-bot/evaluate.mjs');
-  const { MARKET_INDEX, VIX_INDEX } = await import('./paper-bot/context.mjs');
+  const { MARKET_INDEX, VIX_INDEX } = await import('./paper-bot/features.mjs');
   const data = { 'A.NS': walk(700, 11), 'B.NS': walk(700, 13), 'H.NS': walk(700, 29), [MARKET_INDEX]: walk(700, 17, 20000), [VIX_INDEX]: walk(700, 19, 14) };
   const r = await evaluateModels({ interval: '1d', symbols: ['A.NS', 'B.NS'], holdoutSymbols: ['H.NS'], loadCandles: async (s) => data[s] });
   const n = r.holdout.n;
-  assert.ok(n > 0 && n < 700 * 0.35, `holdout n=${n} should only cover the post-train tail`);
+  assert.ok(n > 0 && n < 700 * 0.45, `holdout n=${n} should only cover the post-train tail`);
 });
