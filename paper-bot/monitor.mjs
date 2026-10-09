@@ -39,10 +39,13 @@ const BASE = process.env.MONITOR_URL || 'http://127.0.0.1:3000';
 /** JSON client for the dashboard server at `base`. */
 function client(base) {
   return async function api(path, body) {
-    const res = await fetch(base + path, body === undefined ? {} : {
+    // Long calls (/api/today/run etc.) can take minutes; still bounded so a hung server can't wedge the monitor.
+    const signal = AbortSignal.timeout(300_000);
+    const res = await fetch(base + path, body === undefined ? { signal } : {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
+      signal,
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(`${path}: ${data.error || res.status}`);

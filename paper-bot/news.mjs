@@ -152,12 +152,12 @@ export function parseRss(xml) {
 
 async function googleNews(query) {
   const url = `${GNEWS}?q=${encodeURIComponent(`${query} when:7d`)}&hl=en-IN&gl=IN&ceid=IN:en`;
-  const res = await fetch(url, { headers: { 'User-Agent': UA } });
+  const res = await fetch(url, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(15_000) });
   return res.ok ? parseRss(await res.text()) : [];
 }
 
 async function yahooNews(query) {
-  const res = await fetch(`${SEARCH}?q=${encodeURIComponent(query)}&quotesCount=0&newsCount=15`, { headers: { 'User-Agent': UA } });
+  const res = await fetch(`${SEARCH}?q=${encodeURIComponent(query)}&quotesCount=0&newsCount=15`, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(15_000) });
   return res.ok ? (await res.json()).news || [] : [];
 }
 const TTL_MS = 10 * 60_000;

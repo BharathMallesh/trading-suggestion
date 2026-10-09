@@ -73,7 +73,7 @@ export async function healthChecks(opts = {}) {
   // 2. News feed
   try {
     const n = await (opts.newsProbe || (async () => {
-      const res = await fetch('https://news.google.com/rss/search?q=NIFTY%20when:2d&hl=en-IN&gl=IN&ceid=IN:en', { headers: { 'User-Agent': 'Mozilla/5.0' } });
+      const res = await fetch('https://news.google.com/rss/search?q=NIFTY%20when:2d&hl=en-IN&gl=IN&ceid=IN:en', { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(15_000) });
       return res.ok ? (await res.text()).split('<item>').length - 1 : 0;
     }))();
     out.push(check('news feed', n > 0 ? 'ok' : 'warn', n > 0 ? `${n} recent market headlines` : 'news feed returned nothing'));

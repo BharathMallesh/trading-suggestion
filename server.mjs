@@ -47,7 +47,7 @@ import { runAndSaveVolPremium, loadVolPremium } from './paper-bot/vol-premium.mj
 import { bigMove, evaluateBigMove, saveBigMoveEval, loadBigMoveEval } from './paper-bot/big-move.mjs';
 import { testPositioning, saveResult as savePositioning, loadResult as loadPositioning } from './paper-bot/options-positioning.mjs';
 import { llmLastModel } from './ling-client.mjs';
-import { foundationForecast, foundationReplay, saveReplay, loadReplay, MODELS as FOUNDATION_MODELS } from './paper-bot/foundation.mjs';
+import { foundationForecast, foundationReplay, saveReplay, loadReplay, stopWorker, MODELS as FOUNDATION_MODELS } from './paper-bot/foundation.mjs';
 import { rebalanceAccounts, resetAccounts, loadAccounts, summarize as summarizeAccounts } from './paper-bot/strategy-accounts.mjs';
 import { HttpError, badRequest, parseSymbols, parseBool, mapLimit } from './util.mjs';
 
@@ -67,11 +67,14 @@ const json = (res, code, obj) => {
 const readBody = (req) =>
   new Promise((resolve, reject) => {
     let data = '';
+    let tooBig = false;
     req.on('data', (c) => {
+      if (tooBig) return; // keep draining (discarding) so the 413 response can actually be delivered
       data += c;
       if (data.length > 1e6) {
+        tooBig = true;
+        data = '';
         reject(new HttpError(413, 'Request body too large')); // ~1MB cap
-        req.destroy();
       }
     });
     req.on('end', () => resolve(data));
@@ -693,9 +696,29 @@ const server = http.createServer(async (req, res) => {
     // Surface the module's own helpful messages (e.g. missing API key) to the UI,
     // with the status the module attached (400 bad input, 404 unknown symbol…).
     const status = Number.isInteger(err.status) && err.status >= 400 && err.status < 600 ? err.status : 500;
-    if (!res.headersSent) json(res, status, { error: err.message || String(err) });
+    // Only our own HttpErrors carry messages meant for the UI; anything else may leak paths/internals.
+    const isHttp = err instanceof HttpError;
+    if (!isHttp) console.error('[server] unhandled error:', req.method, req.url, err);
+    if (status === 413) {
+      // Answer first, then drop the connection so the client still gets the 413.
+      res.setHeader('Connection', 'close');
+      res.once('finish', () => req.destroy());
+    }
+    if (!res.headersSent) json(res, status, { error: isHttp ? err.message : 'Internal error' });
   }
 });
+
+// Background jobs (auto-evaluate, monitor) must not take the whole server down.
+process.on('unhandledRejection', (e) => console.error('[server] unhandledRejection:', e));
+
+// Clean shutdown so launchd restarts don't orphan the foundation-model worker.
+const shutdown = () => {
+  try { stopWorker(); } catch { /* best effort */ }
+  server.close(() => process.exit(0));
+  setTimeout(() => process.exit(0), 3000).unref(); // keep-alive sockets must not block exit
+};
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);
 
 server.listen(PORT, HOST, () => {
   console.log(`Trading research dashboard: http://${HOST}:${PORT}`);
