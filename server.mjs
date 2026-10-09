@@ -44,8 +44,9 @@ import { runStrategyTests } from './paper-bot/strategies.mjs';
 import { optionOdds, evaluateOptionOdds } from './paper-bot/option-odds.mjs';
 import { testFii } from './paper-bot/fii.mjs';
 import { runAndSaveVolPremium, loadVolPremium } from './paper-bot/vol-premium.mjs';
-import { analyzeHoldings, addLot, removeLot, setRealized } from './paper-bot/holdings.mjs';
-import { trendHistory, saveTrendHistory, loadTrendHistory } from './paper-bot/trend-history.mjs';
+import { analyzeHoldings, addLot, removeLot, setRealized, importTradebook } from './paper-bot/holdings.mjs';
+import { trendHistory, saveTrendHistory, loadTrendHistory, crashBrake } from './paper-bot/trend-history.mjs';
+import { expectations } from './paper-bot/expectations.mjs';
 import { bigMove, evaluateBigMove, saveBigMoveEval, loadBigMoveEval } from './paper-bot/big-move.mjs';
 import { testPositioning, saveResult as savePositioning, loadResult as loadPositioning } from './paper-bot/options-positioning.mjs';
 import { llmLastModel } from './ling-client.mjs';
@@ -55,6 +56,7 @@ import { HttpError, badRequest, parseSymbols, parseBool, mapLimit } from './util
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT) || 3000;
+let expectCache = null; // /api/expectations (daily)
 // Bind to loopback only — this is a local tool holding a server-side API key,
 // not something to expose on the network.
 const HOST = '127.0.0.1';
@@ -502,6 +504,18 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && url.pathname === '/api/holdings/remove') {
       const b = await readJson(req);
       return json(res, 200, removeLot(b.id));
+    }
+    if (req.method === 'POST' && url.pathname === '/api/holdings/import') {
+      const b = await readJson(req);
+      return json(res, 200, importTradebook({ csv: b.csv, mode: b.mode === 'merge' ? 'merge' : 'replace' }));
+    }
+    if (req.method === 'GET' && url.pathname === '/api/expectations') {
+      // history changes slowly: cache for a day
+      if (!expectCache || Date.now() - expectCache.at > 86400000) expectCache = { at: Date.now(), data: await expectations({}) };
+      return json(res, 200, expectCache.data);
+    }
+    if (req.method === 'GET' && url.pathname === '/api/crash-brake') {
+      return json(res, 200, await crashBrake({}));
     }
     if (req.method === 'POST' && url.pathname === '/api/holdings/realized') {
       const b = await readJson(req);

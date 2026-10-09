@@ -57,8 +57,32 @@ function client(base) {
  * Alerts worth an investor's attention (factual; never "buy/sell").
  * @returns {{ level:'high'|'info', text:string }[]}
  */
-export function computeAlerts(r) {
+export function computeAlerts(r, prev = null) {
   const out = [];
+  // Crash brake: tell the user when NIFTY's position vs its 200-day average changes state.
+  const cb = r.crashBrake;
+  const pcb = prev?.crashBrake;
+  if (cb && !cb.error && pcb && !pcb.error && cb.state !== pcb.state && cb.state !== 'band') {
+    out.push({ level: 'high', text: `Crash brake: ${cb.reading}` });
+  }
+  // My portfolio (factual reminders about the user's own holdings)
+  const mp = r.myPortfolio;
+  if (mp && !mp.error) {
+    for (const f of mp.flags || []) out.push({ level: 'info', text: `Concentration: ${f}` });
+    for (const x of mp.soonLongTerm || []) {
+      const days = Math.round((Date.parse(x.longTermFrom) - Date.now()) / 86400000);
+      if (days >= 0 && days <= 30 && x.taxSavedByWaiting >= 500) out.push({ level: 'high', text: `Tax: ${x.symbol} ×${x.qty} becomes long-term on ${x.longTermFrom} — selling before then would cost about ₹${Math.round(x.taxSavedByWaiting).toLocaleString('en-IN')} more tax.` });
+    }
+    const ist = new Date(Date.now() + 19800_000);
+    const m = ist.getUTCMonth() + 1;
+    if ((m === 2 || m === 3) && mp.harvest?.netBenefit >= 500) {
+      out.push({ level: 'high', text: `Tax: ₹${Math.round(mp.harvest.remaining).toLocaleString('en-IN')} of this year's ₹1.25 lakh LTCG exemption is unused; booking long-term gains before 31 March would save about ₹${Math.round(mp.harvest.netBenefit).toLocaleString('en-IN')} after charges (see My portfolio).` });
+    }
+    const five = (mp.weeklyLossOdds || []).find((o) => o.lossPct === 5);
+    if (five && five.pastYear != null && five.prob >= 0.05 && five.prob >= 3 * five.pastYear) {
+      out.push({ level: 'high', text: `Risk: the chance of your portfolio losing more than 5% this week is ${(five.prob * 100).toFixed(0)}% — about ${(five.prob / Math.max(five.pastYear, 0.001)).toFixed(0)}× its usual level.` });
+    }
+  }
   for (const c of r.health?.checks || []) {
     if (c.level === 'fail') out.push({ level: 'high', text: `Health: ${c.name} failing — ${c.detail}` });
     else if (c.level === 'warn' && c.name === 'AI key' && /credits|balance|failed/.test(c.detail)) out.push({ level: 'high', text: `AI: ${c.detail}` });
@@ -196,6 +220,28 @@ export async function runMonitor({ base = BASE, trade = true, notify: doNotify =
   const { entries } = await api('/api/prediction-history?limit=500');
   const card = scorecard(entries);
 
+  // 2b. My portfolio (the user's real holdings) + the crash-brake reading
+  let myPortfolio = null;
+  try {
+    const h = await api('/api/holdings');
+    if (!h.empty) {
+      myPortfolio = {
+        value: h.totals?.value, gainPct: h.totals?.gainPct, flags: h.flags,
+        soonLongTerm: h.tax?.soonLongTerm || [], taxIfSoldAllToday: h.tax?.taxIfSoldAllToday,
+        harvest: h.harvest ? { remaining: h.harvest.remaining, netBenefit: h.harvest.netBenefit, sells: h.harvest.sells } : null,
+        weeklyLossOdds: h.risk?.weeklyLossOdds || null,
+      };
+    }
+  } catch (err) {
+    myPortfolio = { error: err.message };
+  }
+  let crashBrake = null;
+  try {
+    crashBrake = await api('/api/crash-brake');
+  } catch (err) {
+    crashBrake = { error: err.message };
+  }
+
   // 3. Paper portfolio
   let pf = null;
   if (trade) {
@@ -218,12 +264,19 @@ export async function runMonitor({ base = BASE, trade = true, notify: doNotify =
     portfolio: pf && !pf.error
       ? { equity: pf.equity, returnPct: pf.returnPct, cash: pf.cash, charges: pf.totalCharges, positions: pf.positions.map((p) => ({ symbol: p.symbol, qty: p.qty, entry: p.entryPrice, last: p.mark, pnl: p.unrealized })), actions: pf.actions.filter((a) => ['buy', 'close'].includes(a.action)) }
       : pf,
+    myPortfolio,
+    crashBrake,
     disclaimer: 'Research / paper simulation only. Not investment advice.',
   };
-  report.alerts = computeAlerts(report);
-  if (doNotify && report.alerts.length) {
-    const top = report.alerts.filter((a) => a.level === 'high').concat(report.alerts.filter((a) => a.level !== 'high'));
-    notify(`Trading research · ${report.alerts.length} alert${report.alerts.length > 1 ? 's' : ''}`, top.slice(0, 3).map((a) => a.text).join(' · '));
+  const prev = latestReport();
+  report.alerts = computeAlerts(report, prev);
+  // Notify only about alerts that are new since the previous run (3 runs a day
+  // would otherwise repeat the same message).
+  const seen = new Set((prev?.alerts || []).map((a) => a.text));
+  const fresh = report.alerts.filter((a) => !seen.has(a.text));
+  if (doNotify && fresh.length) {
+    const top = fresh.filter((a) => a.level === 'high').concat(fresh.filter((a) => a.level !== 'high'));
+    notify(`Trading research · ${fresh.length} new alert${fresh.length > 1 ? 's' : ''}`, top.slice(0, 3).map((a) => a.text).join(' · '));
   }
 
   mkdirSync(OUT, { recursive: true });

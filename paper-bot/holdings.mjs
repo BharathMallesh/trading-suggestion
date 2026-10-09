@@ -94,6 +94,166 @@ const roundTrip = (value) => {
   return c('sell') + c('buy') + (value * 2 * DEFAULT_COSTS.slippagePct) / 100;
 };
 
+// ---------------------------------------------------------- broker import ---
+
+/** Minimal CSV parser (quoted fields, commas and newlines inside quotes). */
+export function parseCsv(text) {
+  const rows = [];
+  let row = [];
+  let f = '';
+  let q = false;
+  const t = String(text).replace(/^﻿/, '');
+  for (let i = 0; i < t.length; i++) {
+    const c = t[i];
+    if (q) {
+      if (c === '"' && t[i + 1] === '"') {
+        f += '"';
+        i++;
+      } else if (c === '"') q = false;
+      else f += c;
+    } else if (c === '"') q = true;
+    else if (c === ',') {
+      row.push(f);
+      f = '';
+    } else if (c === '\n' || c === '\r') {
+      if (c === '\r' && t[i + 1] === '\n') i++;
+      row.push(f);
+      if (row.some((x) => x.trim() !== '')) rows.push(row);
+      row = [];
+      f = '';
+    } else f += c;
+  }
+  row.push(f);
+  if (row.some((x) => x.trim() !== '')) rows.push(row);
+  return rows;
+}
+
+const MONTHS = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
+/** Broker date formats → YYYY-MM-DD (null if unreadable). */
+export function parseTradeDate(v) {
+  const s = String(v || '').trim();
+  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+  m = s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/); // DD-MM-YYYY (Indian brokers)
+  if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+  m = s.match(/^(\d{1,2})[ -]([A-Za-z]{3})[a-z]*[ ,-]+(\d{4})/); // 08 Oct 2026 / 08-Oct-2026
+  if (m && MONTHS[m[2].toLowerCase()]) return `${m[3]}-${String(MONTHS[m[2].toLowerCase()]).padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+  return null;
+}
+
+const COLS = {
+  symbol: ['symbol', 'tradingsymbol', 'trading symbol', 'scrip', 'scrip code', 'stock symbol', 'instrument'],
+  date: ['trade_date', 'trade date', 'date', 'execution date and time', 'order_execution_time', 'order execution time', 'trade date time'],
+  side: ['trade_type', 'trade type', 'type', 'side', 'buy/sell', 'transaction type', 'action'],
+  qty: ['quantity', 'qty', 'traded qty', 'trade quantity'],
+  price: ['price', 'trade price', 'rate', 'avg price', 'average price', 'trade_price'],
+  value: ['value', 'trade value', 'amount', 'net amount'],
+  status: ['order status', 'status'],
+  segment: ['segment'],
+  exchange: ['exchange'],
+};
+
+/** Broker tradebook CSV (Zerodha, Groww or a simple symbol,date,side,qty,price file) → trades. */
+export function parseTradebook(text) {
+  const rows = parseCsv(text);
+  if (rows.length < 2) throw badRequest('The file has no trades.');
+  // header = first row that names a symbol and a quantity column
+  const hi = rows.findIndex((r) => r.some((c) => COLS.symbol.includes(c.trim().toLowerCase())) && r.some((c) => COLS.qty.includes(c.trim().toLowerCase())));
+  if (hi < 0) throw badRequest('Could not find the header row: need columns like symbol, trade date, type (buy/sell), quantity and price.');
+  const head = rows[hi].map((c) => c.trim().toLowerCase());
+  const col = (k) => head.findIndex((h) => COLS[k].includes(h));
+  const ix = Object.fromEntries(Object.keys(COLS).map((k) => [k, col(k)]));
+  for (const k of ['symbol', 'date', 'side', 'qty']) if (ix[k] < 0) throw badRequest(`Missing a "${k}" column.`);
+  if (ix.price < 0 && ix.value < 0) throw badRequest('Missing a price (or value) column.');
+  const trades = [];
+  const skipped = [];
+  for (const r of rows.slice(hi + 1)) {
+    const get = (k) => (ix[k] >= 0 ? String(r[ix[k]] ?? '').trim() : '');
+    if (ix.status >= 0 && get('status') && !/exec|complete|traded|success/i.test(get('status'))) continue;
+    if (ix.segment >= 0 && get('segment') && !/^(eq|equity|nse_eq|bse_eq|cash)/i.test(get('segment'))) {
+      skipped.push(`${get('symbol')} (${get('segment')})`);
+      continue;
+    }
+    const raw = get('symbol').toUpperCase().replace(/-(EQ|BE|BZ|SM)$/, '');
+    const qty = Math.round(Math.abs(Number(get('qty').replace(/,/g, ''))));
+    const date = parseTradeDate(get('date'));
+    const sideRaw = get('side').toLowerCase();
+    const side = sideRaw.startsWith('b') ? 'buy' : sideRaw.startsWith('s') ? 'sell' : null;
+    let price = Number(get('price').replace(/[,₹]/g, ''));
+    if (!(price > 0) && ix.value >= 0 && qty) price = Math.abs(Number(get('value').replace(/[,₹]/g, ''))) / qty;
+    if (!raw || !qty || !date || !side || !(price > 0)) {
+      skipped.push(raw || '(blank row)');
+      continue;
+    }
+    const sym = /BSE/i.test(get('exchange')) ? `${raw}.BO` : `${raw}.NS`;
+    if (!SYMBOL_RE.test(sym)) {
+      skipped.push(raw);
+      continue;
+    }
+    trades.push({ symbol: sym, date, side, qty, price });
+  }
+  if (!trades.length) throw badRequest('No executed equity trades found in the file.');
+  return { trades, skipped };
+}
+
+/**
+ * Replay trades in date order (buys before sells on the same day): buys become
+ * lots, sells use up the OLDEST lots first (FIFO, as demat sales are matched).
+ * Gains on sells in the current financial year become "booked this year".
+ * mode 'replace' (default) replaces the saved lots and booked gains.
+ */
+export function importTradebook({ csv, now = new Date(), mode = 'replace' }) {
+  if (typeof csv !== 'string' || csv.length < 10) throw badRequest('Upload the tradebook CSV text.');
+  if (csv.length > 900_000) throw badRequest('File too large (max ~900 KB).');
+  const { trades, skipped } = parseTradebook(csv);
+  trades.sort((a, b) => a.date.localeCompare(b.date) || (a.side === 'buy' ? -1 : 1));
+  const today = istDate(now);
+  const fy = fyOf(today);
+  const lots = new Map(); // symbol → [{qty, price, date}]
+  const realized = { fy, stcg: 0, ltcg: 0 };
+  const warnings = [];
+  for (const t of trades) {
+    if (t.side === 'buy') {
+      if (!lots.has(t.symbol)) lots.set(t.symbol, []);
+      lots.get(t.symbol).push({ qty: t.qty, price: t.price, date: t.date });
+      continue;
+    }
+    let left = t.qty;
+    const ls = lots.get(t.symbol) || [];
+    while (left > 0 && ls.length) {
+      const l = ls[0];
+      const q = Math.min(l.qty, left);
+      if (fyOf(t.date) === fy) {
+        const g = q * (t.price - l.price);
+        if (longTerm(l.date, t.date)) realized.ltcg += g;
+        else realized.stcg += g;
+      }
+      l.qty -= q;
+      left -= q;
+      if (l.qty <= 0) ls.shift();
+    }
+    if (left > 0) warnings.push(`${t.symbol}: sold ${left} more shares on ${t.date} than the file shows buying — they were bought before this file's period (export a longer date range for exact tax).`);
+  }
+  const out = [];
+  for (const [symbol, ls] of lots) for (const l of ls) if (l.qty > 0) out.push({ id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, symbol, qty: l.qty, price: +l.price.toFixed(4), date: l.date });
+  const st = mode === 'merge' ? loadHoldings() : { lots: [], realized: {} };
+  st.lots = mode === 'merge' ? [...st.lots, ...out] : out;
+  st.realized = realized;
+  st.importedAt = new Date().toISOString();
+  save(st);
+  return {
+    trades: trades.length,
+    buys: trades.filter((t) => t.side === 'buy').length,
+    sells: trades.filter((t) => t.side === 'sell').length,
+    lots: out.length,
+    holdings: [...new Set(out.map((l) => l.symbol))].length,
+    realized,
+    warnings: warnings.slice(0, 20),
+    skipped: skipped.slice(0, 20),
+    note: 'Prices are the traded prices; brokerage and charges are not added to the cost (a slightly conservative tax estimate).',
+  };
+}
+
 /** This FY's total tax if `sell` lots are sold today on top of gains already booked. */
 export function taxWith(lots, sell, prices, realized, today) {
   const L = new TaxLedger();

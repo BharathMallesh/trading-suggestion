@@ -60,6 +60,11 @@
     <header>
       <h1>Trading Research Dashboard</h1>
       <div class="sub">Research &amp; education only — no price predictions, no buy/sell/hold, no broker. Decision-support, never decision-making.</div>
+      <div class="tabs" id="viewTabs" style="margin-top:10px">
+        <button type="button" class="active" data-view="money">My money</button>
+        <button type="button" data-view="lab">Research lab</button>
+      </div>
+      <div class="note" id="viewNote">My money: your portfolio, tax, risk and what to expect — the parts that tested reliable. The Research lab holds the experiments (most found no edge).</div>
     </header>
 
     <main>
@@ -102,7 +107,31 @@
           </div>
           <button id="hdRealBtn" type="button" style="background:#0d1320;color:var(--ink);border:1px solid var(--line)">Save booked gains</button>
         </details>
+        <details style="margin-top:6px"><summary style="cursor:pointer;font-size:13px">Import from your broker (tradebook CSV — fills purchases and this year's booked gains)</summary>
+          <div class="note">Zerodha: Console → Reports → Tradebook (equity, all years) → CSV. Groww: Stocks → Order history → download. Or any CSV with symbol, date, buy/sell, quantity, price.
+            The file is read on this Mac only. Export the full history for exact tax (sells need their original buys).</div>
+          <div class="row">
+            <div><label>Tradebook CSV</label><input id="hdFile" type="file" accept=".csv,text/csv" /></div>
+            <div><label>Mode</label><select id="hdMode"><option value="replace">Replace my holdings</option><option value="merge">Add to my holdings</option></select></div>
+          </div>
+          <button id="hdImportBtn" type="button" style="background:#0d1320;color:var(--ink);border:1px solid var(--line)">Import</button>
+          <div id="hdImportOut" class="note"></div>
+        </details>
         <div id="hdOut" style="margin-top:12px"></div>
+      </section>
+
+      <!-- What to expect from long-term index investing -->
+      <section class="card span2" data-view="money">
+        <h2>What to expect <span style="font-size:12px;color:var(--warn);font-weight:500">SIP &amp; LUMP SUM · EVERY START MONTH SINCE 1997 · PAST, NOT A FORECAST</span></h2>
+        <p class="hint">
+          What actually happened to money left in the index for 3 / 5 / 10 / 15 years, for every possible start month — the worst, typical and best
+          outcomes, how often it lost money, and the deepest fall you'd have had to sit through. Index + ~1.2% dividends − 0.2% index-fund cost, before tax.
+        </p>
+        <div class="row">
+          <div><label>Monthly SIP (₹)</label><input id="exSip" type="number" step="500" value="10000" /></div>
+          <div><label>Index</label><select id="exIdx"><option value="0">Sensex (since 1997)</option><option value="1">NIFTY 50 (since 2007)</option></select></div>
+        </div>
+        <div id="exOut" style="margin-top:10px"></div>
       </section>
 
       <!-- Ask panel -->
@@ -1512,6 +1541,79 @@
 
 
 
+      // --- My money / Research lab views ---
+      const MONEY_CARDS = ['todayCard'];
+      const MONEY_TITLES = /^(Today|My portfolio|What to expect|Big-move odds|Call \/ Put payoff odds|Volatility check|Strategies|Settings)/;
+      function tagViews() {
+        for (const sec of document.querySelectorAll('main > section.card')) {
+          if (sec.dataset.view) continue;
+          const t = sec.querySelector('h2')?.textContent.trim() || '';
+          sec.dataset.view = MONEY_CARDS.includes(sec.id) || MONEY_TITLES.test(t) ? 'money' : 'lab';
+        }
+      }
+      function showView(v) {
+        tagViews();
+        for (const sec of document.querySelectorAll('main > section.card')) sec.style.display = sec.dataset.view === v ? '' : 'none';
+        [...$('viewTabs').children].forEach((b) => b.classList.toggle('active', b.dataset.view === v));
+        $('viewNote').textContent = v === 'money'
+          ? 'My money: your portfolio, tax, risk and what to expect — the parts that tested reliable. The Research lab holds the experiments (most found no edge).'
+          : 'Research lab: every experiment, including the ones that found no edge (direction calls, AI, option selling…). Interesting, but not a basis for decisions.';
+        try { localStorage.setItem('view', v); } catch { /* storage unavailable */ }
+      }
+      $('viewTabs').addEventListener('click', (e) => {
+        if (e.target.dataset?.view) showView(e.target.dataset.view);
+      });
+      let startView = 'money';
+      try { startView = localStorage.getItem('view') || 'money'; } catch { /* default */ }
+      showView(startView);
+
+      // --- What to expect ---
+      let exData = null;
+      function fvSip(monthly, months, irr) {
+        // value of `months` monthly payments growing at annual rate irr until the end
+        let v = 0;
+        for (let k = 0; k < months; k++) v += monthly * (1 + irr) ** ((months - k) / 12);
+        return v;
+      }
+      function exRender() {
+        if (!exData) return;
+        const x = exData.indices[Number($('exIdx').value) || 0];
+        const sipAmt = Math.max(0, Number($('exSip').value) || 0);
+        const p1 = (v) => (v >= 0 ? '+' : '') + v.toFixed(1) + '%';
+        const lakh = (v) => '₹' + (v >= 1e7 ? (v / 1e7).toFixed(2) + ' Cr' : (v / 1e5).toFixed(1) + ' L');
+        let html = `<div class="note">${esc(x.index)} · ${esc(x.from)} → ${esc(x.to)}</div>
+          <table><thead><tr><th>Held for</th><th>Lump sum: worst / typical / best (per year)</th><th>Lost money</th><th>Below FD (6.5%)</th><th>Fall you'd sit through (typical / worst)</th>
+          <th>SIP ${sipAmt ? `₹${sipAmt.toLocaleString('en-IN')}/mo` : ''}: worst / typical / best ending value</th></tr></thead><tbody>`;
+        for (const h of x.horizons) {
+          const l = h.lumpSum;
+          const s = h.sip;
+          const n = h.years * 12;
+          const inv = sipAmt * n;
+          const sipCell = sipAmt
+            ? `${lakh(fvSip(sipAmt, n, s.worstPct / 100))} / <b>${lakh(fvSip(sipAmt, n, s.medianPct / 100))}</b> / ${lakh(fvSip(sipAmt, n, s.bestPct / 100))} <span style="color:var(--muted)">(invested ${lakh(inv)})</span>`
+            : `${p1(s.worstPct)} / <b>${p1(s.medianPct)}</b> / ${p1(s.bestPct)}`;
+          html += `<tr><td>${h.years} years <span style="color:var(--muted);font-size:11px">(${h.windows} starts)</span></td>
+            <td>${p1(l.worstPct)} / <b>${p1(l.medianPct)}</b> / ${p1(l.bestPct)}</td>
+            <td style="color:${l.pctWindowsLosing > 0 ? 'var(--down)' : 'var(--up)'}">${l.pctWindowsLosing.toFixed(0)}%</td><td>${l.pctWindowsBelowFd.toFixed(0)}%</td>
+            <td>${l.medianDeepestFallPct.toFixed(0)}% / ${l.worstDeepestFallPct.toFixed(0)}%</td><td>${sipCell}</td></tr>`;
+        }
+        html += '</tbody></table>';
+        const ten = x.horizons.find((h) => h.years === 10);
+        if (ten) html += `<div style="font-size:13px;margin-top:6px">In this history, every 10-year hold made money (worst ${p1(ten.lumpSum.worstPct)} a year), but along the way the typical investor sat through a fall of about ${ten.lumpSum.medianDeepestFallPct.toFixed(0)}%. Short holds (3 years) lost money ${x.horizons[0].lumpSum.pctWindowsLosing.toFixed(0)}% of the time.</div>`;
+        $('exOut').innerHTML = html + `<div class="note">${esc(exData.note)} Not investment advice.</div>`;
+      }
+      (async () => {
+        $('exOut').textContent = 'Loading 25+ years of index history…';
+        try {
+          exData = await api('/api/expectations');
+          exRender();
+        } catch (e) {
+          $('exOut').innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
+        }
+      })();
+      $('exSip').addEventListener('input', exRender);
+      $('exIdx').addEventListener('change', exRender);
+
       // --- My portfolio (tax & risk) ---
       const rupee = (x) => (x == null || !Number.isFinite(x) ? '–' : (x < 0 ? '−₹' : '₹') + Math.abs(Math.round(x)).toLocaleString('en-IN'));
       const pct1 = (x) => (x == null || !Number.isFinite(x) ? '–' : (x >= 0 ? '+' : '') + x.toFixed(1) + '%');
@@ -1589,6 +1691,22 @@
         }
       });
       $('hdRefreshBtn').addEventListener('click', hdLoad);
+      $('hdImportBtn').addEventListener('click', async () => {
+        const f = $('hdFile').files?.[0];
+        if (!f) return ($('hdImportOut').textContent = 'Choose a CSV file first.');
+        if (f.size > 900000) return ($('hdImportOut').textContent = 'File too large (max ~900 KB) — export a shorter period or equity only.');
+        if ($('hdMode').value === 'replace' && !confirm('Replace all purchases in My portfolio with this file?')) return;
+        $('hdImportOut').textContent = 'Importing…';
+        try {
+          const r = await hdPost('/api/holdings/import', { csv: await f.text(), mode: $('hdMode').value });
+          $('hdImportOut').innerHTML = `Imported ${r.trades} trades (${r.buys} buys, ${r.sells} sells) → ${r.lots} lots in ${r.holdings} stocks. Booked this year: short-term ₹${Math.round(r.realized.stcg).toLocaleString('en-IN')}, long-term ₹${Math.round(r.realized.ltcg).toLocaleString('en-IN')}.` +
+            (r.warnings.length ? `<br><span style="color:var(--warn)">${r.warnings.map(esc).join('<br>')}</span>` : '') +
+            (r.skipped.length ? `<br>Skipped: ${r.skipped.map(esc).join(', ')}` : '') + `<br>${esc(r.note)}`;
+          hdLoad();
+        } catch (e) {
+          $('hdImportOut').innerHTML = `<span class="err">Error: ${esc(e.message)}</span>`;
+        }
+      });
       $('hdOut').addEventListener('click', async (e) => {
         const id = e.target?.dataset?.lot;
         if (!id || !confirm('Remove this purchase from My portfolio?')) return;
@@ -2187,6 +2305,10 @@
         } else {
           html += '<div class="note">No alerts.</div>';
         }
+        const cb = r.crashBrake;
+        if (cb && !cb.error) html += `<div style="font-size:14px;margin:6px 0"><b>Crash brake:</b> <span style="color:${cb.state === 'out' ? 'var(--down)' : cb.state === 'in' ? 'var(--up)' : 'var(--warn)'}">${cb.state === 'out' ? 'OFF the market' : cb.state === 'in' ? 'invested' : 'no change'}</span> — ${esc(cb.reading)}</div>`;
+        const mp = r.myPortfolio;
+        if (mp && !mp.error && mp.value) html += `<div style="font-size:14px;margin:6px 0"><b>My portfolio:</b> ₹${Math.round(mp.value).toLocaleString('en-IN')} (${mp.gainPct >= 0 ? '+' : ''}${mp.gainPct?.toFixed(1)}%) · tax if sold today ₹${Math.round(mp.taxIfSoldAllToday || 0).toLocaleString('en-IN')}</div>`;
         const v = r.volatility;
         if (v && !v.error) html += `<div style="font-size:14px;margin:6px 0"><b>NIFTY volatility:</b> India VIX ${v.impliedPct?.toFixed(1)}% vs forecast ${v.forecastPct?.toFixed(1)}% (ratio ${v.ratio?.toFixed(2)}). ${esc(v.reading)}</div>`;
         html += '<table><thead><tr><th style="text-align:left">Stock</th><th>Last</th><th title="Base rates — no validated direction skill">Up/Down/Side <span style="font-weight:400">(no validated skill)</span></th><th>Signal</th><th>News</th><th>±1 ATR</th><th title="Chance of a move bigger than ±2% next session, up or down (big-move odds)">Move &gt; ±2%</th><th style="text-align:left">Events</th></tr></thead><tbody>';

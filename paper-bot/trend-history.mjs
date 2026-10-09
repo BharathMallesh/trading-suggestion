@@ -90,6 +90,35 @@ export function analyseIndex(name, rows) {
   };
 }
 
+/**
+ * Today's crash-brake reading (same rule as Strategy A): NIFTY vs its 200-day
+ * average with a ±1% band. 'out' = below avg −1% (the filter would sit in
+ * cash at the next month-end check), 'in' = above avg +1%, else 'band'.
+ */
+export async function crashBrake({ loadCandles = candles } = {}) {
+  const rows = (await loadCandles('^NSEI', { range: '2y', interval: '1d' })).filter((r) => r.close > 0);
+  const closes = rows.map((r) => r.close);
+  const n = ASSUMPTIONS.smaDays;
+  if (closes.length < n) throw new Error('Not enough NIFTY history');
+  const sma = closes.slice(-n).reduce((a, b) => a + b, 0) / n;
+  const last = closes[closes.length - 1];
+  const pct = (last / sma - 1) * 100;
+  const band = ASSUMPTIONS.bandPct;
+  const state = pct < -band ? 'out' : pct > band ? 'in' : 'band';
+  return {
+    asOf: rows[rows.length - 1].date,
+    nifty: last,
+    sma200: sma,
+    pctFromAverage: pct,
+    state,
+    reading: state === 'out'
+      ? `NIFTY is ${Math.abs(pct).toFixed(1)}% below its 200-day average — the crash brake would be OFF the market at the next month-end check. Historically this helped most in long, deep falls; in short dips it costs a little.`
+      : state === 'in'
+        ? `NIFTY is ${pct.toFixed(1)}% above its 200-day average — the crash brake would stay invested.`
+        : `NIFTY is within ±${band}% of its 200-day average — no change signalled.`,
+  };
+}
+
 export async function trendHistory({ loadCandles = candles } = {}) {
   const p1 = Date.UTC(1990, 0, 1) / 1000;
   const out = [];
