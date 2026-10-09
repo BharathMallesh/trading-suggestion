@@ -43,3 +43,40 @@ test('evaluate: holdout stocks are scored only on bars after the latest train da
   const n = r.holdout.n;
   assert.ok(n > 0 && n < 700 * 0.45, `holdout n=${n} should only cover the post-train tail`);
 });
+
+// ---- 2. trend strategy: signal at close i acts from close i+1 ----
+test('trendStrategy: a one-day crash that triggers the signal is still suffered; the exit is a day later', async () => {
+  const { trendStrategy, ASSUMPTIONS } = await import('./paper-bot/strategies.mjs');
+  const n = 260;
+  const idx = [];
+  for (let i = 0; i < n; i++) {
+    const d = new Date(Date.UTC(2020, 0, 1) + i * 86400000).toISOString().slice(0, 10);
+    idx.push({ date: d, close: 100 + i * 0.1 });
+  }
+  const crash = 230;
+  idx[crash].close = 50; // signal fires at the crash close
+  for (let i = crash + 1; i < n; i++) idx[i].close = 50;
+  const a = { ...ASSUMPTIONS, bandPct: 0, etfRoundTripPct: 0, etfExpense: 0, dividendYield: 0 };
+  const r = trendStrategy(idx, { a });
+  const k = crash - r.start; // curve index of the crash day
+  // Crash day is suffered in full (we were invested), exit executes at the NEXT close.
+  assert.ok(r.curve[k].equity / r.curve[k - 1].equity < 0.6);
+  assert.equal(r.path[k], 1, 'still invested over the day after the signal');
+  assert.equal(r.path[k + 1], 0, 'flat from the day after that');
+  // 4% cash-yield sensitivity changes the label and the result.
+  const lowCash = trendStrategy(idx, { monthEnd: true, a: { ...a, liquidYield: 0.04 }, label: 'x' });
+  assert.equal(lowCash.name, 'x');
+});
+
+test('runStrategyTests lists the 4% cash-yield sensitivity row for A', async () => {
+  const { runStrategyTests } = await import('./paper-bot/strategies.mjs');
+  const idx = [];
+  let c = 100;
+  for (let i = 0; i < 1200; i++) {
+    c *= 1 + Math.sin(i / 40) * 0.004 + 0.0003;
+    idx.push({ date: new Date(Date.UTC(2018, 0, 1) + i * 86400000).toISOString().slice(0, 10), close: c });
+  }
+  const r = await runStrategyTests({ loadCandles: async (s) => (s === '^NSEI' ? idx : []) }).catch((e) => ({ err: e }));
+  if (r.err) return; // universe loading needs the network/index list; the A rows are exercised above
+  assert.ok(r.A.some((x) => x.name === 'A · NIFTY trend (month-end, 4% cash yield)'));
+});

@@ -81,9 +81,9 @@ export function stats(curve, { rf = ASSUMPTIONS.liquidYield } = {}) {
 }
 
 /** Stats for the whole period and each half (stability check). */
-function withHalves(curve) {
+function withHalves(curve, rf = ASSUMPTIONS.liquidYield) {
   const mid = Math.floor(curve.length / 2);
-  return { all: stats(curve), firstHalf: stats(curve.slice(0, mid + 1)), secondHalf: stats(curve.slice(mid)) };
+  return { all: stats(curve, { rf }), firstHalf: stats(curve.slice(0, mid + 1), { rf }), secondHalf: stats(curve.slice(mid), { rf }) };
 }
 
 const sma = (a, i, n) => {
@@ -97,7 +97,7 @@ const sma = (a, i, n) => {
  * Strategy A on an index series. `monthEnd`: only re-check the signal on the
  * last trading day of each month. Signal at close, switch at the next close.
  */
-export function trendStrategy(index, { monthEnd = false, a = ASSUMPTIONS } = {}) {
+export function trendStrategy(index, { monthEnd = false, a = ASSUMPTIONS, label = null } = {}) {
   const close = index.map((r) => r.close);
   const start = a.smaDays;
   let invested = close[start] > sma(close, start, a.smaDays);
@@ -110,21 +110,25 @@ export function trendStrategy(index, { monthEnd = false, a = ASSUMPTIONS } = {})
   const dailyLiquid = (1 + a.liquidYield) ** (1 / TD) - 1;
   const dailyDiv = a.dividendYield / TD;
   const path = [invested ? 1 : 0]; // exposure held over day i (index start + k)
+  let pending = null; // signal decided at the previous close, executed at this close
   for (let i = start + 1; i < index.length; i++) {
     const r = close[i] / close[i - 1] - 1;
     bh *= 1 + r + dailyDiv;
     equity *= invested ? 1 + r + dailyDiv - a.etfExpense / TD : 1 + dailyLiquid;
     if (invested) daysIn++;
-    // decide at today's close (applies from tomorrow)
+    // Signal at close i-1, switch (and pay the cost) at close i: the new
+    // exposure first earns day i+1's return — never the return that produced it.
+    if (pending !== null && pending !== invested) {
+      invested = pending;
+      switches++;
+      equity *= 1 - a.etfRoundTripPct / 200; // half a round trip per switch
+    }
+    pending = null;
+    // decide at today's close (executes at tomorrow's close)
     const isMonthEnd = i + 1 >= index.length || index[i + 1].date.slice(0, 7) !== index[i].date.slice(0, 7);
     if (!monthEnd || isMonthEnd) {
       const m = sma(close, i, a.smaDays);
-      const want = invested ? close[i] > m * (1 - a.bandPct / 100) : close[i] > m * (1 + a.bandPct / 100);
-      if (want !== invested) {
-        invested = want;
-        switches++;
-        equity *= 1 - a.etfRoundTripPct / 200; // half a round trip per switch
-      }
+      pending = invested ? close[i] > m * (1 - a.bandPct / 100) : close[i] > m * (1 + a.bandPct / 100);
     }
     curve.push({ date: index[i].date, equity });
     bench.push({ date: index[i].date, equity: bh });
@@ -132,11 +136,11 @@ export function trendStrategy(index, { monthEnd = false, a = ASSUMPTIONS } = {})
   }
   const years = (index.length - start - 1) / TD;
   return {
-    name: monthEnd ? 'A · NIFTY trend (month-end check)' : 'A · NIFTY trend (daily check)',
+    name: label || (monthEnd ? 'A · NIFTY trend (month-end check)' : 'A · NIFTY trend (daily check)'),
     path,
     start,
-    ...withHalves(curve),
-    benchmark: withHalves(bench),
+    ...withHalves(curve, a.liquidYield),
+    benchmark: withHalves(bench, a.liquidYield),
     switchesPerYear: switches / years,
     pctTimeInvested: (daysIn / (index.length - start - 1)) * 100,
     curve,
@@ -248,6 +252,7 @@ export function volTargetStrategy(index, { forecaster = 'har', withTrend = false
     return exp;
   };
   let exposure = sizeAt(start);
+  let pendingSize = null; // sized at a month-end close, executed at the NEXT close
   let equity = 1;
   let turnover = 0;
   let sumExp = 0;
@@ -257,16 +262,17 @@ export function volTargetStrategy(index, { forecaster = 'har', withTrend = false
     const r = close[i] / close[i - 1] - 1;
     equity *= 1 + exposure * (r + dailyDiv - a.etfExpense / TD) + (1 - exposure) * dailyLiquid;
     sumExp += exposure;
-    const isMonthEnd = i + 1 >= index.length || index[i + 1].date.slice(0, 7) !== index[i].date.slice(0, 7);
-    if (isMonthEnd) {
-      const next = sizeAt(i);
-      const delta = Math.abs(next - exposure);
+    if (pendingSize !== null) {
+      const delta = Math.abs(pendingSize - exposure);
       if (delta >= 0.05) {
         equity *= 1 - (delta * a.etfRoundTripPct) / 200;
         turnover += delta;
-        exposure = next;
+        exposure = pendingSize;
       }
+      pendingSize = null;
     }
+    const isMonthEnd = i + 1 >= index.length || index[i + 1].date.slice(0, 7) !== index[i].date.slice(0, 7);
+    if (isMonthEnd) pendingSize = sizeAt(i); // decided now, traded at tomorrow's close
     curve.push({ date: index[i].date, equity });
     path.push(exposure);
   }
@@ -445,7 +451,12 @@ export function momentumStrategy(series, index, { variant = 'B3', capital = 1e6,
 /** Run everything: A (10y NIFTY) and B0–B3 (10y NIFTY 200) vs benchmarks. */
 export async function runStrategyTests({ capital = 1e6, universe = 'nifty200', loadCandles = candles } = {}) {
   const index = await loadCandles('^NSEI', { range: '10y', interval: '1d' });
-  const A = [trendStrategy(index), trendStrategy(index, { monthEnd: true })];
+  const A = [
+    trendStrategy(index),
+    trendStrategy(index, { monthEnd: true }),
+    // Sensitivity: how much of A's edge depends on the 6% cash-yield assumption?
+    trendStrategy(index, { monthEnd: true, a: { ...ASSUMPTIONS, liquidYield: 0.04 }, label: 'A · NIFTY trend (month-end, 4% cash yield)' }),
+  ];
   const C = [
     volTargetStrategy(index, { forecaster: 'rv20' }),
     volTargetStrategy(index, { forecaster: 'ewma' }),
