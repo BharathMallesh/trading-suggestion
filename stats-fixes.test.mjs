@@ -181,20 +181,20 @@ test('portfolio refresh stamps equity history with the IST date', async () => {
 });
 
 // ---- 7. volCheck uses VIX / typical ratio when vixScaled is the replay winner ----
-test('volCheck: NIFTY forecast is VIX / typical ratio when vixScaled wins the head-to-head', async () => {
+test('volCheck: NIFTY bands keep the history forecast; VIX-scaled is reported (and opt-in)', async () => {
   const { volCheck } = await import('./paper-bot/volatility.mjs');
-  const rows = Array.from({ length: 260 }, (_, i) => ({ date: new Date(Date.UTC(2025, 0, 1) + i * 86400000).toISOString().slice(0, 10), close: 100 * Math.exp(i % 2 ? 0.01 : -0.01) }));
-  const load = async (s) => (s === '^INDIAVIX' ? [{ date: '2026-10-08', close: 20 }] : rows);
-  const model = { bestNifty: 'har', niftyTypicalRatio: 1.25, niftyHeadToHead: { har: { meanQlike: 0.3 }, ewma: { meanQlike: 0.35 }, vixScaled: { meanQlike: 0.2 }, indiaVix: { meanQlike: 0.4 } } };
-  const n = await volCheck({ symbol: 'NIFTY', days: 7, loadCandles: load, model });
-  assert.equal(n.model, 'vixScaled');
-  assert.ok(Math.abs(n.forecastPct - 16) < 1e-9);
-  assert.ok(Object.values(n.forecastsAnnualPct).some((v) => v > 0), 'history forecasts stay listed');
-  // history model wins -> unchanged behaviour
-  const m2 = { ...model, niftyHeadToHead: { ...model.niftyHeadToHead, vixScaled: { meanQlike: 0.9 } } };
-  const n2 = await volCheck({ symbol: 'NIFTY', days: 7, loadCandles: load, model: m2 });
-  assert.equal(n2.model, 'har');
-  // a user-typed IV is not VIX: no vixScaled
-  const n3 = await volCheck({ symbol: 'NIFTY', iv: 18, days: 7, loadCandles: load, model });
-  assert.equal(n3.model, 'har');
+  const rows = Array.from({ length: 800 }, (_, i) => ({ date: new Date(Date.UTC(2023, 0, 1) + i * 86400000).toISOString().slice(0, 10), close: 20000 * Math.exp(0.01 * Math.sin(i / 3)) }));
+  const load = async (s) => (s === '^INDIAVIX' ? [{ date: '2026-10-08', close: 15 }] : rows);
+  const model = { bestNifty: 'blend', niftyTypicalRatio: 1.25, niftyHeadToHead: { blend: { meanQlike: 0.5 }, vixScaled: { meanQlike: 0.3 } } };
+  const r = await volCheck({ symbol: '^NSEI', days: 7, loadCandles: load, model });
+  assert.equal(r.model, 'blend');
+  assert.ok(Math.abs(r.vixScaledPct - 12) < 1e-9, 'VIX-scaled shown for reference');
+  process.env.VOL_NIFTY_VIX = '1';
+  try {
+    const v = await volCheck({ symbol: '^NSEI', days: 7, loadCandles: load, model });
+    assert.equal(v.model, 'vixScaled');
+    assert.ok(Math.abs(v.forecastPct - 12) < 1e-9);
+  } finally {
+    delete process.env.VOL_NIFTY_VIX;
+  }
 });

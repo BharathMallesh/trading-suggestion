@@ -142,16 +142,25 @@ test('NSE index CSV industries', () => {
   assert.deepEqual(parseIndexIndustries('Symbol\nA\n'), {});
 });
 
-test('NIFTY uses VIX-scaled when any VIX-family model wins the head-to-head', async () => {
+test('NIFTY: any VIX-family winner yields a VIX-scaled reference; bands use it only when opted in', async () => {
   const rows = Array.from({ length: 400 }, (_, i) => ({ date: new Date(Date.UTC(2024, 0, 1) + i * 86400000).toISOString().slice(0, 10), close: 20000 * Math.exp(0.01 * Math.sin(i)) }));
   const load = async (s) => (s === '^INDIAVIX' ? [{ date: '2026-10-08', close: 15 }] : rows);
   const base = { bestNifty: 'blend', niftyTypicalRatio: 1.25 };
   for (const winner of ['indiaVix', 'vixScaled', 'blendVix']) {
     const h2h = { blend: { meanQlike: 0.5 }, indiaVix: { meanQlike: winner === 'indiaVix' ? 0.3 : 0.4 }, vixScaled: { meanQlike: winner === 'vixScaled' ? 0.3 : 0.4 }, blendVix: { meanQlike: winner === 'blendVix' ? 0.3 : 0.4 } };
     const r = await volCheck({ symbol: '^NSEI', days: 7, loadCandles: load, model: { ...base, niftyHeadToHead: h2h } });
-    assert.equal(r.model, 'vixScaled', winner);
-    assert.ok(Math.abs(r.forecastPct - 12) < 1e-9);
+    assert.equal(r.model, 'blend', winner);
+    assert.ok(Math.abs(r.vixScaledPct - 12) < 1e-9, winner);
   }
   const hist = await volCheck({ symbol: '^NSEI', days: 7, loadCandles: load, model: { ...base, niftyHeadToHead: { blend: { meanQlike: 0.2 }, vixScaled: { meanQlike: 0.4 } } } });
-  assert.equal(hist.model, 'blend');
+  assert.equal(hist.vixScaledPct, null, 'history model won: no VIX reference');
+});
+
+test('no calibration → base rates, never the raw formula', async () => {
+  const { honestFallback, DEFAULT_BASE_RATES } = await import('./paper-bot/groww-predict.mjs');
+  assert.deepEqual(honestFallback('1d', {}), DEFAULT_BASE_RATES);
+  const cal = { '1d': { climatology: { probUp: 0.3, probDown: 0.2, probSideways: 0.5 } } };
+  assert.deepEqual(honestFallback('1d', cal), { probUp: 0.3, probDown: 0.2, probSideways: 0.5 });
+  const s = DEFAULT_BASE_RATES.probUp + DEFAULT_BASE_RATES.probDown + DEFAULT_BASE_RATES.probSideways;
+  assert.ok(Math.abs(s - 1) < 1e-9);
 });

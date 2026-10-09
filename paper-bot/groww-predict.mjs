@@ -151,7 +151,7 @@ export async function contextProbs(key, rows, yahooSym, { range, interval }, cal
     const f = featuresAt(prepare(rows, { index, vix }), rows.length - 1);
     if (!f) return null;
     const ctxP = predictLogistic(model, toRow(f, model.features));
-    const dir = calibratedProbs(key, f.score, cal)?.probs ?? baseProbabilities(f.score);
+    const dir = calibratedProbs(key, f.score, cal)?.probs ?? honestFallback(key, cal);
     return {
       probs: model.mode === 'move' ? moveOnly(ctxP, dir) : ctxP,
       meta: {
@@ -231,6 +231,19 @@ export function techScore(ind) {
  * |score| grows, sideways shrinks (to 20%) and the winning side takes a
  * larger share of the directional mass (to ~72% / 8%).
  */
+/**
+ * What to show when no validated calibration is available. The audit replay
+ * (28 stocks, 31k next-session cases) found the raw formula badly miscalibrated
+ * ("65–72% UP" came true ~27% of the time), so never fall back to it: use the
+ * historical base rates for this horizon (from the calibration file, else the
+ * replay's overall rates).
+ */
+export const DEFAULT_BASE_RATES = { probUp: 0.27, probDown: 0.265, probSideways: 0.465 };
+export function honestFallback(key, cal) {
+  const c = key && cal?.[key]?.climatology;
+  return c && c.probUp != null ? { probUp: c.probUp, probDown: c.probDown, probSideways: c.probSideways } : { ...DEFAULT_BASE_RATES };
+}
+
 export function baseProbabilities(score) {
   const abs = Math.min(1, Math.abs(Number(score) || 0));
   const side = 0.5 - 0.3 * abs;
@@ -441,7 +454,7 @@ function scoreWindow(rows, label, minBars = 5, calKey = null, cal = {}, shortVar
   const full = rows.length >= 20;
   const score = full ? techScore(ind) : shortWindowScore(rows);
   const fitted = !calKey ? null : full ? calibratedProbs(calKey, score, cal) : shortVariant ? calibratedProbs(calKey, score, cal, shortVariant) : null;
-  const base = fitted ? fitted.probs : baseProbabilities(score);
+  const base = fitted ? fitted.probs : honestFallback(calKey, cal);
   return {
     label,
     bars: rows.length,
@@ -637,7 +650,7 @@ export async function growwProbability(symbol, opts = {}) {
   const primaryCal =
     (meta.range && (await contextProbs(intervalKey(intervalMinutes), meta.rows, meta.symbol, meta, cal))) ||
     calibratedProbs(intervalKey(intervalMinutes), score, cal);
-  let base = primaryCal ? primaryCal.probs : baseProbabilities(score);
+  let base = primaryCal ? primaryCal.probs : honestFallback(intervalKey(intervalMinutes), cal);
   let horizons = [];
   // ATR used for the expected-move bands; multi-horizon mode switches to the
   // DAILY ATR because its window is the next session (a 15-min ATR would

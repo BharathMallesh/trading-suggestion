@@ -324,6 +324,7 @@ export async function volCheck({ symbol, iv, days = 7, expiry, eventPending = fa
   // head-to-head confirms it beats every history model (forecastsAnnualPct keeps
   // the history forecasts for reference).
   let vixScaledUsed = false;
+  let vixScaledPct = null;
   // The history-model forecast stays the yardstick for "is VIX unusually rich?"
   // (VIX ÷ VIX-scaled would equal the usual ratio by construction).
   const historyForecastPct = forecastPct;
@@ -334,10 +335,18 @@ export async function volCheck({ symbol, iv, days = 7, expiry, eventPending = fa
     // but its internal order flips with window alignment (raw VIX also gains
     // from QLIKE's tolerance of over-forecasts). For odds and moves the
     // unbiased, scaled version is the right member.
+    // Shown for reference only. The probability audit (5-day bands, 185 weeks)
+    // found VIX-scaled bands too NARROW for NIFTY (64% of moves inside ±1σ vs
+    // 68% expected; 90–92% inside ±2σ vs 95%), while the history models were
+    // on target (67–71% / 96–98%). Bands and odds therefore keep the history
+    // forecast; set VOL_NIFTY_VIX=1 to use the VIX-scaled one instead.
     if (['vixScaled', 'indiaVix', 'blendVix'].includes(bestKey)) {
-      forecastPct = impliedPct / model.niftyTypicalRatio;
-      chosen = 'vixScaled';
-      vixScaledUsed = true;
+      vixScaledPct = impliedPct / model.niftyTypicalRatio;
+      if (process.env.VOL_NIFTY_VIX === '1') {
+        forecastPct = vixScaledPct;
+        chosen = 'vixScaled';
+        vixScaledUsed = true;
+      }
     }
   }
   // Results due: add one typical big-day move (90th-percentile |daily return|
@@ -379,6 +388,7 @@ export async function volCheck({ symbol, iv, days = 7, expiry, eventPending = fa
     pricingIvSource,
     optionChain: chain,
     ratio,
+    vixScaledPct,
     ratioBasis: vixScaledUsed ? `India VIX ÷ history-model forecast (${chosenHistory(model)})` : 'implied ÷ forecast',
     expectedMovePct: { implied: move(impliedPct), forecast: move(forecastPct) },
     model: chosen,
