@@ -37,7 +37,9 @@ case "${1:-}" in
     echo "$(date '+%F %T') refit"; node paper-bot/evaluate.mjs --interval 1d --save && node paper-bot/evaluate.mjs --interval 60m --save \
       && node paper-bot/evaluate.mjs --interval 15m --save && node paper-bot/evaluate.mjs --interval 5m --save
     # Weekly NIFTY option IV vs VIX from new NSE days (independent of the refits above).
-    node paper-bot/vol-premium.mjs --save ;;
+    node paper-bot/vol-premium.mjs --save
+    # Re-test the probability improvements (adopted only if they still pass out of sample).
+    node paper-bot/prob-improve.mjs ;;
   backup)
     echo "$(date '+%F %T') backup"; node paper-bot/backup.mjs ;;
   *)

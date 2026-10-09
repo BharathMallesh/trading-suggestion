@@ -164,3 +164,29 @@ test('no calibration → base rates, never the raw formula', async () => {
   const s = DEFAULT_BASE_RATES.probUp + DEFAULT_BASE_RATES.probDown + DEFAULT_BASE_RATES.probSideways;
   assert.ok(Math.abs(s - 1) < 1e-9);
 });
+
+test('prob-improve: clustered t, vol-driven sideways, and the adopted option volatility input', async () => {
+  const pi = await import('./paper-bot/prob-improve.mjs');
+  const rows = [];
+  for (let d = 0; d < 40; d++) for (let k = 0; k < 5; k++) rows.push({ date: `d${d}`, a: 0.1, b: 0.2 + 0.01 * ((d * 7 + k) % 3) });
+  const t = pi.clusteredT(rows, (x) => x.a, (x) => x.b);
+  assert.equal(t.n, 40, 'one difference per date');
+  assert.ok(t.t < -2);
+  let s = 7;
+  const z = Array.from({ length: 2000 }, () => ((s = (s * 16807) % 2147483647) / 2147483647 - 0.5) * 3.4);
+  const calm = pi.volSidewaysProbs({ z, sigma1: 0.005, thrPct: 1, upShare: 0.5, pastSide: 0.5 });
+  const wild = pi.volSidewaysProbs({ z, sigma1: 0.03, thrPct: 1, upShare: 0.5, pastSide: 0.5 });
+  assert.ok(calm.probSideways > wild.probSideways);
+  assert.ok(Math.abs(calm.probUp + calm.probDown + calm.probSideways - 1) < 1e-12);
+  // option odds read the adopted volatility input
+  const { writeFileSync } = await import('node:fs');
+  process.env.PROB_CAL_PATH = join(TMP, 'probcal.json');
+  writeFileSync(process.env.PROB_CAL_PATH, JSON.stringify({ optionSigma: 'har' }));
+  const { optionOdds } = await import('./paper-bot/option-odds.mjs');
+  const rowsP = Array.from({ length: 800 }, (_, i) => ({ date: new Date(Date.UTC(2023, 0, 1) + i * 86400000).toISOString().slice(0, 10), close: 100 * Math.exp(0.01 * Math.sin(i)) }));
+  const vol = async () => ({ symbol: 'X.NS', forecastPct: 20, forecastsAnnualPct: { har: 30 }, impliedPct: 25, model: 'blend', eventPending: false });
+  const o = await optionOdds({ symbol: 'X.NS', type: 'CE', strike: 102, premium: 1, days: 7, loadCandles: async () => rowsP, vol });
+  assert.equal(o.forecastVolPct, 30);
+  assert.match(o.volModel, /har/);
+  delete process.env.PROB_CAL_PATH;
+});

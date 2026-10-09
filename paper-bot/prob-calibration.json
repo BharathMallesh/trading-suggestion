@@ -1,0 +1,167 @@
+{
+  "fittedAt": "2026-10-09T07:24:44.618Z",
+  "rule": "Chosen on the first half of the fitting universe; adopted only if it beats the current output out of sample (second half) with a date-clustered paired t ≤ −2 and also improves on the unseen holdout stocks.",
+  "direction": null,
+  "bigMove5d": null,
+  "optionSigma": "har",
+  "evidence": {
+    "direction": {
+      "adopt": false,
+      "chosen": {
+        "scale": 0.95,
+        "shrink": 0.5
+      },
+      "outOfSample": {
+        "n": 14598,
+        "dates": 811,
+        "loss": 0.6439398758364235,
+        "baseline": 0.6446976922435822,
+        "skillPct": 0.11754600897071477,
+        "t": -1.3087100901057207
+      },
+      "holdout": {
+        "n": 8110,
+        "dates": 811,
+        "loss": 0.6407995599198812,
+        "baseline": 0.6427790951638475,
+        "skillPct": 0.30796509389615645,
+        "t": -3.0618927929527535
+      },
+      "sidewaysReliability": [
+        {
+          "range": "30–40%",
+          "n": 1002,
+          "stated": 0.3833830441883035,
+          "actual": 0.4181636726546906
+        },
+        {
+          "range": "40–50%",
+          "n": 11370,
+          "stated": 0.45127464573461806,
+          "actual": 0.45646437994722955
+        },
+        {
+          "range": "50–60%",
+          "n": 2138,
+          "stated": 0.5244125967036044,
+          "actual": 0.5014031805425632
+        },
+        {
+          "range": "60–70%",
+          "n": 88,
+          "stated": 0.6328393220745002,
+          "actual": 0.4659090909090909
+        }
+      ]
+    },
+    "bigMove5d": {
+      "adopt": false,
+      "chosen": {
+        "a": -0.1,
+        "b": 1
+      },
+      "outOfSample": {
+        "n": 17496,
+        "dates": 324,
+        "loss": 0.16176135814415893,
+        "baseline": 0.16229916415395124,
+        "skillPct": 0.331367085342571,
+        "t": -1.8047720039625872
+      },
+      "holdout": {
+        "n": 9720,
+        "dates": 324,
+        "loss": 0.17110316984143017,
+        "baseline": 0.17170434163722498,
+        "skillPct": 0.3501203231453198,
+        "t": -1.9109054319982959
+      },
+      "reliabilityBefore": [
+        {
+          "range": "0–10%",
+          "n": 3337,
+          "stated": 0.0623319607248279,
+          "actual": 0.053341324543002694
+        },
+        {
+          "range": "10–20%",
+          "n": 4068,
+          "stated": 0.14864768956823082,
+          "actual": 0.12168141592920353
+        },
+        {
+          "range": "20–30%",
+          "n": 2713,
+          "stated": 0.24538302651575797,
+          "actual": 0.21820862513822337
+        },
+        {
+          "range": "30–50%",
+          "n": 3903,
+          "stated": 0.4118056098828833,
+          "actual": 0.39174993594670765
+        },
+        {
+          "range": "50–100%",
+          "n": 3475,
+          "stated": 0.580306170233518,
+          "actual": 0.544748201438849
+        }
+      ],
+      "reliabilityAfter": [
+        {
+          "range": "0–10%",
+          "n": 3761,
+          "stated": 0.06117703231681919,
+          "actual": 0.057963307630949215
+        },
+        {
+          "range": "10–20%",
+          "n": 4230,
+          "stated": 0.14826492155658047,
+          "actual": 0.13569739952718676
+        },
+        {
+          "range": "20–30%",
+          "n": 2525,
+          "stated": 0.24545665908567166,
+          "actual": 0.22891089108910892
+        },
+        {
+          "range": "30–50%",
+          "n": 4064,
+          "stated": 0.4114345811799794,
+          "actual": 0.4165846456692913
+        },
+        {
+          "range": "50–100%",
+          "n": 2916,
+          "stated": 0.5693072847992274,
+          "actual": 0.5569272976680384
+        }
+      ]
+    },
+    "optionSigma": {
+      "adopt": true,
+      "chosen": {
+        "sigma": "har"
+      },
+      "outOfSample": {
+        "n": 25380,
+        "dates": 624,
+        "loss": 0.15560508754407318,
+        "baseline": 0.15634653950599892,
+        "skillPct": 0.47423624742093384,
+        "t": -2.5819908044111757
+      },
+      "holdout": {
+        "n": 13360,
+        "dates": 334,
+        "loss": 0.1527658298775343,
+        "baseline": 0.15349506852095973,
+        "skillPct": 0.4750892979508814,
+        "t": -2.6197777084805023
+      }
+    }
+  }
+}

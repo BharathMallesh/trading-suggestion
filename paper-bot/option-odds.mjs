@@ -22,7 +22,9 @@
 //   node paper-bot/option-odds.mjs ^NSEI PE 22000 120 7
 //   node paper-bot/option-odds.mjs --eval
 
-import { pathToFileURL } from 'node:url';
+import { pathToFileURL, fileURLToPath } from 'node:url';
+import { readFileSync, existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { candles } from '../market-data.mjs';
 import { normCdf, greeks } from '../blackscholes.mjs';
 import { FORECASTERS, loadVolModel, volCheck } from './volatility.mjs';
@@ -68,6 +70,15 @@ export function probAboveHistory(spot, level, s, h, r) {
  * Odds for one option now.
  * @param {{ symbol, type:'CE'|'PE', strike, premium?, iv?, days, loadCandles? }} p
  */
+const PROB_CAL = () => process.env.PROB_CAL_PATH || join(dirname(fileURLToPath(import.meta.url)), 'prob-calibration.json');
+function optionSigmaChoice() {
+  try {
+    return existsSync(PROB_CAL()) ? JSON.parse(readFileSync(PROB_CAL(), 'utf8')).optionSigma || null : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function optionOdds({ symbol, type = 'CE', strike, premium, iv, days = 7, eventPending = false, expiry, loadCandles = candles, vol = volCheck } = {}) {
   const t = String(type).toUpperCase();
   if (t !== 'CE' && t !== 'PE') throw badRequest('type must be CE or PE');
@@ -80,7 +91,12 @@ export async function optionOdds({ symbol, type = 'CE', strike, premium, iv, day
   const r = logReturns(rows.map((x) => x.close));
   const spot = rows[rows.length - 1].close;
   const h = Math.max(1, Math.round(d * (5 / 7)));
-  const fDaily = v.forecastPct / 100 / Math.sqrt(TD);
+  // Volatility input chosen by the out-of-sample test in prob-improve.mjs
+  // (14 years: HAR beat trailing 1-year vol, t −2.6, holdout too).
+  const sigmaChoice = optionSigmaChoice();
+  const harPct = v.forecastsAnnualPct?.har;
+  const usedPct = sigmaChoice === 'har' && harPct ? harPct + (v.eventAddOnPct || 0) : v.forecastPct;
+  const fDaily = usedPct / 100 / Math.sqrt(TD);
   // Price and judge with the IV that options of THIS expiry actually trade at
   // (weekly NIFTY ≈ a measured fraction of VIX), falling back to implied vol.
   const pIv = v.pricingIvPct ?? v.impliedPct;
@@ -101,7 +117,7 @@ export async function optionOdds({ symbol, type = 'CE', strike, premium, iv, day
     return a == null ? null : t === 'CE' ? a : 1 - a;
   };
   const pItm = (sDaily) => (t === 'CE' ? probAboveNormal(spot, K, sDaily, h) : 1 - probAboveNormal(spot, K, sDaily, h));
-  const fair = greeks({ spot, strike: K, tYears, iv: v.forecastPct / 100, type: t }).price;
+  const fair = greeks({ spot, strike: K, tYears, iv: usedPct / 100, type: t }).price;
   return {
     symbol: v.symbol,
     type: t,
@@ -113,10 +129,10 @@ export async function optionOdds({ symbol, type = 'CE', strike, premium, iv, day
     tradingDays: h,
     breakeven,
     breakevenMovePct: (breakeven / spot - 1) * 100,
-    forecastVolPct: v.forecastPct,
+    forecastVolPct: usedPct,
     impliedVolPct: pIv,
     vixPct: v.impliedSource === "India VIX" ? v.impliedPct : null,
-    volModel: v.model,
+    volModel: sigmaChoice === 'har' && harPct ? 'har (adopted by out-of-sample test)' : v.model,
     eventPending: v.eventPending,
     probProfit: {
       forecastNormal: pProfit(fDaily, 'normal'),
