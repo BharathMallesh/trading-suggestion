@@ -113,3 +113,22 @@ test('expectations maths: XIRR and rolling windows on a steady 12% market', () =
   assert.ok(Math.abs(o.sip.medianPct - 12) < 1e-4);
   assert.equal(ex.rollingOutcomes(monthly.slice(0, 30), 5), null, 'not enough history');
 });
+
+test('direction-long: Newey–West regression, out-of-sample R², NSE file parsing', async () => {
+  const dl = await import('./paper-bot/direction-long.mjs');
+  let s = 11;
+  const rnd = () => ((s = (s * 16807) % 2147483647) / 2147483647 - 0.5);
+  const x = Array.from({ length: 300 }, () => rnd());
+  const yReal = x.map((v) => 2 * v + 0.3 * rnd());
+  const fit = dl.olsNW(x, yReal, 3);
+  assert.ok(Math.abs(fit.b - 2) < 0.1 && fit.t > 10);
+  assert.ok(dl.r2OutOfSample(x, yReal, 1).r2os > 0.5, 'a real predictor beats the mean');
+  const yNoise = x.map(() => rnd());
+  assert.ok(dl.r2OutOfSample(x, yNoise, 1).r2os < 0.05, 'noise does not');
+  process.env.INDEX_VAL_DIR = join(TMP, 'iv');
+  const csv = 'Index Name,Index Date,Open Index Value,High Index Value,Low Index Value,Closing Index Value,Points Change,Change(%),Volume,Turnover (Rs. Cr.),P/E,P/B,Div Yield\nCNX Nifty,30-09-2014,1,1,1,7964.8,0,0,0,0,21.5,3.4,1.3\n';
+  const v = await dl.niftyValuation('2014-09-30', { fetchFn: async () => ({ ok: true, status: 200, text: async () => csv }) });
+  assert.deepEqual(v, { date: '2014-09-30', close: 7964.8, pe: 21.5, pb: 3.4, dy: 1.3 });
+  assert.equal(await dl.niftyValuation('2014-10-02', { fetchFn: async () => ({ ok: false, status: 404 }) }), null);
+  assert.equal(await dl.niftyValuation('2014-10-03', { fetchFn: async () => { throw new Error('offline'); } }), undefined);
+});
