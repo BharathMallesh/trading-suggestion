@@ -159,6 +159,7 @@ export async function healthChecks(opts = {}) {
   // 9. Backups of the evidence (daily; iCloud copy may be blocked for background jobs)
   const b = (opts.backupFn || backupStatus)();
   if (!b) out.push(check('backup', 'warn', 'no backup yet — runs daily at 18:30 (or: node paper-bot/backup.mjs)'));
+  else if (b.error) out.push(check('backup', 'fail', `last backup FAILED (${String(b.error.message).slice(0, 120)}) — fix and re-run: node paper-bot/backup.mjs`));
   else {
     const ageH = (now - new Date(b.at)) / 3600000;
     const mirror = b.mirror?.ok === false ? ` · iCloud copy failed (${b.mirror.detail.split(': ').pop()}) — local copy only` : b.mirror?.ok ? ' · + iCloud copy' : '';
