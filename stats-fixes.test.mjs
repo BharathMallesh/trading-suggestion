@@ -179,3 +179,22 @@ test('portfolio refresh stamps equity history with the IST date', async () => {
   const h = pf.loadState().equityHistory;
   assert.equal(h[h.length - 1].date, '2026-10-09');
 });
+
+// ---- 7. volCheck uses VIX / typical ratio when vixScaled is the replay winner ----
+test('volCheck: NIFTY forecast is VIX / typical ratio when vixScaled wins the head-to-head', async () => {
+  const { volCheck } = await import('./paper-bot/volatility.mjs');
+  const rows = Array.from({ length: 260 }, (_, i) => ({ date: new Date(Date.UTC(2025, 0, 1) + i * 86400000).toISOString().slice(0, 10), close: 100 * Math.exp(i % 2 ? 0.01 : -0.01) }));
+  const load = async (s) => (s === '^INDIAVIX' ? [{ date: '2026-10-08', close: 20 }] : rows);
+  const model = { bestNifty: 'har', niftyTypicalRatio: 1.25, niftyHeadToHead: { har: { meanQlike: 0.3 }, ewma: { meanQlike: 0.35 }, vixScaled: { meanQlike: 0.2 }, indiaVix: { meanQlike: 0.4 } } };
+  const n = await volCheck({ symbol: 'NIFTY', days: 7, loadCandles: load, model });
+  assert.equal(n.model, 'vixScaled');
+  assert.ok(Math.abs(n.forecastPct - 16) < 1e-9);
+  assert.ok(Object.values(n.forecastsAnnualPct).some((v) => v > 0), 'history forecasts stay listed');
+  // history model wins -> unchanged behaviour
+  const m2 = { ...model, niftyHeadToHead: { ...model.niftyHeadToHead, vixScaled: { meanQlike: 0.9 } } };
+  const n2 = await volCheck({ symbol: 'NIFTY', days: 7, loadCandles: load, model: m2 });
+  assert.equal(n2.model, 'har');
+  // a user-typed IV is not VIX: no vixScaled
+  const n3 = await volCheck({ symbol: 'NIFTY', iv: 18, days: 7, loadCandles: load, model });
+  assert.equal(n3.model, 'har');
+});
