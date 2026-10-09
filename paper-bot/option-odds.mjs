@@ -87,7 +87,9 @@ export async function optionOdds({ symbol, type = 'CE', strike, premium, iv, day
   const iDaily = pIv != null ? pIv / 100 / Math.sqrt(TD) : null;
   const tYears = h / TD;
   // premium: given, else priced from implied vol (if known)
-  let P = premium != null && premium !== '' ? Number(premium) : null;
+  const entered = premium != null && premium !== '';
+  let P = entered ? Number(premium) : null;
+  if (entered && !(P >= 0)) throw badRequest('premium must be 0 or more');
   if (P == null && pIv != null) P = greeks({ spot, strike: K, tYears, iv: pIv / 100, type: t }).price;
   if (!(P >= 0)) throw badRequest('Give the option premium, or an implied vol so it can be priced.');
   const breakeven = t === 'CE' ? K + P : K - P;
@@ -106,7 +108,7 @@ export async function optionOdds({ symbol, type = 'CE', strike, premium, iv, day
     spot,
     strike: K,
     premium: P,
-    premiumSource: premium != null && premium !== '' ? 'you entered' : `priced at implied vol ${pIv?.toFixed(1)}%${v.pricingIvSource && v.pricingIvSource !== v.impliedSource ? ` — ${v.pricingIvSource}` : ''}`,
+    premiumSource: entered ? 'you entered' : `priced at implied vol ${pIv?.toFixed(1)}%${v.pricingIvSource && v.pricingIvSource !== v.impliedSource ? ` — ${v.pricingIvSource}` : ''}`,
     days: d,
     tradingDays: h,
     breakeven,
@@ -123,9 +125,12 @@ export async function optionOdds({ symbol, type = 'CE', strike, premium, iv, day
     },
     probItm: { forecast: pItm(fDaily), implied: iDaily ? pItm(iDaily) : null },
     fairValueForecast: fair,
-    premiumVsFairPct: fair > 0 ? (P / fair - 1) * 100 : null,
+    // A premium synthesized from implied vol compared with fair value is circular.
+    premiumVsFairPct: entered && fair > 0 ? (P / fair - 1) * 100 : null,
     reading:
-      fair > 0
+      !entered
+        ? 'Premium was estimated from implied volatility, so comparing it with fair value says nothing — enter the real premium from your broker to compare.'
+        : fair > 0
         ? P > fair * 1.15
           ? `The premium is ${((P / fair - 1) * 100).toFixed(0)}% above its value under the forecast volatility — buyers pay for more movement than the forecast expects.`
           : P < fair * 0.87

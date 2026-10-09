@@ -49,7 +49,9 @@ test('optionOdds: breakeven, profit odds, fair value vs premium, validation', as
   const pe = await optionOdds({ symbol: 'X.NS', type: 'PE', strike: 98, days: 7, loadCandles: async () => rows, vol });
   assert.equal(pe.breakeven, 98 - pe.premium);
   assert.match(pe.premiumSource, /implied vol 30/);
-  assert.ok(pe.premiumVsFairPct > 0, 'priced at 30% IV vs 20% forecast → above fair');
+  assert.equal(pe.premiumVsFairPct, null, 'synthesized premium vs fair is circular');
+  assert.match(pe.reading, /estimated from implied volatility/);
+  assert.ok(o.premiumVsFairPct != null, 'user-entered premium is compared');
   await assert.rejects(() => optionOdds({ symbol: 'X.NS', type: 'XX', strike: 1, vol }), /CE or PE/);
   await assert.rejects(() => optionOdds({ symbol: 'X.NS', type: 'CE', strike: 0, vol }), /strike/);
 });

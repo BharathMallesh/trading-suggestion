@@ -782,11 +782,11 @@
             <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px">
               <div style="background:#0d1320;border:1px solid var(--line);border-radius:8px;padding:12px;text-align:center">
                 <div style="font-size:11px;color:var(--muted)">CALL (up)</div>
-                <div style="font-size:28px;font-weight:700;color:var(--up)">${callPct}%</div>
+                <div style="font-size:28px;font-weight:700;color:var(--muted)">${callPct}%</div>
               </div>
               <div style="background:#0d1320;border:1px solid var(--line);border-radius:8px;padding:12px;text-align:center">
                 <div style="font-size:11px;color:var(--muted)">PUT (down)</div>
-                <div style="font-size:28px;font-weight:700;color:var(--down)">${putPct}%</div>
+                <div style="font-size:28px;font-weight:700;color:var(--muted)">${putPct}%</div>
               </div>
               <div style="background:#0d1320;border:1px solid var(--line);border-radius:8px;padding:12px;text-align:center">
                 <div style="font-size:11px;color:var(--muted)">SIDEWAYS</div>
@@ -1217,11 +1217,11 @@
           html += `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin:12px 0">
             <div style="background:#0d1320;border:1px solid var(--line);border-radius:10px;padding:14px;text-align:center">
               <div style="font-size:12px;color:var(--muted)">CALL · probability price goes UP</div>
-              <div style="font-size:32px;font-weight:700;color:var(--up);margin-top:4px">${callPct}%</div>
+              <div style="font-size:32px;font-weight:700;color:var(--muted);margin-top:4px">${callPct}%</div>
             </div>
             <div style="background:#0d1320;border:1px solid var(--line);border-radius:10px;padding:14px;text-align:center">
               <div style="font-size:12px;color:var(--muted)">PUT · probability price goes DOWN</div>
-              <div style="font-size:32px;font-weight:700;color:var(--down);margin-top:4px">${putPct}%</div>
+              <div style="font-size:32px;font-weight:700;color:var(--muted);margin-top:4px">${putPct}%</div>
             </div>
             <div style="background:#0d1320;border:1px solid var(--line);border-radius:10px;padding:14px;text-align:center">
               <div style="font-size:12px;color:var(--muted)">SIDEWAYS · chop / no clear move</div>
@@ -1699,7 +1699,7 @@
               <div>Volatility</div><div>forecast ${o.forecastVolPct.toFixed(1)}% (${esc(o.volModel)})${o.impliedVolPct != null ? ` · implied ${o.impliedVolPct.toFixed(1)}%` : ''}${o.eventPending ? ' · <span style="color:var(--warn)">results due — widened</span>' : ''}</div>
               <div>Chance in the money</div><div>forecast ${pct(o.probItm.forecast)}${o.probItm.implied != null ? ` · implied ${pct(o.probItm.implied)}` : ''}</div>
               <div>Profit odds (normal model)</div><div>${pct(o.probProfit.forecastNormal)} · history-based ${pct(o.probProfit.forecastHistory)}</div>
-              <div>Fair value at forecast vol</div><div>${o.fairValueForecast.toFixed(2)} vs premium ${o.premium.toFixed(2)}${o.premiumVsFairPct != null ? ` (${o.premiumVsFairPct >= 0 ? '+' : ''}${o.premiumVsFairPct.toFixed(0)}%)` : ''}</div>
+              <div>Fair value at forecast vol</div><div>${o.fairValueForecast.toFixed(2)} vs premium ${o.premium.toFixed(2)} (${o.premiumVsFairPct != null ? (o.premiumVsFairPct >= 0 ? '+' : '') + o.premiumVsFairPct.toFixed(0) + '%' : '–'})</div>
             </div>
             <div style="margin-top:8px;font-size:14px">${esc(o.reading)}</div><div class="note">${esc(o.disclaimer)}</div>`;
         } catch (e) {
@@ -2035,14 +2035,14 @@
         }
         const v = r.volatility;
         if (v && !v.error) html += `<div style="font-size:14px;margin:6px 0"><b>NIFTY volatility:</b> India VIX ${v.impliedPct?.toFixed(1)}% vs forecast ${v.forecastPct?.toFixed(1)}% (ratio ${v.ratio?.toFixed(2)}). ${esc(v.reading)}</div>`;
-        html += '<table><thead><tr><th style="text-align:left">Stock</th><th>Last</th><th>Up/Down/Side</th><th>Signal</th><th>News</th><th>±1 ATR</th><th title="Chance of a move bigger than ±2% next session, up or down (big-move odds)">Move &gt; ±2%</th><th style="text-align:left">Events</th></tr></thead><tbody>';
+        html += '<table><thead><tr><th style="text-align:left">Stock</th><th>Last</th><th title="Base rates — no validated direction skill">Up/Down/Side <span style="font-weight:400">(no validated skill)</span></th><th>Signal</th><th>News</th><th>±1 ATR</th><th title="Chance of a move bigger than ±2% next session, up or down (big-move odds)">Move &gt; ±2%</th><th style="text-align:left">Events</th></tr></thead><tbody>';
         for (const w of r.watchlist || []) {
           if (w.error) {
             html += `<tr><td style="text-align:left">${esc(w.symbol)}</td><td colspan="7" class="err">${esc(w.error)}</td></tr>`;
             continue;
           }
           html += `<tr><td style="text-align:left">${esc(w.symbol)}</td><td>${Number(w.last).toFixed(1)}</td>
-            <td>${Math.round(w.up * 100)}/${Math.round(w.down * 100)}/${Math.round(w.side * 100)}</td><td>${esc(w.edge || '')}</td>
+            <td style="color:var(--muted)">${Math.round(w.up * 100)}/${Math.round(w.down * 100)}/${Math.round(w.side * 100)}</td><td>–</td>
             <td>${sentimentBadge({ sentiment: w.sentiment, events: w.events })}</td><td>${w.atrPct != null ? w.atrPct.toFixed(2) + '%' : '–'}</td>
             <td>${w.big2 != null ? Math.round(w.big2 * 100) + '%' : '–'}</td>
             <td style="text-align:left;font-size:12px">${esc((w.events || []).join(', '))}</td></tr>`;
@@ -2106,7 +2106,7 @@
         const col = e.level === 'none' ? 'var(--muted)' : e.level === 'weak' ? 'var(--warn)' : 'var(--accent)';
         const b = e.baseRates || {};
         return `<div style="margin:8px 0;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:13px">
-          Signal strength: <b style="color:${col}">${esc(String(e.level).toUpperCase())}</b> · ${esc(e.note)}
+          <b style="color:${col}">No validated direction skill</b> · ${esc(e.note)}
           <span style="color:var(--muted)">(base rates ${Math.round((b.probUp || 0) * 100)}/${Math.round((b.probDown || 0) * 100)}/${Math.round((b.probSideways || 0) * 100)})</span></div>`;
       }
 

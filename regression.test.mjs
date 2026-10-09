@@ -360,7 +360,8 @@ test('payoff rejects a put premium above the strike', () => {
 test('parseSymbols accepts arrays and comma/space strings', () => {
   assert.deepEqual(parseSymbols('TCS.NS, INFY.NS  SBIN.NS'), ['TCS.NS', 'INFY.NS', 'SBIN.NS']);
   assert.deepEqual(parseSymbols([' A ', '']), ['A']);
-  assert.deepEqual(parseSymbols(42), []);
+  assert.deepEqual(parseSymbols(null), []);
+  assert.throws(() => parseSymbols(42), /symbols must be/);
   assert.equal(parseBool('false'), false);
   assert.equal(parseBool(true), true);
 });

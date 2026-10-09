@@ -59,6 +59,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 export async function fetchChart(symbol, opts = {}) {
   const sym = String(symbol || '').trim();
   if (!sym) throw badRequest('A ticker symbol is required, e.g. "AAPL" or "HDFCBANK.NS".');
+  if (sym.length > 20 || !/^[A-Za-z0-9^&.\-=_]+$/.test(sym)) throw badRequest('Invalid ticker symbol: use at most 20 letters, digits or ^&.-=_ characters.');
 
   const range = opts.range || '1mo';
   const interval = opts.interval || '1d';

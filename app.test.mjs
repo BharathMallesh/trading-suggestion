@@ -67,7 +67,7 @@ test('settings: validate, save, apply to PAPER, and restore defaults', () => {
   const before = currentSettings();
   assert.throws(() => validate({ minConfidence: 2 }), /between/);
   assert.throws(() => validate({ hack: 1 }), /Unknown setting/);
-  const s = saveSettings({ maxOpenPositions: 5, 'costs.dpChargePerSell': 0, symbols: 'tcs.ns, infy.ns' });
+  const s = saveSettings({ maxOpenPositions: 5, 'costs.dpChargePerSell': 0, symbols: ['tcs.ns', 'infy.ns'] });
   assert.equal(PAPER.maxOpenPositions, 5);
   assert.equal(PAPER.costs.dpChargePerSell, 0);
   assert.deepEqual(s.symbols, ['TCS.NS', 'INFY.NS']);
@@ -106,7 +106,7 @@ test('prediction log keeps pre-Ling probabilities and measures whether Ling help
   writeFileSync(process.env.PREDICTION_LOG_PATH, JSON.stringify(log));
   const s = computeStats();
   assert.equal(s.llmValue.n, 1);
-  assert.equal(s.llmValue.verdict, 'helps'); // 0.4 up beats 0.25 up when it went up
+  assert.match(s.llmValue.verdict, /not enough evidence/); // far below 300 scored
   assert.equal(s.newsValue.n, 1);
   assert.equal(s.newsValue.directionHitRate, 1);
 });
@@ -149,7 +149,7 @@ test('Call/Put output says how far it is from base rates (signal strength)', asy
       indicators: { quote: [{ open: rows.map((r) => r.open), high: rows.map((r) => r.high), low: rows.map((r) => r.low), close: rows.map((r) => r.close), volume: rows.map((r) => r.volume) }] } }] } }) });
   try {
     const out = await growwProbability('X.NS', { mode: '15m', intervalMinutes: 15, preferYahoo: true });
-    assert.ok(['none', 'weak', 'moderate'].includes(out.edge.level));
+    assert.equal(out.edge.level, 'none');
     assert.ok(Number.isFinite(out.edge.maxDeviationPts));
     assert.ok(out.edge.note.length > 10);
   } finally {
@@ -189,7 +189,7 @@ test('news tilt auto-disables after 20 scored predictions where it hurt', async 
   assert.equal(newsTiltAllowed(), false);
   const s = computeStats();
   assert.equal(s.newsValue.tilt.autoDisabled, true);
-  assert.equal(s.newsValue.tilt.verdict, 'does not help');
+  assert.equal(s.newsValue.tilt.verdict, 'not enough evidence (n = 20 of 300)');
   writeFileSync(process.env.PREDICTION_LOG_PATH, JSON.stringify({ version: 1, entries: entries.slice(0, 19) }));
   assert.equal(newsTiltAllowed(), true, 'needs 20 before switching off');
 });

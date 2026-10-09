@@ -10,6 +10,9 @@ export class HttpError extends Error {
   }
 }
 
+/** A ticker: 1–20 chars of letters, digits and ^&.-= (case-insensitive; = for Yahoo FX like USDINR=X). */
+export const SYMBOL_RE = /^[A-Za-z0-9^&.=\-]{1,20}$/;
+
 /** Shorthand for a 400 input-validation error. */
 export const badRequest = (message) => new HttpError(400, message);
 
@@ -20,8 +23,15 @@ export const badRequest = (message) => new HttpError(400, message);
  * @returns {string[]}
  */
 export function parseSymbols(input) {
-  const list = Array.isArray(input) ? input : typeof input === 'string' ? input.split(/[,\s]+/) : [];
-  return list.map((s) => String(s).trim()).filter(Boolean);
+  if (input == null) return [];
+  if (!Array.isArray(input) && typeof input !== 'string') throw badRequest('symbols must be an array of tickers or a comma-separated string.');
+  const list = Array.isArray(input) ? input : input.split(/[,\s]+/);
+  if (list.some((s) => typeof s !== 'string')) throw badRequest('symbols must be strings.');
+  const out = list.map((s) => s.trim()).filter(Boolean);
+  for (const s of out) {
+    if (!SYMBOL_RE.test(s)) throw badRequest(`Invalid symbol "${s.slice(0, 24)}": use up to 20 letters, digits or ^&.- characters.`);
+  }
+  return out;
 }
 
 /** Parse a boolean-ish value: true, "true", 1, "1" → true; everything else → false. */

@@ -272,8 +272,8 @@ function printReport(report) {
   if (card.scored) {
     console.log(`  Hit-rate ${card.hitRatePct.toFixed(0)}% · Brier app ${f(card.brier.app)} vs coin-flip ${f(card.brier.uniform)} vs hindsight base rates ${f(card.brier.hindsightBaseRates)}${card.brier.beforeLing != null ? ` · before Ling ${f(card.brier.beforeLing)}` : ''}`);
   }
-  if (v.llmValue?.n) console.log(`  Ling adjustment ${v.llmValue.verdict} (n=${v.llmValue.n})`);
-  if (v.newsValue?.tilt?.n) console.log(`  News tilt ${v.newsValue.tilt.verdict} (n=${v.newsValue.tilt.n})${v.newsValue.tilt.autoDisabled ? ' — auto-disabled' : ''}`);
+  if (v.llmValue?.n) console.log(`  Ling adjustment: ${v.llmValue.verdict}${v.llmValue.verdict.startsWith('not enough') ? '' : ` (n=${v.llmValue.n})`}`);
+  if (v.newsValue?.tilt?.n) console.log(`  News tilt: ${v.newsValue.tilt.verdict}${v.newsValue.tilt.verdict.startsWith('not enough') ? '' : ` (n=${v.newsValue.tilt.n})`}${v.newsValue.tilt.autoDisabled ? ' — auto-disabled' : ''}`);
   if (report.portfolio?.equity != null) {
     const p = report.portfolio;
     console.log(`\nPaper portfolio: ₹${p.equity.toFixed(0)} (${p.returnPct >= 0 ? '+' : ''}${p.returnPct.toFixed(2)}%), ${p.positions.length} open, charges ₹${p.charges.toFixed(0)}${p.actions.length ? ' · today: ' + p.actions.map((a) => `${a.action} ${a.symbol}`).join(', ') : ' · no trades today'}`);
