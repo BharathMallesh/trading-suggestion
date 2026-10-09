@@ -64,6 +64,7 @@
         <button type="button" class="active" data-view="money">My money</button>
         <button type="button" data-view="lab">Research lab</button>
       </div>
+      <div id="labHint" class="note" style="margin-top:6px">More tools (Paper-Bot, Candle AI read, Ask, Kronos / Chronos, model tests…) are under <a href="#" id="labLink" style="color:var(--accent)">Research lab</a>.</div>
       <div class="note" id="viewNote">My money: your portfolio, tax, risk and what to expect — the parts that tested reliable. The Research lab holds the experiments (most found no edge).</div>
     </header>
 
@@ -1557,7 +1558,7 @@
 
       // --- My money / Research lab views ---
       const MONEY_CARDS = ['todayCard'];
-      const MONEY_TITLES = /^(Today|My portfolio|What to expect|Big-move odds|Call \/ Put payoff odds|Volatility check|Strategies|Settings)/;
+      const MONEY_TITLES = /^(Today|My portfolio|What to expect|Market data|Option calculator|Live candles|Big-move odds|Call \/ Put payoff odds|Volatility check|Strategies|Settings)/;
       function tagViews() {
         for (const sec of document.querySelectorAll('main > section.card')) {
           if (sec.dataset.view) continue;
@@ -1572,10 +1573,15 @@
         $('viewNote').textContent = v === 'money'
           ? 'My money: your portfolio, tax, risk and what to expect — the parts that tested reliable. The Research lab holds the experiments (most found no edge).'
           : 'Research lab: every experiment, including the ones that found no edge (direction calls, AI, option selling…). Interesting, but not a basis for decisions.';
+        $('labHint').style.display = v === 'money' ? '' : 'none';
         try { localStorage.setItem('view', v); } catch { /* storage unavailable */ }
       }
       $('viewTabs').addEventListener('click', (e) => {
         if (e.target.dataset?.view) showView(e.target.dataset.view);
+      });
+      $('labLink').addEventListener('click', (e) => {
+        e.preventDefault();
+        showView('lab');
       });
       let startView = 'money';
       try { startView = localStorage.getItem('view') || 'money'; } catch { /* default */ }
