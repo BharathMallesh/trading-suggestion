@@ -276,6 +276,30 @@ const KEYS = { UP: 'probUp', DOWN: 'probDown', SIDEWAYS: 'probSideways' };
 /** Minimum scored tilted predictions before the auto-off rule can trigger. */
 export const TILT_MIN_EVIDENCE = 20;
 
+/** Minimum scored predictions (and |t|) before saying an addition helps or hurts. */
+export const VERDICT_MIN_N = 300;
+export const VERDICT_MIN_T = 2;
+
+/**
+ * 'helps' / 'hurts' only with >= 300 scored predictions and a paired t-test
+ * |t| >= 2 on the per-prediction Brier difference (adjusted minus baseline;
+ * negative = better). Otherwise an honest "not enough evidence".
+ */
+export function pairedVerdict(diffs) {
+  const n = diffs.length;
+  const out = { n, t: null, verdict: `not enough evidence (n = ${n} of ${VERDICT_MIN_N})` };
+  if (n < 2) return out;
+  const mean = diffs.reduce((a, b) => a + b, 0) / n;
+  const sd = Math.sqrt(diffs.reduce((a, d) => a + (d - mean) ** 2, 0) / (n - 1));
+  out.t = sd > 0 ? mean / (sd / Math.sqrt(n)) : mean === 0 ? 0 : Math.sign(mean) * Infinity;
+  if (n >= VERDICT_MIN_N) {
+    if (out.t <= -VERDICT_MIN_T) out.verdict = 'helps';
+    else if (out.t >= VERDICT_MIN_T) out.verdict = 'hurts';
+    else out.verdict = `no significant difference (n = ${n}, |t| < ${VERDICT_MIN_T})`;
+  }
+  return out;
+}
+
 /** Brier with vs without the news tilt, on evaluated entries where a tilt was applied. */
 function tiltEvidence(evaluated) {
   const t = evaluated.filter((e) => e.preNews);
@@ -286,7 +310,7 @@ function tiltEvidence(evaluated) {
     n: t.length,
     brierWithTilt: withTilt,
     brierWithout: without,
-    verdict: withTilt < without ? 'helps' : 'does not help',
+    verdict: pairedVerdict(t.map((e) => brierOf(e, e.realizedLabel) - brierOf(e.preNews, e.realizedLabel))).verdict,
     autoDisabled: t.length >= TILT_MIN_EVIDENCE && withTilt >= without,
   };
 }
@@ -325,7 +349,7 @@ function valueOfAdditions(evaluated) {
         brierBase: adj.reduce((a, e) => a + brierOf(e.base, e.realizedLabel), 0) / adj.length,
       }
     : { n: 0 };
-  if (llm.n) llm.verdict = llm.brierAdjusted < llm.brierBase ? 'helps' : 'does not help';
+  if (llm.n) llm.verdict = pairedVerdict(adj.map((e) => brierOf(e, e.realizedLabel) - brierOf(e.base, e.realizedLabel))).verdict;
   // News: on entries that moved, how often did the sentiment sign match the direction?
   const moved = evaluated.filter((e) => e.newsSentiment != null && Math.abs(e.newsSentiment) >= 0.2 && e.realizedLabel !== 'SIDEWAYS');
   const news = {

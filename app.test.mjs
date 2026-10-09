@@ -189,7 +189,7 @@ test('news tilt auto-disables after 20 scored predictions where it hurt', async 
   assert.equal(newsTiltAllowed(), false);
   const s = computeStats();
   assert.equal(s.newsValue.tilt.autoDisabled, true);
-  assert.equal(s.newsValue.tilt.verdict, 'does not help');
+  assert.equal(s.newsValue.tilt.verdict, 'not enough evidence (n = 20 of 300)');
   writeFileSync(process.env.PREDICTION_LOG_PATH, JSON.stringify({ version: 1, entries: entries.slice(0, 19) }));
   assert.equal(newsTiltAllowed(), true, 'needs 20 before switching off');
 });
