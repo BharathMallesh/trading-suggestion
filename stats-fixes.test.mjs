@@ -11,6 +11,7 @@ process.env.CALIBRATION_PATH = join(TMP, 'calibration.json');
 process.env.STRATEGY_ACCOUNTS_PATH = join(TMP, 'accounts.json');
 process.env.INDEX_LIST_DIR = TMP;
 process.env.EVENTS_PATH = join(TMP, 'events.json');
+process.env.PORTFOLIO_PATH = join(TMP, 'portfolio.json');
 process.env.PREDICTION_LOG_PATH = join(TMP, 'prediction-history.json');
 after(() => rmSync(TMP, { recursive: true, force: true }));
 
@@ -167,4 +168,14 @@ test('evaluateBigMove: holdout samples are all dated at or after the split date'
   assert.ok(h1.holdout && h1.holdout.n > 0);
   // unfiltered holdout would be 3 thresholds x 399 bars = 1197 samples; from `mid` it is about half
   assert.ok(h1.holdout.n < 0.65 * 3 * 399, `holdout n=${h1.holdout.n} (mid ${mid})`);
+});
+
+// ---- 6. portfolio equity history uses IST dates ----
+test('portfolio refresh stamps equity history with the IST date', async () => {
+  const pf = await import('./paper-bot/portfolio.mjs');
+  pf.reset(100000);
+  // 20:00 UTC on 8 Oct is 01:30 IST on 9 Oct
+  await pf.refresh({ loadCandles: async () => [], now: new Date('2026-10-08T20:00:00Z') });
+  const h = pf.loadState().equityHistory;
+  assert.equal(h[h.length - 1].date, '2026-10-09');
 });
