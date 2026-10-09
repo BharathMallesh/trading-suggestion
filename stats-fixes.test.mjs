@@ -155,3 +155,16 @@ test('events: t-stat is mean over standard error', async () => {
   const sd = Math.sqrt(xs.reduce((a, x) => a + (x - mean) ** 2, 0) / 3);
   assert.ok(Math.abs(st.d1.tStatAbnormal - mean / (sd / 2)) < 1e-9);
 });
+
+// ---- 5. big-move: holdout scored only from the split date ----
+test('evaluateBigMove: holdout samples are all dated at or after the split date', async () => {
+  const { evaluateBigMove } = await import('./paper-bot/big-move.mjs');
+  const mk = (seed) => walk(800, seed).map((r) => ({ date: r.date, close: r.close }));
+  const data = { '^NSEI': mk(3), M1: mk(5), M2: mk(7), H1: mk(9) };
+  const r = await evaluateBigMove({ loadCandles: async (s) => data[s], symbols: ['M1', 'M2'], holdout: ['H1'] });
+  const h1 = r.horizons['1d'];
+  const mid = h1.chosenOn.replace('main universe before ', '');
+  assert.ok(h1.holdout && h1.holdout.n > 0);
+  // unfiltered holdout would be 3 thresholds x 399 bars = 1197 samples; from `mid` it is about half
+  assert.ok(h1.holdout.n < 0.65 * 3 * 399, `holdout n=${h1.holdout.n} (mid ${mid})`);
+});
