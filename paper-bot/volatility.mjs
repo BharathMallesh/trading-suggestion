@@ -283,7 +283,7 @@ export async function volCheck({ symbol, iv, days = 7, expiry, eventPending = fa
       return [k, v ? v * Math.sqrt(TRADING_DAYS) * 100 : null];
     }),
   );
-  const chosen = sym === '^NSEI' ? model.bestNifty || 'blend' : model.bestStock || 'har';
+  let chosen = sym === '^NSEI' ? model.bestNifty || 'blend' : model.bestStock || 'har';
   let impliedPct = iv != null && iv !== '' ? Number(iv) : null;
   let impliedSource = impliedPct != null ? 'you entered' : null;
   let chain = null;
@@ -305,6 +305,20 @@ export async function volCheck({ symbol, iv, days = 7, expiry, eventPending = fa
   }
   if (impliedPct != null && !(impliedPct > 0 && impliedPct < 300)) throw badRequest('IV must be a percentage between 0 and 300.');
   let forecastPct = forecasts[chosen] ?? forecasts.ewma ?? forecasts.rv20;
+  // The replay's NIFTY winner is 'vixScaled': India VIX divided by its usual
+  // premium over realised vol. Use it when VIX is the live input and the saved
+  // head-to-head confirms it beats every history model (forecastsAnnualPct keeps
+  // the history forecasts for reference).
+  let vixScaledUsed = false;
+  const h2h = model.niftyHeadToHead;
+  if (sym === '^NSEI' && impliedSource === 'India VIX' && impliedPct > 0 && model.niftyTypicalRatio > 0 && h2h?.vixScaled?.meanQlike != null) {
+    const bestKey = Object.keys(h2h).filter((k) => h2h[k]?.meanQlike != null).sort((a, b) => h2h[a].meanQlike - h2h[b].meanQlike)[0];
+    if (bestKey === 'vixScaled') {
+      forecastPct = impliedPct / model.niftyTypicalRatio;
+      chosen = 'vixScaled';
+      vixScaledUsed = true;
+    }
+  }
   // Results due: add one typical big-day move (90th-percentile |daily return|
   // over the past year) to the window's variance — event days are far more volatile.
   let eventAddOnPct = null;
@@ -349,7 +363,9 @@ export async function volCheck({ symbol, iv, days = 7, expiry, eventPending = fa
     eventAddOnPct,
     typicalRatio: typical,
     reading:
-      ratio == null
+      vixScaledUsed
+        ? `Forecast ${forecastPct.toFixed(1)}% is India VIX scaled down by its usual premium (×${model.niftyTypicalRatio.toFixed(2)}) — the replay's best NIFTY model — so it matches VIX by construction; compare it with the history models in forecastsAnnualPct instead.`
+        : ratio == null
         ? 'Enter the option\'s implied volatility (IV %) from your broker to compare.'
         : typical
           ? ratio > typical * 1.15

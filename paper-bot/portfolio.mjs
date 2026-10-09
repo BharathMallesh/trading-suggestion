@@ -55,7 +55,7 @@ const day = (d) => String(d).slice(0, 10);
 
 /**
  * Check stops/targets on bars after entry, mark to market, record equity.
- * @param {{ loadCandles?: Function }} [opts]  injectable for tests
+ * @param {{ loadCandles?: Function, now?: Date }} [opts]  injectable for tests
  */
 export async function refresh(opts = {}) {
   const load = opts.loadCandles || candles;
@@ -77,7 +77,9 @@ export async function refresh(opts = {}) {
     if (e.positions.has(pos.symbol) && bars.length) marks[pos.symbol] = bars[bars.length - 1].close;
   }
   const equity = e.equity(marks);
-  const today = new Date().toISOString().slice(0, 10);
+  // Equity-history dates are IST (as in strategy-accounts.mjs), not UTC.
+  const now = opts.now || new Date();
+  const today = new Date(now.getTime() + 19800_000).toISOString().slice(0, 10);
   const hist = st.equityHistory;
   if (hist.length && hist[hist.length - 1].date === today) hist[hist.length - 1].equity = equity;
   else hist.push({ date: today, equity });

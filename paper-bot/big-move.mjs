@@ -195,8 +195,10 @@ export async function evaluateBigMove({ loadCandles = candles, symbols = EVAL_UN
       }
     }
     const main = samples.filter((x) => x.group === 'main');
-    const hold = samples.filter((x) => x.group === 'holdout');
     const mid = [...main].map((x) => x.date).sort()[main.length >> 1];
+    // Holdout stocks are scored only from the split date on: unseen in time as
+    // well as in name (the calibration was chosen on main-universe data before `mid`).
+    const hold = samples.filter((x) => x.group === 'holdout' && x.date >= mid);
     const first = main.filter((x) => x.date < mid);
     const second = main.filter((x) => x.date >= mid);
     const brier = (rows, f) => rows.reduce((a, x) => a + (f(x) - x.y) ** 2, 0) / (rows.length || 1);
@@ -243,7 +245,7 @@ export async function evaluateBigMove({ loadCandles = candles, symbols = EVAL_UN
     at: new Date().toISOString(),
     series: all.length,
     horizons,
-    rule: 'Calibration (σ scale, optional blend with the past-year rate) chosen on the first half of the fitting universe only; "skill" only if it then beats the past-year rate with t ≤ −2 on the second half AND is better on the unseen holdout stocks.',
+    rule: 'Calibration (σ scale, optional blend with the past-year rate) chosen on the first half of the fitting universe only; "skill" only if it then beats the past-year rate with t ≤ −2 on the second half AND is better on the unseen holdout stocks (scored from the split date on).',
   };
 }
 

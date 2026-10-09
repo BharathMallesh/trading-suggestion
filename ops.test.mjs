@@ -55,7 +55,7 @@ test('events: returns at +1/+5/+20 days, abnormal vs NIFTY, and stats', async ()
   const days = Array.from({ length: 30 }, (_, i) => new Date(Date.UTC(2026, 9, 8 + i)).toISOString().slice(0, 10));
   const stock = days.map((d, i) => ({ date: d, close: 100 * (1 + 0.01 * i) })); // +1%/day
   const nifty = days.map((d, i) => ({ date: d, close: 20000 * (1 + 0.002 * i) }));
-  await ev.updateEventReturns({ load: async (s) => (s === '^NSEI' ? nifty : stock) });
+  await ev.updateEventReturns({ load: async (s) => (s === '^NSEI' ? nifty : stock), now: new Date('2027-01-01T00:00:00Z') });
   const e = ev.loadEvents().find((x) => x.symbol === 'X.NS');
   assert.ok(Math.abs(e.returns[5].ret - 0.05) < 1e-9);
   assert.ok(Math.abs(e.returns[5].abnormal - (0.05 - 0.01)) < 1e-9);

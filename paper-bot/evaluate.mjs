@@ -181,6 +181,10 @@ export async function evaluateModels(opts = {}) {
 
   const train = [];
   const test = [];
+  // Inner split of the train period (fit / validation) used ONLY to choose
+  // between context variants, so the test slice never influences the choice.
+  const innerFit = [];
+  const innerVal = [];
   const used = [];
   const skipped = [];
   for (const sym of symbols) {
@@ -193,9 +197,16 @@ export async function evaluateModels(opts = {}) {
         continue;
       }
       // Chronological split per symbol: no future information leaks into the fit.
+      // Embargo: a sample's label looks `horizon` bars ahead, so drop the last
+      // `horizon` train samples — their labels would overlap the test period.
       const cut = Math.floor(samples.length * TRAIN_FRACTION);
-      train.push(...samples.slice(0, cut));
+      const trSyms = samples.slice(0, Math.max(0, cut - cfg.horizon));
+      train.push(...trSyms);
       test.push(...samples.slice(cut));
+      // Inner validation = last 20% of this symbol's train period (same embargo).
+      const innerCut = Math.floor(trSyms.length * 0.8);
+      innerFit.push(...trSyms.slice(0, Math.max(0, innerCut - cfg.horizon)));
+      innerVal.push(...trSyms.slice(innerCut));
       used.push(sym);
     } catch (err) {
       skipped.push(`${sym}: ${err.message}`);
@@ -287,20 +298,32 @@ export async function evaluateModels(opts = {}) {
   let stability = null;
   let holdout = null;
   if (ctx) {
-    const best = metrics.contextMove.brier <= metrics.context.brier ? 'contextMove' : 'context';
+    // Choose the variant on the inner validation slice (models refit on the
+    // inner-fit part only), not on the held-out test slice.
+    let best = 'context';
+    if (innerFit.length >= 50 && innerVal.length >= 20) {
+      const mIn = fitLogistic(innerFit.map((x) => toRow(x.f, ALL_FEATURES)), innerFit.map((x) => x.label));
+      const calIn = fitBuckets(innerFit);
+      const vb = (fn) => innerVal.reduce((a, x) => a + brier(fn(x), x.label), 0) / innerVal.length;
+      const bCtx = vb((x) => predictLogistic(mIn, toRow(x.f, ALL_FEATURES)));
+      const bMove = vb((x) => moveOnly(predictLogistic(mIn, toRow(x.f, ALL_FEATURES)), lookup(calIn, x.score)));
+      if (bMove <= bCtx) best = 'contextMove';
+    }
     const sorted = [...test].sort((a, b) => (a.date < b.date ? -1 : 1));
     const halves = [sorted.slice(0, sorted.length >> 1), sorted.slice(sorted.length >> 1)];
     const gain = (part) => part.reduce((a, x) => a + brier(predictors.calibrated(x), x.label) - brier(predictors[best](x), x.label), 0) / part.length;
     stability = { model: best, gainFirstHalf: gain(halves[0]), gainSecondHalf: gain(halves[1]) };
     const stable = stability.gainFirstHalf > 0 && stability.gainSecondHalf > 0;
     let replicated = true;
+    const lastTrainDate = train.reduce((a, x) => (x.date > a ? x.date : a), train[0].date);
     if (opts.holdout !== false) {
       // Replication on stocks the model never saw (fitted parts unchanged).
       const hs = [];
       for (const sym of opts.holdoutSymbols || HOLDOUT_UNIVERSE) {
         try {
           const rows = await load(sym, { range: cfg.range, interval: cfg.interval });
-          hs.push(...buildSamples(rows, cfg.horizon, prepare(rows, ctx)).filter((x) => x.f));
+          // Only bars AFTER the latest train date: out of sample in time too.
+          hs.push(...buildSamples(rows, cfg.horizon, prepare(rows, ctx)).filter((x) => x.f && x.date > lastTrainDate));
         } catch {
           /* skip */
         }
@@ -323,7 +346,15 @@ export async function evaluateModels(opts = {}) {
   // Final table for live use: refit on ALL samples once validated.
   const all = [...train, ...test];
   const finalFit = fitBuckets(all);
-  const useCalibrated = metrics.calibrated.brier < metrics.current.brier;
+  // Same bar as the context gate: beat the current formula by >= 0.2 skill
+  // points AND in both halves of the test period.
+  const sortedT = [...test].sort((a, b) => (a.date < b.date ? -1 : 1));
+  const halvesT = [sortedT.slice(0, sortedT.length >> 1), sortedT.slice(sortedT.length >> 1)];
+  const calGain = (part) => part.reduce((a, x) => a + brier(predictors.current(x), x.label) - brier(predictors.calibrated(x), x.label), 0) / (part.length || 1);
+  const useCalibrated =
+    metrics.calibrated.skillPct - metrics.current.skillPct >= 0.2 &&
+    calGain(halvesT[0]) > 0 &&
+    calGain(halvesT[1]) > 0;
 
   // Variants: the short price-action windows of the live multi-horizon mix
   // (12 and 3 bars), fitted the same way. Only meaningful on 5m bars.
