@@ -111,7 +111,7 @@ export async function backfillGroww({ symbols, days = 60, intervals = STORED_INT
           for (const r of rows) got.push({ date: r.time, ts: growwTs(r.time), open: r.open, high: r.high, low: r.low, close: r.close, volume: r.volume });
         } catch (err) {
           errors++;
-          if (/GROWW_ACCESS_TOKEN|401|403/.test(err.message)) throw err; // no point continuing
+          if (/GROWW_ACCESS_TOKEN|Groww is not configured|token request failed|401|403/.test(err.message)) throw err; // no point continuing
         }
       }
       const merged = mergeBars(got, before); // keep Yahoo bars where both exist

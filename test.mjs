@@ -323,11 +323,13 @@ test('computeStats() throws on empty input', () => {
 });
 
 // --- groww-data (read-only client; parsing + auth, mocked network) ---------
-test('historicalCandles() requires GROWW_ACCESS_TOKEN', async () => {
+test('historicalCandles() requires Groww credentials', async () => {
   delete process.env.GROWW_ACCESS_TOKEN;
+  delete process.env.GROWW_API_KEY;
+  delete process.env.GROWW_API_SECRET;
   await assert.rejects(
     () => historicalCandles({ symbol: 'HDFCBANK', startTime: 1, endTime: 2 }),
-    /Missing GROWW_ACCESS_TOKEN/,
+    /Groww is not configured/,
   );
 });
 

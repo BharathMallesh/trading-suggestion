@@ -2,7 +2,7 @@
 // Yahoo (default) or Groww candles. Experimental / paper research only.
 
 import { chat } from '../ling-client.mjs';
-import { historicalCandles } from '../groww-data.mjs';
+import { historicalCandles, growwUsable } from '../groww-data.mjs';
 import { candles as yahooCandles } from '../market-data.mjs';
 import { computeIndicators } from './indicators.mjs';
 import { logPrediction, newsTiltAllowed } from './prediction-log.mjs';
@@ -614,7 +614,7 @@ export async function growwProbability(symbol, opts = {}) {
   let usedFallback = false;
 
   // Primary display series (user-selected interval)
-  if (opts.preferYahoo || !process.env.GROWW_ACCESS_TOKEN) {
+  if (opts.preferYahoo || !growwUsable()) {
     meta = await fetchYahooRecent(symbol, { intervalMinutes });
     usedFallback = meta.source.includes('yahoo');
   } else {

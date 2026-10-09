@@ -12,6 +12,7 @@ import { loadCalibration } from './calibration.mjs';
 import { computeStats } from './prediction-log.mjs';
 import { llmCredits, llmStatus, llmLastModel } from '../ling-client.mjs';
 import { backupStatus } from './backup.mjs';
+import { growwStatus } from '../groww-data.mjs';
 import { OPENROUTER } from '../config.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -167,6 +168,10 @@ export async function healthChecks(opts = {}) {
       ? check('backup', 'warn', `last backup ${(ageH / 24).toFixed(1)} days ago — check the backup job${mirror}`)
       : check('backup', b.mirror?.ok === false ? 'warn' : 'ok', `${(b.bytes / 1e6).toFixed(1)} MB, ${b.files} files, ${ageH.toFixed(0)} h ago${mirror}`));
   }
+
+  // 11. Groww (optional broker data): configured / refusing / off
+  const gs = (opts.growwFn || growwStatus)();
+  if (gs.state !== 'off') out.push(check('Groww data', gs.state === 'blocked' ? 'warn' : 'ok', gs.state === 'blocked' ? gs.detail : `credentials set (${gs.detail})`));
 
   // 10. State files that failed to parse were moved aside (*.corrupt-*): the app
   // restarted that file fresh, so the evidence needs restoring from a backup.

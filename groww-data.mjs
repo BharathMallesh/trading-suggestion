@@ -5,10 +5,12 @@
 // - This file fetches HISTORICAL CANDLES ONLY. It deliberately contains NO
 //   endpoints for orders, positions, holdings, margins, or fund movement. It
 //   reads a market through Groww's data API; it never trades on the account.
-// - Your Groww access token is read from the environment (GROWW_ACCESS_TOKEN).
-//   It is never hard-coded, never logged, and never leaves this process. Run
-//   this yourself with your own token — the assistant does not authenticate to
-//   your broker for you.
+// - Credentials come from the environment, filled from the macOS Keychain by
+//   scripts/run.sh — never hard-coded, never logged, never written to disk:
+//     GROWW_ACCESS_TOKEN                 a ready daily token, or
+//     GROWW_API_KEY + GROWW_API_SECRET   exchanged for a daily token on demand
+//       (POST /v1/token/api/access, checksum = SHA-256(secret + epoch seconds)),
+//       kept in memory only and refreshed when it expires (06:00 IST daily).
 //
 // Endpoint/response shapes follow Groww's published API and may need a small
 // tweak for your account/version. Base URL and API version are overridable via
@@ -17,22 +19,85 @@
 //   GROWW_API_VERSION   (default 1.0)
 
 import { pathToFileURL } from 'node:url';
+import { createHash } from 'node:crypto';
 import { HttpError, badRequest } from './util.mjs';
 
 const BASE = process.env.GROWW_BASE_URL || 'https://api.groww.in';
 const API_VERSION = process.env.GROWW_API_VERSION || '1.0';
 const TOKEN_ENV = 'GROWW_ACCESS_TOKEN';
 
-function authHeaders() {
-  const token = process.env[TOKEN_ENV];
-  if (!token) {
-    throw new HttpError(
-      503,
-      `Missing ${TOKEN_ENV}. Set your Groww access token first, e.g.:\n` +
-        `  export ${TOKEN_ENV}="<your token>"\n` +
-        `(Run this yourself; never paste the token into a chat.)`,
-    );
+let cached = null; // { token, expiresAt } — memory only
+
+/** Next 06:00 IST after `now` (Groww access tokens expire daily then). */
+function next6amIst(now = Date.now()) {
+  const ist = new Date(now + 19800_000);
+  let t = Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate(), 6, 0, 0) - 19800_000;
+  if (t <= now) t += 86400000;
+  return t;
+}
+
+/** True when Groww credentials of either kind are configured. */
+export function growwConfigured() {
+  return Boolean(process.env[TOKEN_ENV] || (process.env.GROWW_API_KEY && process.env.GROWW_API_SECRET));
+}
+
+// Breaker: after Groww refuses data access (403), stop calling it for 6 hours
+// (callers fall back to Yahoo); the health check reports the reason.
+let blocked = null; // { until, reason }
+export function growwStatus(now = Date.now()) {
+  if (!growwConfigured()) return { state: 'off', detail: 'not configured' };
+  if (blocked && blocked.until > now) return { state: 'blocked', detail: blocked.reason, until: new Date(blocked.until).toISOString() };
+  return { state: 'ok', detail: cached ? 'token active' : 'configured' };
+}
+/** Configured and not currently refusing us. */
+export function growwUsable(now = Date.now()) {
+  return growwStatus(now).state === 'ok';
+}
+function noteRefusal(status, body) {
+  if (status === 401 || status === 403) {
+    blocked = {
+      until: Date.now() + 6 * 3600000,
+      reason: `Groww refused data access (HTTP ${status}${/required roles|forbidden/i.test(body) ? ': no data permission' : ''}). Groww requires an active Trading API subscription, and keys using API key + secret need daily approval on the Groww Cloud API Keys page. Using Yahoo meanwhile.`,
+    };
+    if (status === 401) cached = null;
   }
+}
+
+/** Exchange the API key + secret for a daily access token (cached in memory). */
+export async function accessToken({ fetchFn = fetch, now = Date.now() } = {}) {
+  if (process.env[TOKEN_ENV]) return process.env[TOKEN_ENV];
+  const key = process.env.GROWW_API_KEY;
+  const secret = process.env.GROWW_API_SECRET;
+  if (!key || !secret) {
+    throw new HttpError(503, 'Groww is not configured. Store your API key and secret in the Keychain (services trading-research-groww-key / trading-research-groww-secret) and restart the server.');
+  }
+  if (cached && cached.expiresAt - 60000 > now) return cached.token;
+  const timestamp = String(Math.floor(now / 1000));
+  const checksum = createHash('sha256').update(secret + timestamp).digest('hex');
+  const res = await fetchFn(`${BASE}/v1/token/api/access`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ key_type: 'approval', checksum, timestamp }),
+    signal: AbortSignal.timeout(15000),
+  });
+  const body = await res.json().catch(() => ({}));
+  const token = body?.token || body?.payload?.token || body?.access_token;
+  if (!res.ok || !token) {
+    const msg = body?.error?.message || body?.message || `HTTP ${res.status}`;
+    throw new HttpError(503, `Groww token request failed (${msg}). If Groww asks for daily approval, approve the API key on the Groww Cloud API Keys page, then retry.`);
+  }
+  const exp = Date.parse(body?.expiry || body?.payload?.expiry || '') || next6amIst(now);
+  cached = { token, expiresAt: exp };
+  return token;
+}
+
+/** Drop the cached token (e.g. after a 401). */
+export function resetAccessToken() {
+  cached = null;
+}
+
+async function authHeaders() {
+  const token = await accessToken();
   return {
     Authorization: `Bearer ${token}`,
     Accept: 'application/json',
@@ -75,9 +140,10 @@ export async function historicalCandles(p = {}) {
   });
   const url = `${BASE}/v1/historical/candle/range?${qs.toString()}`;
 
-  const res = await fetch(url, { headers: authHeaders(), signal });
+  const res = await fetch(url, { headers: await authHeaders(), signal });
   if (!res.ok) {
     const body = await res.text().catch(() => '');
+    noteRefusal(res.status, body);
     throw new HttpError(502, `Groww HTTP ${res.status} ${res.statusText}: ${body.slice(0, 300)}`);
   }
   const data = await res.json();
@@ -136,9 +202,10 @@ export async function optionChain({ underlying, expiry, exchange = 'NSE', signal
   const exp = expiry || defaultMonthlyExpiry();
   if (!/^\d{4}-\d\d-\d\d$/.test(String(exp))) throw badRequest('Pass the expiry as YYYY-MM-DD.');
   const url = `${BASE}/v1/option-chain/exchange/${encodeURIComponent(exchange)}/underlying/${encodeURIComponent(u)}?expiry_date=${exp}`;
-  const res = await fetch(url, { headers: authHeaders(), signal });
+  const res = await fetch(url, { headers: await authHeaders(), signal });
   if (!res.ok) {
     const body = await res.text().catch(() => '');
+    noteRefusal(res.status, body);
     throw new HttpError(502, `Groww option chain HTTP ${res.status}: ${body.slice(0, 200)}`);
   }
   const data = await res.json();

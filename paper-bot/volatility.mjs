@@ -18,7 +18,7 @@
 import { pathToFileURL } from 'node:url';
 import { candles } from '../market-data.mjs';
 import { badRequest, mapLimit, readJsonSafe, writeJsonAtomic } from '../util.mjs';
-import { optionChain } from '../groww-data.mjs';
+import { optionChain, growwUsable } from '../groww-data.mjs';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -305,7 +305,7 @@ export async function volCheck({ symbol, iv, days = 7, expiry, eventPending = fa
     const v = await loadCandles('^INDIAVIX', { range: '5d', interval: '1d' });
     impliedPct = v[v.length - 1].close;
     impliedSource = 'India VIX';
-  } else if (impliedPct == null && process.env.GROWW_ACCESS_TOKEN && /\.(NS|BO)$/i.test(sym)) {
+  } else if (impliedPct == null && growwUsable() && /\.(NS|BO)$/i.test(sym)) {
     // Real stock-option IV from Groww's option chain (ATM, nearest monthly expiry).
     try {
       chain = await chainFn({ underlying: sym, expiry });

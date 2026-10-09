@@ -7,7 +7,8 @@
 #   scripts/run.sh backup     – daily backup of the evidence (~/trading-research-backups + iCloud copy)
 # Secrets come from the macOS Keychain (encrypted), never from files:
 #   security add-generic-password -U -a "$USER" -s trading-research-openrouter -w   # prompts for the key
-#   security add-generic-password -U -a "$USER" -s trading-research-groww -w        # optional
+#   security add-generic-password -U -a "$USER" -s trading-research-groww-key -w     # Groww API key (optional)
+#   security add-generic-password -U -a "$USER" -s trading-research-groww-secret -w  # Groww API secret (optional)
 set -u
 cd "$(dirname "$0")/.." || exit 1
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
@@ -18,6 +19,9 @@ case "${1:-}" in
   server)
     OPENROUTER_API_KEY="$(key trading-research-openrouter)"
     GROWW_ACCESS_TOKEN="$(key trading-research-groww)"
+    GROWW_API_KEY="$(key trading-research-groww-key)"
+    GROWW_API_SECRET="$(key trading-research-groww-secret)"
+    [ -n "$GROWW_API_KEY" ] && [ -n "$GROWW_API_SECRET" ] && export GROWW_API_KEY GROWW_API_SECRET || unset GROWW_API_KEY GROWW_API_SECRET
     [ -n "$OPENROUTER_API_KEY" ] && export OPENROUTER_API_KEY || unset OPENROUTER_API_KEY
     [ -n "$GROWW_ACCESS_TOKEN" ] && export GROWW_ACCESS_TOKEN || unset GROWW_ACCESS_TOKEN
     echo "$(date '+%F %T') starting server (AI key: $([ -n "${OPENROUTER_API_KEY:-}" ] && echo set || echo missing))"

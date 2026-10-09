@@ -149,3 +149,30 @@ test('intraday: softmax model learns a planted pattern', async () => {
   assert.ok(it.predictSoftmax(W, [1, -1.5]).probDown > 0.6);
   assert.ok(it.predictSoftmax(W, [1, 0]).probSideways > 0.5);
 });
+
+test('Groww: key + secret → daily token with SHA-256 checksum; refusals trip the breaker', async () => {
+  process.env.GROWW_API_KEY = 'k';
+  process.env.GROWW_API_SECRET = 's3cret';
+  delete process.env.GROWW_ACCESS_TOKEN;
+  const g = await import('./groww-data.mjs');
+  const { createHash } = await import('node:crypto');
+  let seen = null;
+  const now = Date.parse('2026-10-09T05:00:00Z');
+  const tok = await g.accessToken({ now, fetchFn: async (url, o) => {
+    seen = { url, auth: o.headers.Authorization, body: JSON.parse(o.body) };
+    return { ok: true, status: 200, json: async () => ({ token: 'TKN' }) };
+  } });
+  assert.equal(tok, 'TKN');
+  assert.match(seen.url, /\/v1\/token\/api\/access$/);
+  assert.equal(seen.auth, 'Bearer k');
+  assert.equal(seen.body.key_type, 'approval');
+  assert.equal(seen.body.checksum, createHash('sha256').update('s3cret' + seen.body.timestamp).digest('hex'));
+  // cached until 06:00 IST: no second request
+  assert.equal(await g.accessToken({ now: now + 3600000, fetchFn: async () => assert.fail('should be cached') }), 'TKN');
+  g.resetAccessToken();
+  await assert.rejects(() => g.accessToken({ now, fetchFn: async () => ({ ok: false, status: 403, json: async () => ({ error: { message: 'nope' } }) }) }), /daily approval/);
+  assert.equal(g.growwUsable(), true);
+  delete process.env.GROWW_API_KEY;
+  delete process.env.GROWW_API_SECRET;
+  assert.equal(g.growwStatus().state, 'off');
+});
