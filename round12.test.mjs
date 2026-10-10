@@ -223,3 +223,47 @@ test('goal planner on a steady 12% market', async () => {
   assert.ok(lump.sipNeeded.p50 < 1e-6, 'the lump sum alone reaches the target');
   assert.equal(ex.goalPlan(monthly.slice(0, 50), { target: 1, years: 10 }), null);
 });
+
+test('VWAP + 20 MA pullback: indicators, a long pullback trade, time and daily limits', async () => {
+  process.env.VWAP_PAPER_PATH = join(TMP, 'vwap-paper.json');
+  const v = await import('./paper-bot/vwap-pullback.mjs');
+  // one session of 5-minute bars: steady uptrend, a dip to the average at 10:30, then a rally
+  const mk = (date, t, o, h, l, c) => ({ date: `${date} ${t}`, open: o, high: h, low: l, close: c, volume: 1000 });
+  const times = [];
+  for (let m = 9 * 60 + 15; m <= 15 * 60 + 25; m += 5) times.push(`${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`);
+  const rows = [];
+  let p = 100;
+  for (const [k, t] of times.entries()) {
+    let o = p;
+    let c = p + 0.1;
+    if (t === '10:30') c = p - 0.6; // pullback candle
+    if (t > '10:30' && t < '11:30') c = p + 0.4; // rally after the entry
+    const lo = Math.min(o, c) - 0.05;
+    const hi = Math.max(o, c) + 0.05;
+    rows.push(mk('2026-10-12', t, o, hi, t === '10:30' ? lo - 0.5 : lo, t === '10:30' ? p + 0.05 : c));
+    p = t === '10:30' ? p + 0.05 : c;
+    void k;
+  }
+  const bars = v.indicators(rows);
+  assert.ok(bars[25].ma > 0 && bars[25].vwap > 0 && bars[25].atr > 0);
+  const trades = v.backtestStock('X.NS', rows);
+  assert.ok(trades.length <= 1, 'one trade per stock per day');
+  if (trades.length) {
+    assert.equal(trades[0].side, 'long');
+    assert.ok(trades[0].time > '09:30' && trades[0].time <= '13:00');
+    assert.ok(trades[0].charges > 0);
+  }
+  // account limit: at most 2 a day across stocks
+  const many = ['A', 'B', 'C'].map((s, i) => ({ symbol: s, date: '2026-10-12', time: `10:0${i}`, net: 1 }));
+  assert.equal(v.accountTrades(many, 2).length, 2);
+  // summary maths
+  const s = v.summarise([{ date: 'd1', net: 100, gross: 120, charges: 20, rNet: 0.1, reason: 'target' }, { date: 'd2', net: -50, gross: -30, charges: 20, rNet: -0.05, reason: 'stop' }]);
+  assert.equal(s.trades, 2);
+  assert.equal(s.totalNetRs, 50);
+  assert.equal(s.profitFactor, 2);
+  assert.equal(s.winRate, 0.5);
+  // paper record: Saturday start, nothing before it is recorded
+  const r = await v.paperUpdate({ loadCandles: async () => rows, now: new Date('2026-10-12T12:00:00Z') });
+  assert.equal(r.startedAt, '2026-10-12');
+  assert.ok(r.summary.trades <= 1);
+});

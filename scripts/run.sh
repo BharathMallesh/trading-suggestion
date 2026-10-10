@@ -28,7 +28,9 @@ case "${1:-}" in
     exec node server.mjs
     ;;
   collect)
-    echo "$(date '+%F %T') collect"; exec node paper-bot/collector.mjs ;;
+    echo "$(date '+%F %T') collect"; node paper-bot/collector.mjs
+    # same-stocks intraday strategy: record today's paper trades (after the close)
+    node paper-bot/vwap-pullback.mjs --paper ;;
   monitor)
     # Weekdays only, and only if the server is up.
     if ! curl -s -o /dev/null --max-time 5 http://127.0.0.1:3000/; then

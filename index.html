@@ -494,6 +494,19 @@
         <div id="itOut" style="margin-top:12px"></div>
       </section>
 
+      <!-- Same-stocks intraday strategy (VWAP + 20 MA pullback) -->
+      <section class="card span2">
+        <h2>Same stocks every day <span style="font-size:12px;color:var(--warn);font-weight:500">VWAP + 20 MA PULLBACK · INTRADAY · BACKTEST + LIVE PAPER</span></h2>
+        <p class="hint">
+          The strategy from the Dhan video "The Power of Trading the Same Stocks Every Day", coded as described: Bajaj Finserv, Trent, Titan, Maruti on 5-minute
+          candles; trade only in the direction where price is above (or below) <b>both</b> the 20-period average and VWAP, enter on a pullback to the average,
+          stop 2 × ATR, target 1:2, no new trades after 1 PM, exit by 3 PM, at most 2 trades a day. Tested after real intraday charges, then recorded as a paper
+          trade every day after the close. Not investment advice.
+        </p>
+        <button id="vpbBtn" type="button" style="background:#0d1320;color:var(--ink);border:1px solid var(--line)">Re-run backtest + update paper record (~30 s)</button>
+        <div id="vpbOut" style="margin-top:10px"></div>
+      </section>
+
       <!-- Big-move odds -->
       <section class="card span2">
         <h2>Big-move odds <span style="font-size:12px;color:var(--warn);font-weight:500">SIZE, NOT DIRECTION · RESEARCH</span></h2>
@@ -1924,6 +1937,49 @@
           /* optional */
         }
       })();
+
+      // --- Same stocks every day (VWAP + 20 MA pullback) ---
+      function vpbRender(d) {
+        const b = d.backtest;
+        const rs = (v) => (v == null ? '–' : (v < 0 ? '−₹' : '₹') + Math.abs(Math.round(v)).toLocaleString('en-IN'));
+        const row = (name, x) => !x || !x.trades ? '' : `<tr><td style="text-align:left">${esc(name)}</td><td>${x.trades}</td><td>${Math.round(x.winRate * 100)}%</td><td>${rs(x.avgGrossRs)}</td><td>${rs(x.avgChargesRs)}</td>
+          <td style="color:${x.avgNetRs >= 0 ? 'var(--up)' : 'var(--down)'}"><b>${rs(x.avgNetRs)}</b></td><td style="color:${x.totalNetRs >= 0 ? 'var(--up)' : 'var(--down)'}">${rs(x.totalNetRs)}</td><td>${x.tStat?.toFixed(1) ?? '–'}</td></tr>`;
+        const head = '<table><thead><tr><th style="text-align:left">Version</th><th>Trades</th><th>Win</th><th>Avg before costs</th><th>Avg charges</th><th>Avg after costs</th><th>Total</th><th>t</th></tr></thead><tbody>';
+        let html = '';
+        if (b) {
+          html += `<div style="font-size:14px"><b>Backtest verdict: ${esc(b.verdict)}</b></div>
+            <div class="note">${b.sessions} sessions (${esc(b.from)} → ${esc(b.to)}) · risk ₹${b.rules.riskRs.toLocaleString('en-IN')} per trade</div>` + head +
+            row('Video rules (target 1:2)', b.perTrade) + row('…first half', b.firstHalf) + row('…second half', b.secondHalf) + row('Account: max 2 trades a day', b.account2PerDay) +
+            Object.entries(b.sensitivity).filter(([k]) => k !== '1:2').map(([k, v]) => row(`Target ${k}`, v)).join('') +
+            Object.entries(b.variants || {}).map(([k, v]) => row(k, v)).join('') +
+            row(`Same rules on ${b.widerList.stocks} other large stocks`, b.widerList) +
+            Object.entries(b.perStock).map(([k, v]) => row(k.replace('.NS', ''), v)).join('') + '</tbody></table>' +
+            `<div class="note">${esc(b.note)}</div>`;
+        }
+        const p = d.paper;
+        html += `<div style="font-size:14px;margin-top:10px"><b>Live paper record</b> ${p.startedAt ? `since ${esc(p.startedAt)}` : '(starts with the first session after today)'} — recorded every trading day after the close.</div>`;
+        if (p.summary?.trades) {
+          html += head + row('Paper trades so far', p.summary) + '</tbody></table>' +
+            `<table style="font-size:12px"><thead><tr><th style="text-align:left">Date</th><th>Stock</th><th>Side</th><th>Entry</th><th>Exit</th><th>Why</th><th>Net</th></tr></thead><tbody>${p.trades.map((t) =>
+              `<tr><td style="text-align:left">${esc(t.date)} ${esc(t.time)}</td><td>${esc(t.symbol.replace('.NS', ''))}</td><td>${esc(t.side)}</td><td>${t.entry.toFixed(2)}</td><td>${t.exit.toFixed(2)}</td><td>${esc(t.reason)}</td><td style="color:${t.net >= 0 ? 'var(--up)' : 'var(--down)'}">${rs(t.net)}</td></tr>`).join('')}</tbody></table>`;
+        } else html += '<div class="note">No paper trades recorded yet.</div>';
+        $('vpbOut').innerHTML = html;
+      }
+      (async () => {
+        try {
+          vpbRender(await api('/api/vwap-pullback'));
+        } catch (e) {
+          $('vpbOut').innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
+        }
+      })();
+      $('vpbBtn').addEventListener('click', async () => {
+        $('vpbOut').textContent = 'Running the backtest on ~60 days of 5-minute candles…';
+        try {
+          vpbRender(await api('/api/vwap-pullback', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }));
+        } catch (e) {
+          $('vpbOut').innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
+        }
+      });
 
       // --- Big-move odds ---
       const bmPct = (x) => (x == null ? '–' : (x * 100).toFixed(x < 0.1 ? 1 : 0) + '%');
