@@ -50,7 +50,7 @@ import { expectations, goalPlan, monthlySeries } from './paper-bot/expectations.
 import { indexFunds } from './paper-bot/index-funds.mjs';
 import { loadDirectionLong } from './paper-bot/direction-long.mjs';
 import { loadIntradayTest } from './paper-bot/intraday-test.mjs';
-import { vwapPullbackTest, saveVwapPullback, loadVwapPullback, paperSummary, paperUpdate } from './paper-bot/vwap-pullback.mjs';
+import { vwapPullbackTest, saveVwapPullback, loadVwapPullback, paperSummary, paperUpdate, loadImprove } from './paper-bot/vwap-pullback.mjs';
 import { bigMove, evaluateBigMove, saveBigMoveEval, loadBigMoveEval } from './paper-bot/big-move.mjs';
 import { testPositioning, saveResult as savePositioning, loadResult as loadPositioning } from './paper-bot/options-positioning.mjs';
 import { llmLastModel } from './ling-client.mjs';
@@ -525,7 +525,7 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, liveScorecard(null, { mode }));
     }
     if (req.method === 'GET' && url.pathname === '/api/vwap-pullback') {
-      return json(res, 200, { backtest: loadVwapPullback(), paper: paperSummary() });
+      return json(res, 200, { backtest: loadVwapPullback(), paper: paperSummary(), improve: loadImprove() });
     }
     if (req.method === 'POST' && url.pathname === '/api/vwap-pullback') {
       await readJson(req);

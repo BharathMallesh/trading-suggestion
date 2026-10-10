@@ -1957,11 +1957,14 @@
             `<div class="note">${esc(b.note)}</div>`;
         }
         const p = d.paper;
-        html += `<div style="font-size:14px;margin-top:10px"><b>Live paper record</b> ${p.startedAt ? `since ${esc(p.startedAt)}` : '(starts with the first session after today)'} — recorded every trading day after the close.</div>`;
-        if (p.summary?.trades) {
-          html += head + row('Paper trades so far', p.summary) + '</tbody></table>' +
+        html += `<div style="font-size:14px;margin-top:10px"><b>Live paper record</b> ${p.startedAt ? `since ${esc(p.startedAt)}` : '(starts with the first session after today)'} — recorded every trading day after the close, for the video's rules and the improved version side by side.</div>`;
+        const imp = d.improve?.pick;
+        if (imp) html += `<div class="note">Improvement test (chosen on the first half, judged on the second): best was <b>${esc(imp.name)}</b> — ${imp.testVideoStocks.avgNetRs >= 0 ? '+' : '−'}₹${Math.abs(Math.round(imp.testVideoStocks.avgNetRs))}/trade on the video stocks but ${imp.testWiderStocks.avgNetRs >= 0 ? '+' : '−'}₹${Math.abs(Math.round(imp.testWiderStocks.avgNetRs))}/trade on 16 other stocks → ${imp.adopt ? 'adopted' : 'not proven; paper-tracked'}.</div>`;
+        const anyPaper = Object.values(p.byVariant || {}).some((x) => x.trades);
+        if (anyPaper) {
+          html += head + Object.values(p.byVariant).map((x) => row(x.label, x)).join('') + '</tbody></table>' +
             `<table style="font-size:12px"><thead><tr><th style="text-align:left">Date</th><th>Stock</th><th>Side</th><th>Entry</th><th>Exit</th><th>Why</th><th>Net</th></tr></thead><tbody>${p.trades.map((t) =>
-              `<tr><td style="text-align:left">${esc(t.date)} ${esc(t.time)}</td><td>${esc(t.symbol.replace('.NS', ''))}</td><td>${esc(t.side)}</td><td>${t.entry.toFixed(2)}</td><td>${t.exit.toFixed(2)}</td><td>${esc(t.reason)}</td><td style="color:${t.net >= 0 ? 'var(--up)' : 'var(--down)'}">${rs(t.net)}</td></tr>`).join('')}</tbody></table>`;
+              `<tr><td style="text-align:left">${esc(t.date)} ${esc(t.time)} <span style="color:var(--muted);font-size:11px">${esc(t.variant === 'improved' ? 'improved' : 'video')}</span></td><td>${esc(t.symbol.replace('.NS', ''))}</td><td>${esc(t.side)}</td><td>${t.entry.toFixed(2)}</td><td>${t.exit.toFixed(2)}</td><td>${esc(t.reason)}</td><td style="color:${t.net >= 0 ? 'var(--up)' : 'var(--down)'}">${rs(t.net)}</td></tr>`).join('')}</tbody></table>`;
         } else html += '<div class="note">No paper trades recorded yet.</div>';
         $('vpbOut').innerHTML = html;
       }
