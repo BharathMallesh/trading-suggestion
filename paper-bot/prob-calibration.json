@@ -1,5 +1,5 @@
 {
-  "fittedAt": "2026-10-09T07:24:44.618Z",
+  "fittedAt": "2026-10-10T06:40:55.303Z",
   "rule": "Chosen on the first half of the fitting universe; adopted only if it beats the current output out of sample (second half) with a date-clustered paired t ≤ −2 and also improves on the unseen holdout stocks.",
   "direction": null,
   "bigMove5d": null,
@@ -12,20 +12,20 @@
         "shrink": 0.5
       },
       "outOfSample": {
-        "n": 14598,
-        "dates": 811,
-        "loss": 0.6439398758364235,
-        "baseline": 0.6446976922435822,
-        "skillPct": 0.11754600897071477,
-        "t": -1.3087100901057207
+        "n": 14614,
+        "dates": 812,
+        "loss": 0.6440830588949197,
+        "baseline": 0.644763292971559,
+        "skillPct": 0.10550136523812537,
+        "t": -1.1647608362826505
       },
       "holdout": {
-        "n": 8110,
-        "dates": 811,
-        "loss": 0.6407995599198812,
-        "baseline": 0.6427790951638475,
-        "skillPct": 0.30796509389615645,
-        "t": -3.0618927929527535
+        "n": 8118,
+        "dates": 812,
+        "loss": 0.6412431684555047,
+        "baseline": 0.6429258487151249,
+        "skillPct": 0.26172229083385457,
+        "t": -2.3709340971780697
       },
       "sidewaysReliability": [
         {
@@ -36,21 +36,21 @@
         },
         {
           "range": "40–50%",
-          "n": 11370,
-          "stated": 0.45127464573461806,
-          "actual": 0.45646437994722955
+          "n": 11368,
+          "stated": 0.4512722479205642,
+          "actual": 0.45636875439831104
         },
         {
           "range": "50–60%",
-          "n": 2138,
-          "stated": 0.5244125967036044,
-          "actual": 0.5014031805425632
+          "n": 2143,
+          "stated": 0.5245302492350312,
+          "actual": 0.5011665888940737
         },
         {
           "range": "60–70%",
-          "n": 88,
-          "stated": 0.6328393220745002,
-          "actual": 0.4659090909090909
+          "n": 101,
+          "stated": 0.6328005844062672,
+          "actual": 0.45544554455445546
         }
       ]
     },

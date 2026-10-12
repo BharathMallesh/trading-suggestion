@@ -23,9 +23,14 @@
         background: rgba(251, 191, 36, 0.1); border: 1px solid rgba(251, 191, 36, 0.35);
         color: var(--warn);
       }
-      main { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 16px 24px 40px; }
-      @media (max-width: 860px) { main { grid-template-columns: 1fr; } }
-      .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+      main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; padding: 16px 24px 40px; }
+      @media (max-width: 860px) {
+        main { grid-template-columns: minmax(0, 1fr); padding: 12px 16px 32px; }
+        /* wide tables scroll inside their card instead of widening the page */
+        .card table { display: block; overflow-x: auto; white-space: nowrap; }
+      }
+      .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; min-width: 0; }
+      .kv > div { min-width: 0; overflow-wrap: anywhere; }
       .card h2 { margin: 0 0 4px; font-size: 15px; }
       .card p.hint { margin: 0 0 12px; color: var(--muted); font-size: 12.5px; }
       .span2 { grid-column: 1 / -1; }
@@ -69,6 +74,23 @@
     </header>
 
     <main>
+      <!-- Ask the app: plain-language questions answered with the validated tools -->
+      <section class="card span2" data-view="money" id="askAppCard">
+        <h2>Ask the app <span style="font-size:12px;color:var(--warn);font-weight:500">FACTS FROM THE TESTED TOOLS · NO BUY / SELL CALLS</span></h2>
+        <div class="row" style="align-items:flex-end">
+          <div style="flex:1;min-width:240px"><label>Your question</label><input id="aaQ" placeholder='e.g. "Tell me about Reliance" · "Which is the best stock to invest today?" · "NIFTY call put this week"' /></div>
+          <div style="flex:0"><button id="aaBtn" type="button" style="margin-top:0">Ask</button></div>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
+          <button type="button" class="aaChip" style="margin:0;padding:4px 10px;background:#0d1320;color:var(--ink);border:1px solid var(--line)">Which is the best stock to invest today?</button>
+          <button type="button" class="aaChip" style="margin:0;padding:4px 10px;background:#0d1320;color:var(--ink);border:1px solid var(--line)">Tell me about Reliance</button>
+          <button type="button" class="aaChip" style="margin:0;padding:4px 10px;background:#0d1320;color:var(--ink);border:1px solid var(--line)">What will happen to HDFC Bank?</button>
+          <button type="button" class="aaChip" style="margin:0;padding:4px 10px;background:#0d1320;color:var(--ink);border:1px solid var(--line)">NIFTY call put this week</button>
+          <button type="button" class="aaChip" style="margin:0;padding:4px 10px;background:#0d1320;color:var(--ink);border:1px solid var(--line)">Which index fund?</button>
+        </div>
+        <div id="aaOut" style="margin-top:12px"></div>
+      </section>
+
       <!-- Today: everything an investor checks, on one screen -->
       <section class="card span2" id="todayCard">
         <h2>Today <span style="font-size:12px;color:var(--warn);font-weight:500">RESEARCH · PAPER ONLY</span></h2>
@@ -1632,6 +1654,41 @@
       $('rkEvalBtn').addEventListener('click', () => rkRun('eval'));
 
 
+
+      // --- Ask the app ---
+      function aaRender(r) {
+        let html = `<div style="font-size:16px;font-weight:700;margin-bottom:6px">${esc(r.title)}</div>`;
+        if (r.summary?.length) html += '<ul style="margin:0 0 8px 18px;padding:0;font-size:14px;line-height:1.5">' + r.summary.map((x) => `<li>${esc(x)}</li>`).join('') + '</ul>';
+        for (const sec of r.sections || []) {
+          html += `<div style="font-size:13px;margin-top:10px"><b>${esc(sec.heading)}</b></div>`;
+          if (sec.kind === 'table') html += `<table><thead><tr>${sec.columns.map((c, i) => `<th${i === 0 ? ' style="text-align:left"' : ''}>${esc(c)}</th>`).join('')}</tr></thead><tbody>${sec.rows.map((row) => `<tr>${row.map((c, i) => `<td${i === 0 ? ' style="text-align:left"' : ''}>${esc(String(c ?? ''))}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+          else if (sec.kind === 'kv') html += `<div class="kv">${sec.rows.map(([k, v]) => `<div>${esc(k)}</div><div>${esc(v)}</div>`).join('')}</div>`;
+          else if (sec.kind === 'list') html += '<ul style="margin:4px 0 0 18px;padding:0;font-size:13px">' + sec.items.map((x) => `<li>${esc(x)}</li>`).join('') + '</ul>';
+          else html += `<div style="font-size:13px">${esc(sec.text || '')}</div>`;
+          if (sec.note) html += `<div class="note">${esc(sec.note)}</div>`;
+        }
+        if (r.caveat) html += `<div class="note" style="margin-top:10px;border-left:3px solid var(--warn);padding-left:8px">${esc(r.caveat)}</div>`;
+        $('aaOut').innerHTML = html + '<div class="note">Research / education only — not investment advice.</div>';
+      }
+      async function aaAsk(question) {
+        const q = (question ?? $('aaQ').value).trim();
+        if (!q) return;
+        $('aaQ').value = q;
+        $('aaOut').textContent = 'Looking it up with the app\'s tools…';
+        $('aaBtn').disabled = true;
+        try {
+          aaRender(await api('/api/assistant', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: q }) }));
+        } catch (e) {
+          $('aaOut').innerHTML = `<div class="err">${esc(e.message)}</div>`;
+        } finally {
+          $('aaBtn').disabled = false;
+        }
+      }
+      $('aaBtn').addEventListener('click', () => aaAsk());
+      $('aaQ').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') aaAsk();
+      });
+      for (const chip of document.querySelectorAll('.aaChip')) chip.addEventListener('click', () => aaAsk(chip.textContent));
 
       // --- My money / Research lab views ---
       const MONEY_CARDS = ['todayCard'];

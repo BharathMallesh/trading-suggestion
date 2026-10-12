@@ -92,7 +92,7 @@ const growwTs = (t) => Math.floor(Date.parse(`${t.replace(' ', 'T')}:00+05:30`) 
  */
 export async function backfillGroww({ symbols, days = 60, intervals = STORED_INTERVALS, session = daySession, today = new Date() } = {}) {
   const dates = [];
-  for (let d = 1; dates.length < days && d < days * 2; d++) {
+  for (let d = 1; dates.length < days && d < days * 2 + 7; d++) { // +7: a weekend (e.g. run on a Monday) must not empty the window
     const dt = new Date(today.getTime() - d * 86400000);
     const wd = dt.getUTCDay();
     if (wd >= 1 && wd <= 5) dates.push(dt.toISOString().slice(0, 10));

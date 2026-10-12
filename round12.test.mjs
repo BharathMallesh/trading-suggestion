@@ -267,3 +267,29 @@ test('VWAP + 20 MA pullback: indicators, a long pullback trade, time and daily l
   assert.equal(r.startedAt, '2026-10-12');
   assert.ok(r.summary.trades <= 1);
 });
+
+test('Ask the app: understands stocks by name or ticker, and the kind of question', async () => {
+  const a = await import('./paper-bot/assistant.mjs');
+  const cases = [
+    ['tell me about reliance', 'stock', 'RELIANCE.NS'],
+    ['What will happen to TCS?', 'stock', 'TCS.NS'],
+    ['hdfc bank', 'stock', 'HDFCBANK.NS'],
+    ['how is SBI doing', 'stock', 'SBIN.NS'],
+    ['Which is the best stock to invest today?', 'briefing', null],
+    ['nifty call put this week', 'options', '^NSEI'],
+    ['options on infosys', 'options', 'INFY.NS'],
+    ['which index fund should I pick', 'funds', null],
+    ['sip for 50 lakh in 15 years', 'goal', null],
+    ['hello', 'help', null],
+  ];
+  for (const [q, intent, sym] of cases) {
+    const s = await a.resolveSymbol(q);
+    assert.equal(s, sym, q);
+    assert.equal(a.detectIntent(q, s), intent, q);
+  }
+  await assert.rejects(() => a.ask('  '), /Type a question/);
+  await assert.rejects(() => a.ask('x'.repeat(400)), /under 300/);
+  const h = await a.ask('hello');
+  assert.equal(h.intent, 'help');
+  assert.match(h.caveat, /does not say whether it will go up or down/);
+});

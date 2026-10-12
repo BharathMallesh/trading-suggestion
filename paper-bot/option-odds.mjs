@@ -107,7 +107,7 @@ export async function optionOdds({ symbol, type = 'CE', strike, premium, iv, day
   let P = entered ? Number(premium) : null;
   if (entered && !(P >= 0)) throw badRequest('premium must be 0 or more');
   if (P == null && pIv != null) P = greeks({ spot, strike: K, tYears, iv: pIv / 100, type: t }).price;
-  if (!(P >= 0)) throw badRequest('Give the option premium, or an implied vol so it can be priced.');
+  if (P == null || !(P >= 0)) throw badRequest('Give the option premium, or an implied vol so it can be priced.'); // note: null >= 0 is true in JS
   const breakeven = t === 'CE' ? K + P : K - P;
   const pAbove = (level, sDaily, method) =>
     method === 'history' ? probAboveHistory(spot, level, sDaily, h, r) : probAboveNormal(spot, level, sDaily, h);

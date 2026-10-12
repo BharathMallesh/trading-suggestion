@@ -47,6 +47,7 @@ import { runAndSaveVolPremium, loadVolPremium } from './paper-bot/vol-premium.mj
 import { analyzeHoldings, addLot, removeLot, setRealized, importTradebook } from './paper-bot/holdings.mjs';
 import { trendHistory, saveTrendHistory, loadTrendHistory, crashBrake } from './paper-bot/trend-history.mjs';
 import { expectations, goalPlan, monthlySeries } from './paper-bot/expectations.mjs';
+import { ask as askApp } from './paper-bot/assistant.mjs';
 import { indexFunds } from './paper-bot/index-funds.mjs';
 import { loadDirectionLong } from './paper-bot/direction-long.mjs';
 import { loadIntradayTest } from './paper-bot/intraday-test.mjs';
@@ -539,6 +540,10 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === 'GET' && url.pathname === '/api/direction-long') {
       return json(res, 200, loadDirectionLong() || { verdict: null, note: 'Not run yet (node paper-bot/direction-long.mjs).' });
+    }
+    if (req.method === 'POST' && url.pathname === '/api/assistant') {
+      const b = await readJson(req);
+      return json(res, 200, await askApp(b.question, { symbols: PAPER.symbols || [] }));
     }
     if (req.method === 'GET' && url.pathname === '/api/index-funds') {
       if (!fundsCache || Date.now() - fundsCache.at > 20 * 3600000) fundsCache = { at: Date.now(), data: await indexFunds({}) };
