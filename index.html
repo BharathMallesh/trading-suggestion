@@ -152,6 +152,11 @@
           <button id="hdImportBtn" type="button" style="background:var(--soft);color:var(--ink);border:1px solid var(--line)">Import</button>
           <div id="hdImportOut" class="note"></div>
         </details>
+        <div style="margin-top:10px;padding:10px;border:1px solid var(--line);border-radius:10px">
+          <div style="font-size:14px"><b>Did my trading beat NIFTY?</b> <button id="viBtn" type="button" style="margin-left:6px;padding:3px 10px;background:var(--soft);color:var(--ink);border:1px solid var(--line)">Check</button></div>
+          <div class="note">Every buy and sell in your imported tradebook is mirrored into NIFTY 50 with the same rupees on the same day. Shows whether picking and timing stocks added anything over simply owning the index.</div>
+          <div id="viOut" style="margin-top:6px"></div>
+        </div>
         <div id="hdOut" style="margin-top:12px"></div>
       </section>
 
@@ -183,6 +188,14 @@
         </div>
         <button id="glBtn" type="button">Plan</button>
         <div id="glOut" style="margin-top:10px"></div>
+      </section>
+
+      <!-- Market tilts: NSE factor indices vs NIFTY 50 -->
+      <section class="card span2" data-view="money">
+        <h2>Market tilts <span style="font-size:12px;color:var(--warn);font-weight:500">MOMENTUM · QUALITY · LOW-VOL · VALUE VS NIFTY 50 · NSE DATA SINCE 2012</span></h2>
+        <p class="hint">The few documented ways to beat the index over long periods are "tilts": owning stocks with strong recent momentum, high quality, low volatility or low valuations.
+          This uses NSE's own month-end index values, each only from when NSE started publishing it (no back-filled history), and shows the price you pay: deeper falls and years of lagging NIFTY.</p>
+        <div id="flOut">Loading…</div>
       </section>
 
       <!-- Index-fund picker -->
@@ -1946,6 +1959,50 @@
         }
       });
       $('hdRefreshBtn').addEventListener('click', hdLoad);
+      async function viLoad() {
+        $('viOut').textContent = 'Comparing with NIFTY…';
+        try {
+          const r = await api('/api/holdings/vs-index');
+          if (r.empty) return ($('viOut').innerHTML = `<div class="note">${esc(r.note)}</div>`);
+          const rs = (v) => (v < 0 ? '−₹' : '₹') + Math.abs(Math.round(v)).toLocaleString('en-IN');
+          const pc = (x) => (x == null ? '–' : (x * 100).toFixed(1) + '%');
+          $('viOut').innerHTML = `<div style="font-size:15px;color:${r.beat ? 'var(--up)' : 'var(--down)'}"><b>${esc(r.verdict)}</b></div>
+            <table style="font-size:13px"><tbody>
+              <tr><td>Period</td><td>${esc(r.from)} → ${esc(r.to)} · ${r.trades} trades</td></tr>
+              <tr><td>Your result</td><td>${rs(r.yourPnl)} profit/loss · ${pc(r.yourXirr)} a year (money-weighted)</td></tr>
+              <tr><td>Same money in NIFTY</td><td>${r.niftyXirr != null ? pc(r.niftyXirr) + ' a year' : '–'} · mirror worth ${rs(r.niftyMirrorValue)} vs your open positions ${rs(r.openValue)}</td></tr>
+              <tr><td>Charges you paid (est.)</td><td>${rs(r.charges)}</td></tr>
+              <tr><td>Score vs NIFTY (PME)</td><td>${r.pme.toFixed(2)} (above 1.00 = beat NIFTY)</td></tr>
+            </tbody></table>
+            ${r.perStock?.length ? `<details><summary style="cursor:pointer;font-size:13px">By stock (best and worst)</summary><table style="font-size:12px"><thead><tr><th style="text-align:left">Stock</th><th>Bought</th><th>Sold</th><th>Still held</th><th>P&amp;L</th></tr></thead><tbody>${r.perStock.map((s) =>
+              `<tr><td style="text-align:left">${esc(s.symbol.replace(/\.(NS|BO)$/, ''))}</td><td>${rs(s.bought)}</td><td>${rs(s.sold)}</td><td>${s.openValue ? rs(s.openValue) : '–'}</td><td style="color:${s.pnl >= 0 ? 'var(--up)' : 'var(--down)'}">${rs(s.pnl)}</td></tr>`).join('')}</tbody></table></details>` : ''}
+            ${r.skippedSells ? `<div class="note" style="color:var(--warn)">${r.skippedSells} sold shares had no matching buy in the file (bought earlier) and were left out — export the full history for an exact answer.</div>` : ''}
+            ${r.unpriced?.length ? `<div class="note" style="color:var(--warn)">No current price for: ${r.unpriced.map(esc).join(', ')} (not counted).</div>` : ''}
+            <div class="note">${esc(r.note)}</div>`;
+        } catch (e) {
+          $('viOut').innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
+        }
+      }
+      $('viBtn').addEventListener('click', viLoad);
+      viLoad();
+
+      // --- Market tilts (factor lab) ---
+      (async () => {
+        try {
+          const r = await api('/api/factor-lab');
+          if (!r.rows?.length) return ($('flOut').innerHTML = `<div class="note">${esc(r.note)}</div>`);
+          const pc = (x, d = 1) => (x == null ? '–' : (x * 100).toFixed(d) + '%');
+          const col = (v) => (v > 0 ? 'var(--up)' : v < 0 ? 'var(--down)' : 'var(--ink)');
+          const rows = r.rows.filter((x) => x.enough).sort((a, b) => b.excess - a.excess);
+          $('flOut').innerHTML = `<div style="overflow-x:auto"><table style="font-size:12px"><thead><tr><th style="text-align:left">Index</th><th>Since</th><th>Per year</th><th>NIFTY same period</th><th>Extra per year</th><th>₹1 lakh became</th><th>Worst fall (NIFTY)</th><th>Beat NIFTY in 5-yr windows</th><th>Longest behind NIFTY</th><th style="text-align:left">Verdict</th></tr></thead><tbody>${rows.map((x) =>
+            `<tr><td style="text-align:left">${esc(x.label)}${x.fundsExist ? '' : ' <span class="note" style="display:inline">(few funds)</span>'}</td><td>${esc(x.from)}</td><td>${pc(x.cagr)}</td><td>${pc(x.niftyCagr)}</td><td style="color:${col(x.excess)}"><b>${x.excess >= 0 ? '+' : ''}${pc(x.excess)}</b></td><td>₹${Math.round(x.growthOf1L).toLocaleString('en-IN')} <span class="note" style="display:inline">(NIFTY ₹${Math.round(x.niftyGrowthOf1L).toLocaleString('en-IN')})</span></td><td>${pc(x.maxDrawdown, 0)} (${pc(x.niftyMaxDrawdown, 0)})</td><td>${x.roll5 ? pc(x.roll5.pctBeat, 0) : x.roll3 ? pc(x.roll3.pctBeat, 0) + ' (3-yr)' : '–'}</td><td>${(x.longestBehindMonths / 12).toFixed(1)} yrs</td><td style="text-align:left">${esc(x.verdict)}</td></tr>`).join('')}</tbody></table></div>
+            <div class="note">What it means: tilts have beaten NIFTY over long periods, but each spent years behind it, and the high-return ones (Alpha, Momentum, Midcap) fell harder in crashes. A tilt only pays if you can hold it through those years. Funds cost more than a NIFTY fund (≈0.3–1% a year) and some of these hold less-liquid stocks, so a real fund trails its index.</div>
+            <div class="note">${esc(r.note)} Data ${esc(r.from)} → ${esc(r.to)}.</div>`;
+        } catch (e) {
+          $('flOut').innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
+        }
+      })();
+
       $('hdImportBtn').addEventListener('click', async () => {
         const f = $('hdFile').files?.[0];
         if (!f) return ($('hdImportOut').textContent = 'Choose a CSV file first.');
@@ -1958,6 +2015,7 @@
             (r.warnings.length ? `<br><span style="color:var(--warn)">${r.warnings.map(esc).join('<br>')}</span>` : '') +
             (r.skipped.length ? `<br>Skipped: ${r.skipped.map(esc).join(', ')}` : '') + `<br>${esc(r.note)}`;
           hdLoad();
+          viLoad();
         } catch (e) {
           $('hdImportOut').innerHTML = `<span class="err">Error: ${esc(e.message)}</span>`;
         }

@@ -239,6 +239,9 @@ export function importTradebook({ csv, now = new Date(), mode = 'replace' }) {
   const st = mode === 'merge' ? loadHoldings() : { lots: [], realized: {} };
   st.lots = mode === 'merge' ? [...st.lots, ...out] : out;
   st.realized = realized;
+  // the raw trades too, for "did my trading beat NIFTY?" (vs-index.mjs)
+  const keep = trades.map(({ symbol, date, side, qty, price }) => ({ symbol, date, side, qty, price }));
+  st.trades = (mode === 'merge' ? [...(st.trades || []), ...keep] : keep).slice(-20000);
   st.importedAt = new Date().toISOString();
   save(st);
   return {

@@ -53,7 +53,9 @@ case "${1:-}" in
     # Re-test the per-signal odds (shown adjusted only if they beat the plain win rate out of sample)
     node paper-bot/vwap-odds.mjs >/dev/null
     # NSE holiday list (exchange calendar for health checks, alerts and market-open status)
-    node paper-bot/market-calendar.mjs --refresh >/dev/null ;;
+    node paper-bot/market-calendar.mjs --refresh >/dev/null
+    # Factor lab: NSE momentum / quality / low-vol / value indices vs NIFTY (adds each new month-end)
+    node paper-bot/factor-lab.mjs >/dev/null ;;
   backup)
     caffeinate -i -w $$ & # keep the Mac awake until this job finishes
     echo "$(date '+%F %T') backup"; node paper-bot/backup.mjs ;;

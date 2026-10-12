@@ -52,6 +52,8 @@ import { indexFunds } from './paper-bot/index-funds.mjs';
 import { loadDirectionLong } from './paper-bot/direction-long.mjs';
 import { loadIntradayTest } from './paper-bot/intraday-test.mjs';
 import { loadOdds, oddsFor } from './paper-bot/vwap-odds.mjs';
+import { tradesVsIndex } from './paper-bot/vs-index.mjs';
+import { loadFactorLab } from './paper-bot/factor-lab.mjs';
 import { vwapPullbackTest, saveVwapPullback, loadVwapPullback, paperSummary, paperUpdate, loadImprove, todaySignals, parseSizing, sizeTrade } from './paper-bot/vwap-pullback.mjs';
 import { bigMove, evaluateBigMove, saveBigMoveEval, loadBigMoveEval } from './paper-bot/big-move.mjs';
 import { testPositioning, saveResult as savePositioning, loadResult as loadPositioning } from './paper-bot/options-positioning.mjs';
@@ -513,6 +515,12 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && url.pathname === '/api/holdings/remove') {
       const b = await readJson(req);
       return json(res, 200, removeLot(b.id));
+    }
+    if (req.method === 'GET' && url.pathname === '/api/holdings/vs-index') {
+      return json(res, 200, await tradesVsIndex({}));
+    }
+    if (req.method === 'GET' && url.pathname === '/api/factor-lab') {
+      return json(res, 200, loadFactorLab() || { rows: [], note: 'Not run yet (node paper-bot/factor-lab.mjs; the weekly refit runs it).' });
     }
     if (req.method === 'POST' && url.pathname === '/api/holdings/import') {
       const b = await readJson(req);
