@@ -537,6 +537,23 @@
           stop 2 × ATR, target 1:2, no new trades after 1 PM, exit by 3 PM, at most 2 trades a day. Tested after real intraday charges, then recorded as a paper
           trade every day after the close. Not investment advice.
         </p>
+        <div style="margin:4px 0 12px;padding:10px;border:1px solid var(--line);border-radius:10px">
+          <div style="font-size:14px"><b>Your size</b> <span class="note" style="display:inline">— the paper record is kept at ₹1 lakh / 1% risk (₹1,000 a trade); this shows it at yours</span></div>
+          <div class="row" style="gap:8px;align-items:flex-end;margin-top:6px">
+            <label style="font-size:12px">Capital (₹)<input id="vpbCap" type="number" min="10000" step="10000" value="100000" /></label>
+            <label style="font-size:12px">Risk per trade (% of capital)<input id="vpbRisk" type="number" min="0.1" max="5" step="0.1" value="1" /></label>
+            <button id="vpbSizeBtn" type="button" style="flex:0 0 auto">Apply</button>
+          </div>
+          <div id="vpbSizeNote" class="note"></div>
+          <details style="margin-top:6px"><summary style="cursor:pointer;font-size:13px">Position-size calculator</summary>
+            <div class="row" style="gap:8px;align-items:flex-end;margin-top:6px">
+              <label style="font-size:12px">Entry price<input id="vpbEntry" type="number" step="0.05" /></label>
+              <label style="font-size:12px">Stop price<input id="vpbStop" type="number" step="0.05" /></label>
+              <button id="vpbCalcBtn" type="button" style="flex:0 0 auto">Calculate</button>
+            </div>
+            <div id="vpbCalcOut" style="font-size:13px;margin-top:6px"></div>
+          </details>
+        </div>
         <div style="font-size:14px"><b>Today's signals</b> <span id="vpbTodayWhen" class="note" style="display:inline"></span>
           <button id="vpbTodayBtn" type="button" style="margin-left:6px;padding:3px 10px;background:var(--soft);color:var(--ink);border:1px solid var(--line)">Refresh</button></div>
         <div id="vpbToday" style="margin:6px 0 14px">Loading…</div>
@@ -2070,6 +2087,8 @@
               <div style="height:8px;background:var(--soft);border-radius:4px;overflow:hidden"><div style="height:100%;width:${Math.round(x.trust.progress * 100)}%;background:${col[x.trust.level]}"></div></div>
               <div class="note" style="color:${x.trust.level === 'early' ? 'var(--muted)' : col[x.trust.level]}">${esc(x.trust.verdict)}</div></div>`).join('');
         }
+        const yours = Object.values(p.byVariant || {}).filter((x) => x.yours?.trades);
+        if (yours.length) html += `<div class="note" style="color:var(--ink)"><b>At your size</b> (${esc(sizeLabel())}): ${yours.map((x) => `${esc(x.label.split(':')[0])} ${x.yours.trades} trades, total <b style="color:${x.yours.totalNetRs >= 0 ? 'var(--up)' : 'var(--down)'}">${rs(x.yours.totalNetRs)}</b>`).join(' · ')}</div>`;
         const anyPaper = Object.values(p.byVariant || {}).some((x) => x.trades);
         if (anyPaper) {
           html += head + Object.values(p.byVariant).map((x) => row(x.label, x)).join('') + '</tbody></table>' +
@@ -2078,9 +2097,52 @@
         } else html += '<div class="note">No paper trades recorded yet.</div>';
         $('vpbOut').innerHTML = html;
       }
+      // your capital / risk % (kept in this browser only)
+      const SIZE_KEY = 'vpbSize';
+      function getSize() {
+        try { return JSON.parse(localStorage.getItem(SIZE_KEY) || 'null'); } catch { return null; }
+      }
+      function sizeQuery() {
+        const z = getSize();
+        return z ? `?capital=${encodeURIComponent(z.capital)}&riskPct=${encodeURIComponent(z.riskPct)}` : '';
+      }
+      function sizeLabel() {
+        const z = getSize() || { capital: 100000, riskPct: 1 };
+        return `₹${Number(z.capital).toLocaleString('en-IN')} capital · ${z.riskPct}% risk = ₹${Math.round(z.capital * z.riskPct / 100).toLocaleString('en-IN')} a trade`;
+      }
+      {
+        const z = getSize();
+        if (z) { $('vpbCap').value = z.capital; $('vpbRisk').value = z.riskPct; }
+        $('vpbSizeNote').textContent = (z ? 'Showing your size: ' : 'Standard size: ') + sizeLabel();
+      }
+      $('vpbSizeBtn').addEventListener('click', async () => {
+        const capital = Number($('vpbCap').value);
+        const riskPct = Number($('vpbRisk').value);
+        if (!(capital >= 10000) || !(riskPct > 0 && riskPct <= 5)) {
+          $('vpbSizeNote').textContent = 'Capital must be at least ₹10,000 and risk between 0.1% and 5%.';
+          return;
+        }
+        try { localStorage.setItem(SIZE_KEY, JSON.stringify({ capital, riskPct })); } catch { /* storage unavailable: applies to this view only */ }
+        $('vpbSizeNote').textContent = 'Showing your size: ' + sizeLabel();
+        vpbToday();
+        try { vpbRender(await api('/api/vwap-pullback' + sizeQuery())); } catch (e) { $('vpbOut').innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`; }
+      });
+      $('vpbCalcBtn').addEventListener('click', async () => {
+        const z = getSize() || { capital: Number($('vpbCap').value) || 100000, riskPct: Number($('vpbRisk').value) || 1 };
+        try {
+          const r = await api(`/api/position-size?entry=${encodeURIComponent($('vpbEntry').value)}&stop=${encodeURIComponent($('vpbStop').value)}&capital=${z.capital}&riskPct=${z.riskPct}`);
+          const rs = (v) => '₹' + Math.round(v).toLocaleString('en-IN');
+          $('vpbCalcOut').innerHTML = r.qty
+            ? `<b>${r.side === 'long' ? 'Buy' : 'Sell short'} ${r.qty} shares</b> (risking ${rs(r.riskRs)} at ${r.perShareRisk.toFixed(2)} a share) · position ${rs(r.positionValue)} · margin at 5× ≈ ${rs(r.marginNeeded)}${r.cappedByLeverage ? ' · <span style="color:var(--warn)">capped by 5× intraday leverage</span>' : ''}<br>
+               Loss if the stop hits: <b style="color:var(--down)">−${rs(r.lossAtStop)}</b> (incl. charges) · 1:2 target ${r.target.toFixed(2)}: <b style="color:var(--up)">+${rs(r.gainAtTarget)}</b> after charges`
+            : esc(r.note);
+        } catch (e) {
+          $('vpbCalcOut').innerHTML = `<div class="err">${esc(e.message)}</div>`;
+        }
+      });
       async function vpbToday() {
         try {
-          const d = await api('/api/vwap-today');
+          const d = await api('/api/vwap-today' + sizeQuery());
           const rs = (v) => (v == null ? '–' : (v < 0 ? '−₹' : '+₹') + Math.abs(Math.round(v)).toLocaleString('en-IN'));
           $('vpbTodayWhen').textContent = d.date ? `${d.live ? 'live' : 'last session'} · ${d.date} · candles to ${d.lastBar} · new trades until ${d.newEntriesUntil}, all closed by ${d.exitAt}` : '';
           let h = '';
@@ -2112,7 +2174,7 @@
       });
       (async () => {
         try {
-          vpbRender(await api('/api/vwap-pullback'));
+          vpbRender(await api('/api/vwap-pullback' + sizeQuery()));
         } catch (e) {
           $('vpbOut').innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
         }
@@ -2670,12 +2732,14 @@
         }
         if (!r) return html + '<div class="note">No monitor run yet — click <b>Run now</b>.</div>';
         const ageMin = (Date.now() - new Date(r.finishedAt)) / 60000;
-        html += `<div class="note">Last run ${esc(r.market.ist)} (${ageMin < 90 ? Math.round(ageMin) + ' min' : (ageMin / 60).toFixed(1) + ' h'} ago) · market ${r.market.open ? 'open' : 'closed'}</div>`;
+        html += `<div class="note">Last run ${esc(r.market.ist)} (${ageMin < 90 ? Math.round(ageMin) + ' min' : (ageMin / 60).toFixed(1) + ' h'} ago) · market ${r.market.open ? 'open' : r.market.holiday ? `closed (NSE holiday: ${esc(r.market.holiday)})` : 'closed'}</div>`;
         if (d.weekly) {
           const w = d.weekly;
           html += `<details style="margin:8px 0;border:1px solid var(--line);border-radius:10px;padding:8px 10px"><summary style="cursor:pointer;font-size:13px"><b>Weekly scorecard ${esc(w.week.label)}</b> · ${esc(w.summary)}</summary>
             <table><thead><tr><th style="text-align:left">Account</th><th>Equity</th><th>This week</th><th>Since start</th></tr></thead><tbody>${w.accounts.map((a) =>
               `<tr><td style="text-align:left">${esc(a.name)}</td><td>₹${Math.round(a.equity).toLocaleString('en-IN')}</td><td>${a.weekPct == null ? '–' : (a.weekPct >= 0 ? '+' : '') + a.weekPct.toFixed(2) + '%'}</td><td>${a.totalPct == null ? '–' : (a.totalPct >= 0 ? '+' : '') + a.totalPct.toFixed(2) + '%'}</td></tr>`).join('')}</tbody></table>
+            ${w.strategy ? `<table style="font-size:12px"><thead><tr><th style="text-align:left">Strategy version (paper)</th><th>Trades this week</th><th>Week net</th><th>Total net</th></tr></thead><tbody>${w.strategy.map((x) =>
+              `<tr><td style="text-align:left">${esc(x.label)}</td><td>${x.weekTrades}</td><td style="color:${x.weekNetRs >= 0 ? 'var(--up)' : 'var(--down)'}">${(x.weekNetRs < 0 ? '−₹' : '+₹') + Math.abs(Math.round(x.weekNetRs)).toLocaleString('en-IN')}</td><td>${(x.totalNetRs < 0 ? '−₹' : '+₹') + Math.abs(Math.round(x.totalNetRs)).toLocaleString('en-IN')}</td></tr>`).join('')}</tbody></table>` : ''}
             <div class="note">${w.predictions.scored ? `${w.predictions.scored} predictions scored this week · Brier ${w.predictions.brier.app.toFixed(4)} vs coin-flip ${w.predictions.brier.uniform.toFixed(4)}` : 'No predictions scored this week.'}${w.allTime?.verdict ? ' · All time: ' + esc(w.allTime.verdict) : ''}</div></details>`;
         }
         if (r.alerts?.length) {

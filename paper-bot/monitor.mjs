@@ -24,6 +24,7 @@
 //
 // Research / paper simulation only. Not investment advice.
 
+import { isTradingDay, holidays } from './market-calendar.mjs';
 import { writeJsonAtomic } from '../util.mjs';
 import { mkdirSync, writeFileSync, appendFileSync, existsSync, readdirSync, readFileSync } from 'fs';
 import { execFile } from 'child_process';
@@ -130,8 +131,10 @@ export function marketStatus(now = new Date()) {
   const ist = new Date(now.getTime() + 19800_000);
   const day = ist.getUTCDay();
   const mins = ist.getUTCHours() * 60 + ist.getUTCMinutes();
-  const open = day >= 1 && day <= 5 && mins >= 9 * 60 + 15 && mins <= 15 * 60 + 30;
-  return { open, ist: ist.toISOString().slice(0, 16).replace('T', ' ') + ' IST', weekday: day >= 1 && day <= 5 };
+  const date = ist.toISOString().slice(0, 10);
+  const holiday = holidays()[date] || null;
+  const open = isTradingDay(date) && mins >= 9 * 60 + 15 && mins <= 15 * 60 + 30;
+  return { open, ist: ist.toISOString().slice(0, 16).replace('T', ' ') + ' IST', weekday: day >= 1 && day <= 5, tradingDay: isTradingDay(date), holiday };
 }
 
 export { scorecard } from './monitor-score.mjs';
@@ -293,7 +296,8 @@ export async function runMonitor({ base = BASE, trade = true, notify: doNotify =
 
   // Weekly scorecard after the last run of the week (Friday ≥ 15:00 IST).
   try {
-    const w = maybeWeekly({ entries, notifyFn: doNotify ? notify : null });
+    const { loadPaper } = await import('./vwap-pullback.mjs');
+    const w = maybeWeekly({ entries, notifyFn: doNotify ? notify : null, paper: loadPaper() });
     if (w) report.weekly = { week: w.week.label, summary: w.summary };
   } catch (err) {
     report.weekly = { error: err.message };

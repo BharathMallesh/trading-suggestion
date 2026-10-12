@@ -21,6 +21,7 @@ import { fileURLToPath, pathToFileURL } from 'url';
 import { candles } from '../market-data.mjs';
 import { daySession } from '../groww-data.mjs';
 import { mapLimit } from '../util.mjs';
+import { tradingDaysBetween } from './market-calendar.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const STORE = process.env.CANDLE_STORE || join(__dir, 'data', 'candles');
@@ -124,9 +125,9 @@ export async function backfillGroww({ symbols, days = 60, intervals = STORED_INT
 
 /**
  * Gaps in the saved 5-minute history: series that stopped before `want` (the
- * last full session), sessions NIFTY has but a stock is missing, and runs of
- * more than 4 calendar days with no NIFTY bars (a missed collection — or a
- * long market holiday). Returns plain-language issues; [] when all is well.
+ * last full session), sessions NIFTY has but a stock is missing, and NSE
+ * trading days (exchange calendar) with no NIFTY bars at all. Returns
+ * plain-language issues; [] when all is well.
  */
 export function storeGaps(want, interval = '5m') {
   const dir = join(STORE, interval);
@@ -134,9 +135,10 @@ export function storeGaps(want, interval = '5m') {
   const daysOf = (rows) => new Set(rows.map((r) => String(r.date).slice(0, 10)));
   const ref = [...daysOf(readStore('^NSEI', interval))].sort();
   const issues = [];
-  for (let i = 1; i < ref.length; i++) {
-    const gap = (Date.parse(ref[i]) - Date.parse(ref[i - 1])) / 86400000;
-    if (gap > 4) issues.push(`no ${interval} bars between ${ref[i - 1]} and ${ref[i]} (${gap - 1} days) — missed collection or a long holiday`);
+  if (ref.length) {
+    // NSE trading days (holidays skipped) with no NIFTY bars saved = missed collections
+    const missed = tradingDaysBetween(ref[0], ref[ref.length - 1]).filter((d) => !ref.includes(d));
+    if (missed.length) issues.push(`no ${interval} bars saved for ${missed.length} trading day${missed.length > 1 ? 's' : ''} (${missed.slice(0, 4).join(', ')}${missed.length > 4 ? '…' : ''}) — collection missed; Yahoo keeps ~60 days, so older gaps can't be refilled`);
   }
   const stale = [];
   const holes = [];

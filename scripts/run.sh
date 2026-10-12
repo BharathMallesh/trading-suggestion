@@ -28,6 +28,7 @@ case "${1:-}" in
     exec node server.mjs
     ;;
   collect)
+    caffeinate -i -w $$ & # keep the Mac awake until this job finishes
     echo "$(date '+%F %T') collect"; node paper-bot/collector.mjs --notify
     # same-stocks intraday strategy: record today's paper trades (after the close) and send the day's summary
     node paper-bot/vwap-pullback.mjs --paper --notify ;;
@@ -40,6 +41,7 @@ case "${1:-}" in
     fi
     echo "$(date '+%F %T') monitor"; exec node paper-bot/monitor.mjs --notify ;;
   refit)
+    caffeinate -i -w $$ & # keep the Mac awake until this job finishes
     echo "$(date '+%F %T') refit"; node paper-bot/evaluate.mjs --interval 1d --save && node paper-bot/evaluate.mjs --interval 60m --save \
       && node paper-bot/evaluate.mjs --interval 15m --save && node paper-bot/evaluate.mjs --interval 5m --save
     # Weekly NIFTY option IV vs VIX from new NSE days (independent of the refits above).
@@ -47,8 +49,11 @@ case "${1:-}" in
     # Re-test the probability improvements (adopted only if they still pass out of sample).
     node paper-bot/prob-improve.mjs
     # Re-run the VWAP strategy improvement test on the (growing) saved 5-minute history.
-    node paper-bot/vwap-pullback.mjs --improve >/dev/null ;;
+    node paper-bot/vwap-pullback.mjs --improve >/dev/null
+    # NSE holiday list (exchange calendar for health checks, alerts and market-open status)
+    node paper-bot/market-calendar.mjs --refresh >/dev/null ;;
   backup)
+    caffeinate -i -w $$ & # keep the Mac awake until this job finishes
     echo "$(date '+%F %T') backup"; node paper-bot/backup.mjs ;;
   *)
     echo "usage: scripts/run.sh server|collect|monitor|refit|backup"; exit 2 ;;

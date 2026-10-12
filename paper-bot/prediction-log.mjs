@@ -2,6 +2,7 @@
 // Stores each Call/Put forecast, later scores it against realized price moves.
 // NOT investment advice. Hit-rates are descriptive, not guarantees.
 
+import { isTradingDay } from './market-calendar.mjs';
 import { readJsonSafe, writeJsonAtomic, withFileLock } from '../util.mjs';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { dirname, join } from 'path';
@@ -98,10 +99,10 @@ function istParts(d) {
   return { date: t.toISOString().slice(0, 10), mins: t.getUTCHours() * 60 + t.getUTCMinutes(), day: t.getUTCDay() };
 }
 
-/** NSE cash session (09:15–15:30 IST, Mon–Fri; holidays not modelled). */
+/** NSE cash session (09:15–15:30 IST on a trading day; exchange holidays skipped). */
 export function nseOpen(d) {
   const p = istParts(d);
-  return p.day >= 1 && p.day <= 5 && p.mins >= 555 && p.mins < 930;
+  return isTradingDay(p.date) && p.mins >= 555 && p.mins < 930;
 }
 
 /** A daily bar dated `date` is complete once that day's 15:30 IST close (+5 min) has passed. */

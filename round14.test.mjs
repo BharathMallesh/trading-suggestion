@@ -106,7 +106,7 @@ test('5-minute history gaps: stale series, missing days, long breaks', async () 
   writeFileSync(join(dir, 'A.NS.json'), JSON.stringify(bars(['2026-10-01', '2026-10-06', '2026-10-12'])));
   writeFileSync(join(dir, 'B.NS.json'), JSON.stringify(bars(['2026-10-05', '2026-10-06'])));
   const g = c.storeGaps('2026-10-12');
-  assert.ok(g.some((x) => /between 2026-10-06 and 2026-10-12/.test(x)), 'long break');
+  assert.ok(g.some((x) => /3 trading days \(2026-10-07, 2026-10-08, 2026-10-09\)/.test(x)), 'missed trading days (2 Oct holiday not counted)');
   assert.ok(g.some((x) => /not updated since the last session: B\.NS/.test(x)));
   assert.ok(g.some((x) => /A\.NS missing 1 day \(2026-10-05\)/.test(x)));
   assert.ok(!g.some((x) => /B\.NS missing/.test(x)), 'days before a series started are not gaps');

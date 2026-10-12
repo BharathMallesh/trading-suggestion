@@ -29,8 +29,9 @@ import { dirname, join } from 'node:path';
 import { candles } from '../market-data.mjs';
 import { orderCharges } from './costs.mjs';
 import { EVAL_UNIVERSE, VIDEO_STOCKS } from './config.mjs';
-import { mapLimit, writeJsonAtomic } from '../util.mjs';
+import { mapLimit, writeJsonAtomic, badRequest } from '../util.mjs';
 import { historyCandles } from './collector.mjs';
+import { isTradingDay } from './market-calendar.mjs';
 
 const SAVED = () => process.env.VWAP_PULLBACK_PATH || join(dirname(fileURLToPath(import.meta.url)), 'data', 'vwap-pullback.json');
 export { VIDEO_STOCKS };
@@ -538,6 +539,55 @@ export async function paperUpdate({ loadCandles = candles, now = new Date() } = 
   return { added, ...paperSummary(st) };
 }
 
+// ------------------------------------------------------------ your size ---
+
+/** Validate a capital / risk-% choice → { capital, riskPct, riskRs } (null = use the standard ₹1 lakh / 1%). */
+export function parseSizing(capital, riskPct) {
+  if (capital == null && riskPct == null) return null;
+  const c = Number(capital ?? RULES.capital);
+  const r = Number(riskPct ?? 1);
+  if (!(c >= 10000 && c <= 1e9)) throw badRequest('Capital must be between ₹10,000 and ₹100 crore.');
+  if (!(r > 0 && r <= 5)) throw badRequest('Risk per trade must be between 0.1% and 5% of capital.');
+  return { capital: c, riskPct: r, riskRs: (c * r) / 100 };
+}
+
+/**
+ * Position size for one trade: risk a fixed % of capital between entry and
+ * stop, capped by intraday leverage. Includes the round-trip charges at the
+ * stop and at a 1:2 target, so "loss at stop" is what you'd really lose.
+ */
+export function sizeTrade({ entry, stop, capital = RULES.capital, riskPct = 1, leverage = RULES.leverage, rr = RULES.rr }) {
+  entry = Number(entry);
+  stop = Number(stop);
+  if (!(entry > 0) || !(stop > 0) || entry === stop) throw badRequest('Enter an entry price and a different stop price.');
+  const { riskRs } = parseSizing(capital, riskPct);
+  const side = stop < entry ? 'long' : 'short';
+  const perShare = Math.abs(entry - stop);
+  const byRisk = Math.floor(riskRs / perShare);
+  const byLeverage = Math.floor((capital * leverage) / entry);
+  const qty = Math.max(0, Math.min(byRisk, byLeverage));
+  const target = side === 'long' ? entry + rr * perShare : entry - rr * perShare;
+  const lossAtStop = qty ? perShare * qty + roundTripCharges(entry, stop, qty, side) : 0;
+  const gainAtTarget = qty ? rr * perShare * qty - roundTripCharges(entry, target, qty, side) : 0;
+  return {
+    side, qty, riskRs, perShareRisk: perShare, positionValue: qty * entry, marginNeeded: (qty * entry) / leverage,
+    cappedByLeverage: byLeverage < byRisk, target, lossAtStop, gainAtTarget,
+    note: qty ? null : 'Risk too small for even one share at this stop distance.',
+  };
+}
+
+/** Re-size recorded / simulated trades to your risk per trade (same entries, stops and exits; charges recomputed). */
+export function resizeTrades(trades, { riskRs, capital }, leverage = RULES.leverage) {
+  return trades.map((t) => {
+    const perShare = Math.abs(t.entry - t.stop);
+    if (!(perShare > 0)) return t;
+    const qty = Math.max(1, Math.floor(Math.min(riskRs / perShare, (capital * leverage) / t.entry)));
+    const gross = (t.side === 'long' ? t.exit - t.entry : t.entry - t.exit) * qty;
+    const charges = roundTripCharges(t.entry, t.exit, qty, t.side);
+    return { ...t, qty, gross, charges, net: gross - charges };
+  });
+}
+
 // "When can we trust it?": a fixed finish line, set before the results come in.
 export const TRUST = { trades: 100, days: 40, earlyStopTrades: 30 };
 
@@ -573,7 +623,7 @@ export function closeSummary(st, date) {
  * its 20 MA and VWAP, and the trades each paper version has taken so far,
  * valued at the latest candle (after charges, as if closed now).
  */
-export async function todaySignals({ loadCandles = candles, now = new Date() } = {}) {
+export async function todaySignals({ loadCandles = candles, now = new Date(), sizing = null } = {}) {
   const t = istNow(now);
   const p1 = Math.floor(now.getTime() / 1000) - 8 * 86400;
   const symbols = [...new Set([...VIDEO_STOCKS, ...Object.values(PAPER_VARIANTS).flatMap((v) => v.stocks || [])])];
@@ -588,9 +638,7 @@ export async function todaySignals({ loadCandles = candles, now = new Date() } =
   })).filter(Boolean);
   if (!data.length) return { at: now.toISOString(), date: null, stocks: [], variants: {}, note: 'No 5-minute data available right now.' };
   const date = data.map(({ rows }) => day(rows[rows.length - 1])).sort().pop();
-  const ist = new Date(now.getTime() + 19800_000);
-  const weekday = ist.getUTCDay() >= 1 && ist.getUTCDay() <= 5;
-  const live = weekday && date === t.date && t.mins >= 555 && t.mins < 930;
+  const live = isTradingDay(t.date) && date === t.date && t.mins >= 555 && t.mins < 930;
   const stocks = data.map(({ s, rows, daily }) => {
     const bars = indicators(rows, RULES).filter((b) => day(b) === date);
     const b = bars[bars.length - 1];
@@ -607,7 +655,8 @@ export async function todaySignals({ loadCandles = candles, now = new Date() } =
   const variants = {};
   for (const [k, v] of Object.entries(PAPER_VARIANTS)) {
     const list = v.stocks || VIDEO_STOCKS;
-    const all = data.filter((x) => list.includes(x.s)).flatMap(({ s, rows, daily }) => backtestStock(s, rows, v.rules, { daily }));
+    const rules = sizing ? { ...v.rules, riskRs: sizing.riskRs, capital: sizing.capital } : v.rules;
+    const all = data.filter((x) => list.includes(x.s)).flatMap(({ s, rows, daily }) => backtestStock(s, rows, rules, { daily }));
     const trades = accountTrades(all, v.rules.maxPerDay).filter((x) => x.date === date)
       .map((x) => ({ ...x, open: x.reason === 'close' && live }));
     variants[k] = { label: v.label, trades, netRs: trades.reduce((a, x) => a + x.net, 0), slotsLeft: Math.max(0, v.rules.maxPerDay - trades.length), stocks: list.length };
@@ -616,16 +665,18 @@ export async function todaySignals({ loadCandles = candles, now = new Date() } =
     at: now.toISOString(), date, live,
     lastBar: stocks.map((x) => x.time).sort().pop(),
     newEntriesUntil: RULES.lastEntry, exitAt: RULES.exitAt,
-    stocks, variants,
+    stocks, variants, sizing: sizing || { capital: RULES.capital, riskPct: 1, riskRs: RULES.riskRs, standard: true },
     note: 'Same rules as the paper record, on the 5-minute candles so far. Open trades are valued at the latest candle after charges (as if closed now); they end at the stop, the target or 15:00. The official record is written after the close. Paper only — not a signal to trade.',
   };
 }
 
-export function paperSummary(st = loadPaper()) {
+export function paperSummary(st = loadPaper(), sizing = null) {
   if (!st) return { startedAt: null, summary: { trades: 0 }, byVariant: {}, trades: [] };
   const byVariant = Object.fromEntries(Object.entries(PAPER_VARIANTS).map(([k, v]) => {
-    const sum = summarise(st.trades.filter((x) => (x.variant || 'video') === k));
-    return [k, { label: v.label, ...sum, trust: trustMeter(sum) }];
+    const mine = st.trades.filter((x) => (x.variant || 'video') === k);
+    const sum = summarise(mine);
+    // the record is kept at the standard ₹1,000 risk; "yours" re-sizes it to your capital / risk %
+    return [k, { label: v.label, ...sum, trust: trustMeter(sum), ...(sizing ? { yours: summarise(resizeTrades(mine, sizing)) } : {}) }];
   }));
   return { startedAt: st.startedAt, updatedAt: st.updatedAt, summary: byVariant.video, byVariant, trades: st.trades.slice(-20).reverse() };
 }
@@ -686,8 +737,13 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href &
       const t = istNow();
       const lines = closeSummary(loadPaper(), t.date);
       console.log(lines.join('\n'));
-      const wd = new Date(Date.now() + 19800_000).getUTCDay();
-      if (process.argv.includes('--notify') && wd >= 1 && wd <= 5 && t.mins >= 15 * 60 + 35) {
+      try {
+        const { refreshWeeklyStrategy } = await import('./weekly.mjs');
+        if (refreshWeeklyStrategy(loadPaper())) console.log('Weekly scorecard: strategy section updated.');
+      } catch (err) {
+        console.log(`Weekly scorecard not updated: ${err.message}`);
+      }
+      if (process.argv.includes('--notify') && isTradingDay(t.date) && t.mins >= 15 * 60 + 35) {
         const { notify } = await import('./monitor.mjs');
         notify(`Strategy paper · ${t.date}`, lines.join(' · '));
       }

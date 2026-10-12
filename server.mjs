@@ -51,7 +51,7 @@ import { ask as askApp } from './paper-bot/assistant.mjs';
 import { indexFunds } from './paper-bot/index-funds.mjs';
 import { loadDirectionLong } from './paper-bot/direction-long.mjs';
 import { loadIntradayTest } from './paper-bot/intraday-test.mjs';
-import { vwapPullbackTest, saveVwapPullback, loadVwapPullback, paperSummary, paperUpdate, loadImprove, todaySignals } from './paper-bot/vwap-pullback.mjs';
+import { vwapPullbackTest, saveVwapPullback, loadVwapPullback, paperSummary, paperUpdate, loadImprove, todaySignals, parseSizing, sizeTrade } from './paper-bot/vwap-pullback.mjs';
 import { bigMove, evaluateBigMove, saveBigMoveEval, loadBigMoveEval } from './paper-bot/big-move.mjs';
 import { testPositioning, saveResult as savePositioning, loadResult as loadPositioning } from './paper-bot/options-positioning.mjs';
 import { llmLastModel } from './ling-client.mjs';
@@ -527,12 +527,19 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, liveScorecard(null, { mode }));
     }
     if (req.method === 'GET' && url.pathname === '/api/vwap-pullback') {
-      return json(res, 200, { backtest: loadVwapPullback(), paper: paperSummary(), improve: loadImprove() });
+      const sizing = parseSizing(url.searchParams.get('capital') ?? undefined, url.searchParams.get('riskPct') ?? undefined);
+      return json(res, 200, { backtest: loadVwapPullback(), paper: paperSummary(undefined, sizing), improve: loadImprove() });
     }
     if (req.method === 'GET' && url.pathname === '/api/vwap-today') {
       // live view: refreshed at most once a minute (Yahoo 5-minute bars)
-      if (!vwapTodayCache || Date.now() - vwapTodayCache.at > 60_000) vwapTodayCache = { at: Date.now(), data: await todaySignals({}) };
+      const sizing = parseSizing(url.searchParams.get('capital') ?? undefined, url.searchParams.get('riskPct') ?? undefined);
+      const key = sizing ? `${sizing.capital}|${sizing.riskPct}` : 'std';
+      if (!vwapTodayCache || vwapTodayCache.key !== key || Date.now() - vwapTodayCache.at > 60_000) vwapTodayCache = { at: Date.now(), key, data: await todaySignals({ sizing }) };
       return json(res, 200, vwapTodayCache.data);
+    }
+    if (req.method === 'GET' && url.pathname === '/api/position-size') {
+      const q = (k) => url.searchParams.get(k) ?? undefined;
+      return json(res, 200, sizeTrade({ entry: q('entry'), stop: q('stop'), capital: Number(q('capital') ?? 100000), riskPct: Number(q('riskPct') ?? 1) }));
     }
     if (req.method === 'POST' && url.pathname === '/api/vwap-pullback') {
       await readJson(req);

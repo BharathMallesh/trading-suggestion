@@ -8,6 +8,7 @@ import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { quote } from '../market-data.mjs';
 import { storeStatus, storeGaps } from './collector.mjs';
+import { lastSessionDate } from './market-calendar.mjs';
 import { loadCalibration } from './calibration.mjs';
 import { computeStats } from './prediction-log.mjs';
 import { llmCredits, llmStatus, llmLastModel } from '../ling-client.mjs';
@@ -18,16 +19,8 @@ import { OPENROUTER } from '../config.mjs';
 const __dir = dirname(fileURLToPath(import.meta.url));
 const MONITOR_DIR = process.env.MONITOR_DIR || join(__dir, 'monitor');
 
-/** Most recent weekday (IST) strictly before `now`'s IST date — the last full session. */
-export function lastSessionDate(now = new Date()) {
-  const ist = new Date(now.getTime() + 19800_000);
-  const mins = ist.getUTCHours() * 60 + ist.getUTCMinutes();
-  let d = new Date(Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate()));
-  // Today counts once the session has closed (15:30 IST) on a weekday.
-  if (!(d.getUTCDay() >= 1 && d.getUTCDay() <= 5 && mins >= 15 * 60 + 30)) d = new Date(d.getTime() - 86400000);
-  while (d.getUTCDay() === 0 || d.getUTCDay() === 6) d = new Date(d.getTime() - 86400000);
-  return d.toISOString().slice(0, 10);
-}
+/** The last completed NSE session (weekends and exchange holidays skipped). */
+export { lastSessionDate } from './market-calendar.mjs';
 
 const check = (name, level, detail) => ({ name, level, detail });
 
