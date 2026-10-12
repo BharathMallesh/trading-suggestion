@@ -2025,14 +2025,23 @@
             `<div class="note">${esc(b.note)}</div>`;
         }
         const p = d.paper;
-        html += `<div style="font-size:14px;margin-top:10px"><b>Live paper record</b> ${p.startedAt ? `since ${esc(p.startedAt)}` : '(starts with the first session after today)'} — recorded every trading day after the close, for the video's rules and the improved version side by side.</div>`;
+        html += `<div style="font-size:14px;margin-top:10px"><b>Live paper record</b> ${p.startedAt ? `since ${esc(p.startedAt)}` : '(starts with the first session after today)'} — recorded every trading day after the close, for the video's rules, the improved version and the morning scanner side by side.</div>`;
         const imp = d.improve?.pick;
-        if (imp) html += `<div class="note">Improvement test (chosen on the first half, judged on the second): best was <b>${esc(imp.name)}</b> — ${imp.testVideoStocks.avgNetRs >= 0 ? '+' : '−'}₹${Math.abs(Math.round(imp.testVideoStocks.avgNetRs))}/trade on the video stocks but ${imp.testWiderStocks.avgNetRs >= 0 ? '+' : '−'}₹${Math.abs(Math.round(imp.testWiderStocks.avgNetRs))}/trade on 16 other stocks → ${imp.adopt ? 'adopted' : 'not proven; paper-tracked'}.</div>`;
+        if (imp) html += `<div class="note">Improvement test (chosen on the first half, judged on the second): best was <b>${esc(imp.name)}</b> — ${imp.testVideoStocks.avgNetRs >= 0 ? '+' : '−'}₹${Math.abs(Math.round(imp.testVideoStocks.avgNetRs))}/trade on the video stocks but ${imp.testWiderStocks.avgNetRs >= 0 ? '+' : '−'}₹${Math.abs(Math.round(imp.testWiderStocks.avgNetRs))}/trade on 16 other stocks → ${imp.adopt ? 'adopted' : 'not adopted'}.</div>`;
+        const r2 = d.improve?.round2;
+        if (r2) {
+          const cell = (x) => !x || !x.trades ? '<td>0</td><td>–</td><td>–</td>' : `<td>${x.trades}</td><td>${Math.round(x.winRate * 100)}%</td><td style="color:${x.avgNetRs >= 0 ? 'var(--up)' : 'var(--down)'}"><b>${rs(x.avgNetRs)}</b></td>`;
+          const names = { limitEntry: 'limit order at the 20 MA', trailMa: 'trailing exit (close back across the MA)', volumeConfirm: 'volume confirmation', morningGap: 'morning gap ≥ 0.5% (in-play stocks)', trendDay: 'trend day (first 30 min ≥ 0.5%)' };
+          const label = (n) => n.replace(/limitEntry|trailMa|volumeConfirm|morningGap|trendDay/g, (k) => names[k]);
+          html += `<details style="margin-top:8px"><summary style="cursor:pointer;font-size:13px"><b>Round 2 ideas</b>: unseen days only (${esc(d.improve.splitDate)} →), ${d.improve.sessions || '?'} sessions of saved history</summary>
+            <div style="overflow-x:auto"><table style="font-size:12px"><thead><tr><th style="text-align:left">Version</th><th>Video stocks: trades</th><th>Win</th><th>Avg after costs</th><th>16 other stocks: trades</th><th>Win</th><th>Avg after costs</th></tr></thead><tbody>${r2.map((v) => `<tr><td style="text-align:left">${esc(label(v.name))}</td>${cell(v.video)}${cell(v.others)}</tr>`).join('')}</tbody></table></div>
+            <div class="note">None is proven: every version lost in the first half of the period and did better in the second, so the market's mood mattered more than the filter. The best (morning gap) is now paper-tracked as a third version. The test gets longer every day as 5-minute candles are saved.</div></details>`;
+        }
         const anyPaper = Object.values(p.byVariant || {}).some((x) => x.trades);
         if (anyPaper) {
           html += head + Object.values(p.byVariant).map((x) => row(x.label, x)).join('') + '</tbody></table>' +
             `<table style="font-size:12px"><thead><tr><th style="text-align:left">Date</th><th>Stock</th><th>Side</th><th>Entry</th><th>Exit</th><th>Why</th><th>Net</th></tr></thead><tbody>${p.trades.map((t) =>
-              `<tr><td style="text-align:left">${esc(t.date)} ${esc(t.time)} <span style="color:var(--muted);font-size:11px">${esc(t.variant === 'improved' ? 'improved' : 'video')}</span></td><td>${esc(t.symbol.replace('.NS', ''))}</td><td>${esc(t.side)}</td><td>${t.entry.toFixed(2)}</td><td>${t.exit.toFixed(2)}</td><td>${esc(t.reason)}</td><td style="color:${t.net >= 0 ? 'var(--up)' : 'var(--down)'}">${rs(t.net)}</td></tr>`).join('')}</tbody></table>`;
+              `<tr><td style="text-align:left">${esc(t.date)} ${esc(t.time)} <span style="color:var(--muted);font-size:11px">${esc(t.variant || 'video')}</span></td><td>${esc(t.symbol.replace('.NS', ''))}</td><td>${esc(t.side)}</td><td>${t.entry.toFixed(2)}</td><td>${t.exit.toFixed(2)}</td><td>${esc(t.reason)}</td><td style="color:${t.net >= 0 ? 'var(--up)' : 'var(--down)'}">${rs(t.net)}</td></tr>`).join('')}</tbody></table>`;
         } else html += '<div class="note">No paper trades recorded yet.</div>';
         $('vpbOut').innerHTML = html;
       }

@@ -28,11 +28,12 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { candles } from '../market-data.mjs';
 import { orderCharges } from './costs.mjs';
-import { EVAL_UNIVERSE } from './config.mjs';
+import { EVAL_UNIVERSE, VIDEO_STOCKS } from './config.mjs';
 import { mapLimit, writeJsonAtomic } from '../util.mjs';
+import { historyCandles } from './collector.mjs';
 
 const SAVED = () => process.env.VWAP_PULLBACK_PATH || join(dirname(fileURLToPath(import.meta.url)), 'data', 'vwap-pullback.json');
-export const VIDEO_STOCKS = ['BAJAJFINSV.NS', 'TRENT.NS', 'TITAN.NS', 'MARUTI.NS'];
+export { VIDEO_STOCKS };
 export const RULES = { ma: 20, maType: 'sma', stopMode: 'atr', atr: 14, stopAtr: 2, rr: 2, lastEntry: '13:00', exitAt: '15:00', firstEntry: '09:30', riskRs: 1000, capital: 100000, leverage: 5, slippagePct: 0.03, maxPerDay: 2 };
 const COSTS = { brokerageDeliveryPct: 0, brokerageDeliveryCap: 0, brokerageIntradayPct: 0.03, brokerageIntradayCap: 20, dpChargePerSell: 0, slippagePct: 0 };
 
@@ -93,6 +94,7 @@ export function backtestStock(symbol, rows, rules = RULES, ctx = {}) {
   const bars = indicators(rows, rules);
   const trades = [];
   let tradedToday = null;
+  const dayInfo = (rules.morningGapPct || rules.trendDayPct) ? sessionInfo(bars) : null;
   for (let i = 1; i + 1 < bars.length; i++) {
     const b = bars[i];
     const d = day(b);
@@ -121,24 +123,60 @@ export function backtestStock(symbol, rows, rules = RULES, ctx = {}) {
       const dt = ctx.daily?.get(d);
       if (!dt || (side === 'long') !== dt.aboveAvg20) continue;
     }
+    if (rules.volumeConfirm) {
+      // quiet pullback (3 candles before the signal below the average of up to 20 candles before them)
+      // and a bounce with participation (signal candle above those 3)
+      const back = bars.slice(Math.max(0, i - 23), i - 3).map((x) => x.volume || 0);
+      const pull = bars.slice(i - 3, i).map((x) => x.volume || 0);
+      const avg = (a) => a.reduce((x, y) => x + y, 0) / (a.length || 1);
+      if (back.length < 10 || !(avg(back) > 0) || !(avg(pull) < avg(back)) || !((b.volume || 0) > avg(pull))) continue;
+    }
+    if (rules.morningGapPct) {
+      // "in play" this morning: moved ≥ X% from yesterday's close by 09:30, trade only that way
+      const g = dayInfo.get(d)?.gapPct;
+      if (g == null || dir * g < rules.morningGapPct) continue;
+    }
+    if (rules.trendDayPct) {
+      // trend day: first 30 minutes (09:15–09:45) moved ≥ X%, trade only that way, from 09:45
+      const m = dayInfo.get(d)?.first30Pct;
+      if (t < '09:45' || m == null || dir * m < rules.trendDayPct) continue;
+    }
     const nx = bars[i + 1];
     if (day(nx) !== d) continue;
     const slip = rules.slippagePct / 100;
-    const entry = side === 'long' ? nx.open * (1 + slip) : nx.open * (1 - slip);
+    let entry;
+    let k0 = i + 1; // candle the trade starts in
+    if (rules.limitEntry) {
+      // limit order at the signal candle's 20 MA, valid for the next 3 candles; no
+      // entry slippage, but filled only if price trades THROUGH the limit
+      const lim = b.ma;
+      entry = null;
+      for (let k = i + 1; k <= i + 3 && k < bars.length && day(bars[k]) === d; k++) {
+        const c = bars[k];
+        if (side === 'long' ? c.low < lim : c.high > lim) {
+          entry = side === 'long' ? Math.min(lim, c.open) : Math.max(lim, c.open);
+          k0 = k;
+          break;
+        }
+      }
+      if (entry == null) continue; // not filled → no trade, the stock can signal again
+    } else entry = side === 'long' ? nx.open * (1 + slip) : nx.open * (1 - slip);
+    const fill = bars[k0];
     // stop: 2 × ATR (default) or just beyond the pullback candle ("above the pullback area")
     const risk = rules.stopMode === 'swing'
       ? Math.max(0.25 * b.atr, side === 'long' ? entry - (b.low - 0.1 * b.atr) : (b.high + 0.1 * b.atr) - entry)
       : rules.stopAtr * b.atr;
     let stop = side === 'long' ? entry - risk : entry + risk;
-    const target = side === 'long' ? entry + rules.rr * risk : entry - rules.rr * risk;
+    const target = rules.trailMa ? (side === 'long' ? Infinity : -Infinity) : side === 'long' ? entry + rules.rr * risk : entry - rules.rr * risk;
     const qty = Math.max(1, Math.floor(Math.min(rules.riskRs / risk, (rules.capital * rules.leverage) / entry)));
     // walk forward from the entry candle until stop / target / 15:00
     let exit = null;
     let reason = null;
-    for (let j = i + 1; j < bars.length && day(bars[j]) === d; j++) {
+    for (let j = k0; j < bars.length && day(bars[j]) === d; j++) {
       const c = bars[j];
       const hitStop = side === 'long' ? c.low <= stop : c.high >= stop;
-      const hitTarget = side === 'long' ? c.high >= target : c.low <= target;
+      // a limit fill's own candle: its high/low may have come before the fill, so no target there
+      const hitTarget = !(rules.limitEntry && j === k0) && (side === 'long' ? c.high >= target : c.low <= target);
       if (hitStop) {
         // if both inside one candle, assume the stop came first (conservative)
         exit = side === 'long' ? Math.min(stop, c.open) : Math.max(stop, c.open); // gap through the stop fills at the open
@@ -152,6 +190,15 @@ export function backtestStock(symbol, rows, rules = RULES, ctx = {}) {
       }
       // breakeven: once the trade is +1R, the stop moves to the entry (from the next candle)
       if (rules.breakeven && (side === 'long' ? c.high >= entry + risk : c.low <= entry - risk)) stop = entry;
+      // trailing exit: a candle closes back across the 20 MA → out at the next candle's open
+      if (rules.trailMa && c.ma != null && (side === 'long' ? c.close < c.ma : c.close > c.ma)) {
+        const n2 = bars[j + 1];
+        if (n2 && day(n2) === d) {
+          exit = n2.open;
+          reason = 'trail';
+          break;
+        }
+      }
       if (hhmm(c) >= rules.exitAt) {
         exit = c.close;
         reason = '15:00';
@@ -166,12 +213,36 @@ export function backtestStock(symbol, rows, rules = RULES, ctx = {}) {
     const exitFill = side === 'long' ? exit * (1 - slip) : exit * (1 + slip);
     const gross = (side === 'long' ? exitFill - entry : entry - exitFill) * qty;
     const charges = roundTripCharges(entry, exitFill, qty, side);
-    trades.push({ symbol, date: d, time: hdr(nx), side, entry, stop, target, exit: exitFill, qty, reason, gross, charges, net: gross - charges, rNet: (gross - charges) / (risk * qty), rGross: gross / (risk * qty) });
+    trades.push({ symbol, date: d, time: hdr(fill), side, entry, stop, target, exit: exitFill, qty, reason, gross, charges, net: gross - charges, rNet: (gross - charges) / (risk * qty), rGross: gross / (risk * qty) });
     tradedToday = d;
   }
   return trades;
 }
 const hdr = (r) => hhmm(r);
+
+// Real runs add the locally saved 5-minute history (collector) to Yahoo's ~60
+// days, so every test gets longer as days are collected; injected loaders (tests) are used as-is.
+const withStore = (loadCandles) => (loadCandles === candles ? (s, o) => historyCandles(s, o) : loadCandles);
+
+/** Per session: % move from the previous session's close to 09:30, and over 09:15–09:45. */
+function sessionInfo(bars) {
+  const m = new Map();
+  let prevClose = null;
+  for (let i = 0; i < bars.length; i++) {
+    const b = bars[i];
+    const d = day(b);
+    let x = m.get(d);
+    if (!x) {
+      x = { prevClose, open: b.open };
+      m.set(d, x);
+    }
+    const t = hhmm(b);
+    if (t === '09:25' && x.prevClose) x.gapPct = (b.close / x.prevClose - 1) * 100;
+    if (t === '09:40') x.first30Pct = (b.close / x.open - 1) * 100;
+    if (i + 1 === bars.length || day(bars[i + 1]) !== d) prevClose = b.close;
+  }
+  return m;
+}
 
 /** Account-level: at most `maxPerDay` trades across the stocks (earliest signals first). */
 export function accountTrades(trades, maxPerDay = RULES.maxPerDay) {
@@ -216,7 +287,7 @@ export function summarise(trades) {
     profitFactor: losses.length ? sum(wins, (t) => t.net) / Math.abs(sum(losses, (t) => t.net)) : null,
     maxDrawdownRs: dd,
     tStat: sd > 0 ? m / (sd / Math.sqrt(n)) : null,
-    exits: Object.fromEntries(['target', 'stop', '15:00', 'close'].map((k) => [k, trades.filter((t) => t.reason === k).length])),
+    exits: Object.fromEntries(['target', 'stop', 'trail', '15:00', 'close'].map((k) => [k, trades.filter((t) => t.reason === k).length])),
   };
 }
 
@@ -230,9 +301,10 @@ function verdict(all, first, second, wide) {
 
 export async function vwapPullbackTest({ loadCandles = candles, stocks = VIDEO_STOCKS, wide = EVAL_UNIVERSE } = {}) {
   const p1 = Math.floor(Date.now() / 1000) - 59 * 86400; // Yahoo keeps ~60 days of 5-minute bars
+  const get = withStore(loadCandles);
   const load = async (list) => (await mapLimit(list, 4, async (s) => {
     try {
-      const rows = (await loadCandles(s, { period1: p1, interval: '5m' })).filter((r) => r.close > 0 && r.high > 0);
+      const rows = (await get(s, { period1: p1, interval: '5m' })).filter((r) => r.close > 0 && r.high > 0);
       return rows.length > 500 ? { s, rows } : null;
     } catch {
       return null;
@@ -293,7 +365,14 @@ export const FILTERS = {
   window945to12: { firstEntry: '09:45', lastEntry: '12:00' },
   stop3atr: { stopAtr: 3 },
   breakeven: { breakeven: true },
+  // round 2 (added 12 Oct 2026)
+  limitEntry: { limitEntry: true },
+  trailMa: { trailMa: true },
+  volumeConfirm: { volumeConfirm: true },
+  morningGap: { morningGapPct: 0.5 },
+  trendDay: { trendDayPct: 0.5 },
 };
+export const ROUND2 = ['limitEntry', 'trailMa', 'volumeConfirm', 'morningGap', 'trendDay'];
 
 /** NIFTY 5-minute indicators keyed by candle time. */
 async function niftyContext(loadCandles, p1) {
@@ -328,10 +407,11 @@ async function dailyContext(loadCandles, sym) {
  */
 export async function improveTest({ loadCandles = candles, stocks = VIDEO_STOCKS, wide = EVAL_UNIVERSE } = {}) {
   const p1 = Math.floor(Date.now() / 1000) - 59 * 86400;
-  const nifty = await niftyContext(loadCandles, p1);
+  const get = withStore(loadCandles);
+  const nifty = await niftyContext(get, p1);
   const load = async (list) => (await mapLimit(list, 4, async (s) => {
     try {
-      const rows = (await loadCandles(s, { period1: p1, interval: '5m' })).filter((r) => r.close > 0 && r.high > 0);
+      const rows = (await get(s, { period1: p1, interval: '5m' })).filter((r) => r.close > 0 && r.high > 0);
       return rows.length > 500 ? { s, rows, daily: await dailyContext(loadCandles, s) } : null;
     } catch {
       return null;
@@ -360,8 +440,27 @@ export async function improveTest({ loadCandles = candles, stocks = VIDEO_STOCKS
   const W = summarise(wideTest);
   const V = summarise(vidTest);
   const adopt = V.avgNetRs > 0 && W.avgNetRs > 0 && combined.tStat >= 2;
+  // round 2: each new idea on its own and on top of the paper-tracked "improved"
+  // version, read on the unseen half — video stocks AND the other stocks
+  const base2 = { ...RULES, ...FILTERS.dailyTrend, ...FILTERS.stop3atr };
+  const read = (rules) => ({
+    video: summarise(run(main, rules).filter((t) => t.date >= mid)),
+    others: summarise(run(wider, rules).filter((t) => t.date >= mid)),
+  });
+  const round2 = [{ name: 'video rules', ...read(RULES) }, { name: 'improved (daily trend + 3×ATR)', ...read(base2) }];
+  for (const k of ROUND2) {
+    round2.push({ name: k, ...read({ ...RULES, ...FILTERS[k] }) });
+    round2.push({ name: `improved + ${k}`, ...read({ ...base2, ...FILTERS[k] }) });
+  }
+  const allNew = { ...base2, ...Object.assign({}, ...ROUND2.filter((k) => k !== 'morningGap').map((k) => FILTERS[k])) };
+  round2.push({ name: 'improved + all except morningGap', ...read(allNew) });
+  const sessions = dates.length;
   return {
     at: new Date().toISOString(),
+    sessions,
+    from: dates[0],
+    to: dates[dates.length - 1],
+    round2,
     splitDate: mid,
     variants: rows.map((r) => ({ name: r.name, train: r.train, test: r.test })),
     pick: { name: pick.name, train: pick.train, testVideoStocks: V, testWiderStocks: W, testCombined: combined, adopt },
@@ -396,6 +495,10 @@ export function loadPaper() {
 export const PAPER_VARIANTS = {
   video: { label: 'Video rules', rules: RULES },
   improved: { label: 'Improved: daily trend + 3×ATR stop (unproven)', rules: { ...RULES, ...FILTERS.dailyTrend, ...FILTERS.stop3atr } },
+  // round 2's best (12 Oct 2026): scan 20 stocks each morning, trade only those that already
+  // moved ≥ 0.5% from yesterday's close by 09:30, in that direction. Break-even in the test
+  // (+₹40/trade, t 0.23) — tracked to see if it holds, NOT proven.
+  scanner: { label: 'Morning scanner: 20 stocks, gap ≥ 0.5% + daily trend + 3×ATR (unproven)', rules: { ...RULES, ...FILTERS.dailyTrend, ...FILTERS.stop3atr, ...FILTERS.morningGap }, stocks: [...new Set([...VIDEO_STOCKS, ...EVAL_UNIVERSE])] },
 };
 
 export async function paperUpdate({ loadCandles = candles, now = new Date() } = {}) {
@@ -405,7 +508,8 @@ export async function paperUpdate({ loadCandles = candles, now = new Date() } = 
   const lastComplete = t.mins >= 15 * 60 + 35 ? t.date : null; // today counts only after the close
   const p1 = Math.floor(now.getTime() / 1000) - 8 * 86400;
   const data = [];
-  for (const s of st.stocks) {
+  const symbols = [...new Set([...st.stocks, ...Object.values(PAPER_VARIANTS).flatMap((v) => v.stocks || [])])];
+  for (const s of symbols) {
     try {
       const rows = (await loadCandles(s, { period1: p1, interval: '5m' })).filter((r) => r.close > 0 && r.high > 0);
       data.push({ s, rows, daily: await dailyContext(loadCandles, s) });
@@ -415,7 +519,8 @@ export async function paperUpdate({ loadCandles = candles, now = new Date() } = 
   }
   let added = 0;
   for (const [key, v] of Object.entries(PAPER_VARIANTS)) {
-    const all = data.flatMap(({ s, rows, daily }) => backtestStock(s, rows, v.rules, { daily }));
+    const list = v.stocks || st.stocks;
+    const all = data.filter((x) => list.includes(x.s)).flatMap(({ s, rows, daily }) => backtestStock(s, rows, v.rules, { daily }));
     const mine = st.trades.filter((x) => (x.variant || 'video') === key);
     const have = new Set(mine.map((x) => `${x.symbol}|${x.date}`));
     const fresh = accountTrades(all, v.rules.maxPerDay)
@@ -477,6 +582,12 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href &
       console.log(`  test, 16 other stocks: ${p.testWiderStocks.trades} trades · avg net ${rs(p.testWiderStocks.avgNetRs)} · total ${rs(p.testWiderStocks.totalNetRs)}`);
       console.log(`  combined t ${p.testCombined.tStat?.toFixed(2)} → ${p.adopt ? 'ADOPTED' : 'not adopted'}`);
       console.log(r.rule);
+      if (r.round2) {
+        console.log(`\nROUND 2 · unseen half only (${r.splitDate} →) · ${r.sessions} sessions in all`);
+        console.log('version'.padEnd(40), 'VIDEO STOCKS trades  win  avg net  |  OTHER STOCKS trades  win  avg net');
+        const g = (x) => `${String(x.trades).padStart(6)} ${x.winRate != null ? String(Math.round(x.winRate * 100)).padStart(4) + '%' : '   – '} ${rs(x.avgNetRs).padStart(8)}`;
+        for (const v of r.round2) console.log(v.name.padEnd(40), g(v.video), '              |', g(v.others));
+      }
     })
     .catch((err) => {
       console.error('Error:', err.message);

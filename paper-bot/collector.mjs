@@ -63,7 +63,7 @@ export async function collect({ symbols, intervals = STORED_INTERVALS, loadCandl
   return mapLimit(jobs, 3, async ([symbol, interval]) => {
     const before = readStore(symbol, interval);
     try {
-      const fresh = completed(await loadCandles(symbol, { range: '1mo', interval }), interval, now);
+      const fresh = completed(await loadCandles(symbol, { period1: Math.floor(now / 1000) - 58 * 86400, interval }), interval, now) // Yahoo keeps ~60 days of 5m/15m: the first run fills them all;
       const merged = mergeBars(before, fresh);
       writeStore(symbol, interval, merged);
       return { symbol, interval, before: before.length, after: merged.length, added: merged.length - before.length };
@@ -142,8 +142,8 @@ export function storeStatus() {
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const args = process.argv.slice(2);
   await import('./settings.mjs');
-  const { PAPER, EVAL_UNIVERSE } = await import('./config.mjs');
-  const symbols = [...new Set([...EVAL_UNIVERSE, ...PAPER.symbols, '^NSEI', '^INDIAVIX'])];
+  const { PAPER, EVAL_UNIVERSE, VIDEO_STOCKS } = await import('./config.mjs');
+  const symbols = [...new Set([...EVAL_UNIVERSE, ...PAPER.symbols, ...VIDEO_STOCKS, '^NSEI', '^INDIAVIX'])];
   try {
     if (args.includes('--status')) {
       const st = storeStatus();

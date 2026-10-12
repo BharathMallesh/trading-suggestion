@@ -533,7 +533,7 @@ const server = http.createServer(async (req, res) => {
       const r = await vwapPullbackTest({});
       saveVwapPullback(r);
       const paper = await paperUpdate({});
-      return json(res, 200, { backtest: r, paper });
+      return json(res, 200, { backtest: r, paper, improve: loadImprove() });
     }
     if (req.method === 'GET' && url.pathname === '/api/intraday-test') {
       return json(res, 200, loadIntradayTest() || { note: 'Not run yet (node paper-bot/intraday-test.mjs).' });

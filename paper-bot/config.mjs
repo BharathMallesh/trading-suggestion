@@ -84,3 +84,6 @@ export const EVAL_UNIVERSE = [
   ...PAPER.symbols,
   'MARUTI.NS', 'SUNPHARMA.NS', 'HINDUNILVR.NS', 'KOTAKBANK.NS', 'BAJFINANCE.NS', 'ASIANPAINT.NS', 'NTPC.NS', 'TITAN.NS',
 ];
+
+// The four stocks from the Dhan VWAP + 20-MA pullback video (paper-bot/vwap-pullback.mjs).
+export const VIDEO_STOCKS = ['BAJAJFINSV.NS', 'TRENT.NS', 'TITAN.NS', 'MARUTI.NS'];

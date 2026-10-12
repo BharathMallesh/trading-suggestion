@@ -45,7 +45,9 @@ case "${1:-}" in
     # Weekly NIFTY option IV vs VIX from new NSE days (independent of the refits above).
     node paper-bot/vol-premium.mjs --save
     # Re-test the probability improvements (adopted only if they still pass out of sample).
-    node paper-bot/prob-improve.mjs ;;
+    node paper-bot/prob-improve.mjs
+    # Re-run the VWAP strategy improvement test on the (growing) saved 5-minute history.
+    node paper-bot/vwap-pullback.mjs --improve >/dev/null ;;
   backup)
     echo "$(date '+%F %T') backup"; node paper-bot/backup.mjs ;;
   *)
