@@ -50,6 +50,8 @@ case "${1:-}" in
     node paper-bot/prob-improve.mjs
     # Re-run the VWAP strategy improvement test on the (growing) saved 5-minute history.
     node paper-bot/vwap-pullback.mjs --improve >/dev/null
+    # Re-test the per-signal odds (shown adjusted only if they beat the plain win rate out of sample)
+    node paper-bot/vwap-odds.mjs >/dev/null
     # NSE holiday list (exchange calendar for health checks, alerts and market-open status)
     node paper-bot/market-calendar.mjs --refresh >/dev/null ;;
   backup)

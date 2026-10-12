@@ -2079,6 +2079,18 @@
             <div style="overflow-x:auto"><table style="font-size:12px"><thead><tr><th style="text-align:left">Version</th><th>Video stocks: trades</th><th>Win</th><th>Avg after costs</th><th>16 other stocks: trades</th><th>Win</th><th>Avg after costs</th></tr></thead><tbody>${r2.map((v) => `<tr><td style="text-align:left">${esc(label(v.name))}</td>${cell(v.video)}${cell(v.others)}</tr>`).join('')}</tbody></table></div>
             <div class="note">None is proven: every version lost in the first half of the period and did better in the second, so the market's mood mattered more than the filter. The best (morning gap) is now paper-tracked as a third version. The test gets longer every day as 5-minute candles are saved.</div></details>`;
         }
+        const od = d.odds;
+        if (od?.model) {
+          const e = od.evaluation || {};
+          const pc = (x) => (x == null ? '–' : Math.round(x * 100) + '%');
+          const L = { dailyTrend: 'Daily trend', morningMove: 'Move by 09:30', nifty: 'NIFTY', time: 'Time of signal', volatility: 'Volatility (ATR %)' };
+          const LV = { with: 'with the trade', against: 'against', flat: 'small', mixed: 'mixed', early: 'before 10:30', midday: '10:30–12:00', late: 'after 12:00', high: 'above median', low: 'below median' };
+          html += `<details style="margin-top:8px"><summary style="cursor:pointer;font-size:13px"><b>Signal odds</b>: ${pc(od.model.base)} of ${od.signals} past signals ended in profit after costs · ${od.adopted ? 'condition-adjusted odds in use' : 'plain rate in use (conditions did not help on unseen days)'}</summary>
+            <table style="font-size:12px"><thead><tr><th style="text-align:left">Condition at the signal</th><th>Won (after costs)</th><th>Signals</th></tr></thead><tbody>${Object.entries(od.model.table).flatMap(([k, lv]) => Object.entries(lv).map(([l, c]) =>
+              `<tr><td style="text-align:left">${esc(L[k] || k)}: ${esc(LV[l] || l)}</td><td>${pc(c.rawRate)}</td><td>${c.n}</td></tr>`)).join('')}</tbody></table>
+            ${e.enough ? `<div class="note">Unseen-days check (fit before ${esc(e.splitDate)}, scored after): adjusted odds ${e.skill > 0 ? (e.skill * 100).toFixed(1) + '% better' : (-e.skill * 100).toFixed(1) + '% worse'} than the plain rate (Brier). Higher-odds half won ${pc(e.higherOdds.winRate)} (avg ${rs(e.higherOdds.avgNetRs)}/trade), lower-odds half ${pc(e.lowerOdds.winRate)} (avg ${rs(e.lowerOdds.avgNetRs)}). Break-even at 1:2 after costs needs about 38–40%.</div>` : '<div class="note">Not enough signals yet for the unseen-days check.</div>'}
+          </details>`;
+        }
         const meters = Object.values(p.byVariant || {}).filter((x) => x.trust);
         if (meters.length) {
           const col = { pass: 'var(--up)', fail: 'var(--down)', unclear: 'var(--warn)', early: 'var(--accent)' };
@@ -2148,9 +2160,11 @@
           let h = '';
           for (const v of Object.values(d.variants || {})) {
             h += `<div style="font-size:13px;margin-top:8px"><b>${esc(v.label)}</b> — ${v.trades.length ? `${v.trades.length} trade${v.trades.length > 1 ? 's' : ''}, <span style="color:${v.netRs >= 0 ? 'var(--up)' : 'var(--down)'}">${rs(v.netRs)}</span>` : 'no trades'}${d.live ? ` · ${v.slotsLeft} slot${v.slotsLeft === 1 ? '' : 's'} left today` : ''}</div>`;
-            if (v.trades.length) h += `<table style="font-size:12px;margin-top:4px"><thead><tr><th style="text-align:left">Stock</th><th>Side</th><th>Entry time</th><th>Qty</th><th>Entry</th><th>Stop</th><th>Target</th><th>${d.live ? 'Now / exit' : 'Exit'}</th><th>Status</th><th>P&amp;L after charges</th></tr></thead><tbody>${v.trades.map((t) =>
-              `<tr><td style="text-align:left">${esc(t.symbol.replace('.NS', ''))}</td><td>${esc(t.side)}</td><td>${esc(t.time)}</td><td>${t.qty}</td><td>${t.entry.toFixed(2)}</td><td>${t.stop.toFixed(2)}</td><td>${t.target == null ? 'trailing' : t.target.toFixed(2)}</td><td>${t.exit.toFixed(2)}</td><td>${t.open ? '<b>open</b>' : esc(t.reason === 'close' ? 'closed at last candle' : t.reason)}</td><td style="color:${t.net >= 0 ? 'var(--up)' : 'var(--down)'}"><b>${rs(t.net)}</b></td></tr>`).join('')}</tbody></table>`;
+            if (v.trades.length) h += `<table style="font-size:12px;margin-top:4px"><thead><tr><th style="text-align:left">Stock</th><th>Side</th><th>Entry time</th><th>Qty</th><th>Entry</th><th>Stop</th><th>Target</th><th>${d.live ? 'Now / exit' : 'Exit'}</th><th>Status</th><th>P&amp;L after charges</th><th>Chance at entry*</th></tr></thead><tbody>${v.trades.map((t) =>
+              `<tr><td style="text-align:left">${esc(t.symbol.replace('.NS', ''))}</td><td>${esc(t.side)}</td><td>${esc(t.time)}</td><td>${t.qty}</td><td>${t.entry.toFixed(2)}</td><td>${t.stop.toFixed(2)}</td><td>${t.target == null ? 'trailing' : t.target.toFixed(2)}</td><td>${t.exit.toFixed(2)}</td><td>${t.open ? '<b>open</b>' : esc(t.reason === 'close' ? 'closed at last candle' : t.reason)}</td><td style="color:${t.net >= 0 ? 'var(--up)' : 'var(--down)'}"><b>${rs(t.net)}</b></td><td title="${esc(t.odds?.reasons?.map((r) => `${r.condition}: ${r.level} (${Math.round(r.winRate * 100)}% of ${r.signals})`).join(' · ') || 'plain win rate of past signals')}">${t.odds ? Math.round(t.odds.prob * 100) + '%' + (t.odds.adjusted ? '' : ' <span class="note" style="display:inline">(avg)</span>') : '–'}</td></tr>`).join('')}</tbody></table>`;
           }
+          const anyOdds = Object.values(d.variants || {}).some((v) => v.trades.some((t) => t.odds));
+          if (anyOdds) h += `<div class="note">* Chance the trade ends in profit after costs, judged when it was entered, from how past signals turned out (a trade already well in profit has better odds than this). "(avg)" = the plain win rate of all past signals: adjusting for conditions didn't beat it on unseen days.</div>`;
           const st = (d.stocks || []).filter((x) => x.video || x.inPlay);
           if (st.length) h += `<details style="margin-top:8px"><summary style="cursor:pointer;font-size:13px">Where each stock stands (4 video stocks + scanner stocks that moved ≥ 0.5% by 09:30)</summary>
             <table style="font-size:12px"><thead><tr><th style="text-align:left">Stock</th><th>Price</th><th>20 MA</th><th>VWAP</th><th>Trend now</th><th>Daily trend</th><th>Move by 09:30</th></tr></thead><tbody>${st.map((x) =>

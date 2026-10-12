@@ -95,7 +95,7 @@ export function backtestStock(symbol, rows, rules = RULES, ctx = {}) {
   const bars = indicators(rows, rules);
   const trades = [];
   let tradedToday = null;
-  const dayInfo = (rules.morningGapPct || rules.trendDayPct) ? sessionInfo(bars) : null;
+  const dayInfo = sessionInfo(bars);
   for (let i = 1; i + 1 < bars.length; i++) {
     const b = bars[i];
     const d = day(b);
@@ -214,7 +214,15 @@ export function backtestStock(symbol, rows, rules = RULES, ctx = {}) {
     const exitFill = side === 'long' ? exit * (1 - slip) : exit * (1 + slip);
     const gross = (side === 'long' ? exitFill - entry : entry - exitFill) * qty;
     const charges = roundTripCharges(entry, exitFill, qty, side);
-    trades.push({ symbol, date: d, time: hdr(fill), side, entry, stop, target, exit: exitFill, qty, reason, gross, charges, net: gross - charges, rNet: (gross - charges) / (risk * qty), rGross: gross / (risk * qty) });
+    // conditions at the signal, for the signal-odds model (vwap-odds.mjs)
+    const n = ctx.nifty?.get(b.date);
+    const feat = {
+      atrPct: (b.atr / b.close) * 100,
+      gapPct: dayInfo.get(d)?.gapPct ?? null,
+      dailyUp: ctx.daily?.get(d) ? ctx.daily.get(d).aboveAvg20 : null,
+      niftySide: n && n.ma != null ? (n.close > n.ma && n.close > n.vwap ? 1 : n.close < n.ma && n.close < n.vwap ? -1 : 0) : null,
+    };
+    trades.push({ feat, symbol, date: d, time: hdr(fill), side, entry, stop, target, exit: exitFill, qty, reason, gross, charges, net: gross - charges, rNet: (gross - charges) / (risk * qty), rGross: gross / (risk * qty) });
     tradedToday = d;
   }
   return trades;
@@ -223,7 +231,7 @@ const hdr = (r) => hhmm(r);
 
 // Real runs add the locally saved 5-minute history (collector) to Yahoo's ~60
 // days, so every test gets longer as days are collected; injected loaders (tests) are used as-is.
-const withStore = (loadCandles) => (loadCandles === candles ? (s, o) => historyCandles(s, o) : loadCandles);
+export const withStore = (loadCandles) => (loadCandles === candles ? (s, o) => historyCandles(s, o) : loadCandles);
 
 /** Per session: % move from the previous session's close to 09:30, and over 09:15–09:45. */
 function sessionInfo(bars) {
@@ -376,7 +384,7 @@ export const FILTERS = {
 export const ROUND2 = ['limitEntry', 'trailMa', 'volumeConfirm', 'morningGap', 'trendDay'];
 
 /** NIFTY 5-minute indicators keyed by candle time. */
-async function niftyContext(loadCandles, p1) {
+export async function niftyContext(loadCandles, p1) {
   try {
     const rows = (await loadCandles('^NSEI', { period1: p1, interval: '5m' })).filter((r) => r.close > 0);
     return new Map(indicators(rows).map((b) => [b.date, { close: b.close, ma: b.ma, vwap: b.vwap }]));
@@ -386,7 +394,7 @@ async function niftyContext(loadCandles, p1) {
 }
 
 /** Stock vs its 20-day average at the PREVIOUS daily close (known before the session opens). */
-async function dailyContext(loadCandles, sym) {
+export async function dailyContext(loadCandles, sym) {
   try {
     const rows = (await loadCandles(sym, { range: '1y', interval: '1d' })).filter((r) => r.close > 0);
     const m = new Map();
@@ -623,7 +631,7 @@ export function closeSummary(st, date) {
  * its 20 MA and VWAP, and the trades each paper version has taken so far,
  * valued at the latest candle (after charges, as if closed now).
  */
-export async function todaySignals({ loadCandles = candles, now = new Date(), sizing = null } = {}) {
+export async function todaySignals({ loadCandles = candles, now = new Date(), sizing = null, oddsLookup = null } = {}) {
   const t = istNow(now);
   const p1 = Math.floor(now.getTime() / 1000) - 8 * 86400;
   const symbols = [...new Set([...VIDEO_STOCKS, ...Object.values(PAPER_VARIANTS).flatMap((v) => v.stocks || [])])];
@@ -658,7 +666,7 @@ export async function todaySignals({ loadCandles = candles, now = new Date(), si
     const rules = sizing ? { ...v.rules, riskRs: sizing.riskRs, capital: sizing.capital } : v.rules;
     const all = data.filter((x) => list.includes(x.s)).flatMap(({ s, rows, daily }) => backtestStock(s, rows, rules, { daily }));
     const trades = accountTrades(all, v.rules.maxPerDay).filter((x) => x.date === date)
-      .map((x) => ({ ...x, open: x.reason === 'close' && live }));
+      .map((x) => ({ ...x, open: x.reason === 'close' && live, odds: oddsLookup ? oddsLookup(x) : null }));
     variants[k] = { label: v.label, trades, netRs: trades.reduce((a, x) => a + x.net, 0), slotsLeft: Math.max(0, v.rules.maxPerDay - trades.length), stocks: list.length };
   }
   return {

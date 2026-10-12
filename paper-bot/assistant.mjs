@@ -22,6 +22,7 @@ import { loadHoldings } from './holdings.mjs';
 import { indexFunds } from './index-funds.mjs';
 import { badRequest } from '../util.mjs';
 import { todaySignals, paperSummary } from './vwap-pullback.mjs';
+import { oddsFor, loadOdds } from './vwap-odds.mjs';
 
 // Common names → NSE symbols (in addition to the NIFTY 500 tickers themselves).
 const NAMES = {
@@ -254,17 +255,18 @@ export async function fundsAnswer() {
 const rs = (v) => (v == null ? '–' : `${v < 0 ? '−' : '+'}₹${Math.abs(Math.round(v)).toLocaleString('en-IN')}`);
 
 /** "How did the strategy do today?" / "Any signal on Trent?" — the VWAP pullback paper versions. */
-export async function strategyAnswer(symbol = null, { loadSignals = todaySignals, loadPaper = paperSummary } = {}) {
-  const [live, paper] = await Promise.all([loadSignals({}), Promise.resolve(loadPaper())]);
+export async function strategyAnswer(symbol = null, { loadSignals = todaySignals, loadPaper = paperSummary, odds = loadOdds() } = {}) {
+  const [live, paper] = await Promise.all([loadSignals({ oddsLookup: (t) => oddsFor(t, odds) }), Promise.resolve(loadPaper())]);
   const when = live.date ? `${live.live ? 'today so far' : `on ${live.date}`} (candles to ${live.lastBar})` : 'now';
   const summary = [];
   for (const v of Object.values(live.variants || {})) {
     const tr = symbol ? v.trades.filter((t) => t.symbol === symbol) : v.trades;
     const name = v.label.split(':')[0].replace(/ \(.*$/, '');
     summary.push(tr.length
-      ? `${name}: ${tr.map((t) => `${t.symbol.replace('.NS', '')} ${t.side} at ${t.time} (${t.open ? 'open' : t.reason}) ${rs(t.net)}`).join('; ')}.`
+      ? `${name}: ${tr.map((t) => `${t.symbol.replace('.NS', '')} ${t.side} at ${t.time} (${t.open ? 'open' : t.reason}) ${rs(t.net)}${t.odds ? `, chance at entry ${Math.round(t.odds.prob * 100)}%${t.odds.adjusted ? '' : ' (average of past signals)'}` : ''}`).join('; ')}.`
       : `${name}: no trade${symbol ? ` on ${label(symbol)}` : ''} ${when}.`);
   }
+  if (odds?.model) summary.push(`Past signals: ${Math.round(odds.model.base * 100)}% of ${odds.signals} ended in profit after costs (break-even needs about 38–40%). ${odds.adopted ? 'Odds above are adjusted for today\'s conditions.' : 'Adjusting for conditions did not beat that average on unseen days, so every signal gets the same odds.'}`);
   const sections = [];
   const stocks = (live.stocks || []).filter((x) => (symbol ? x.symbol === symbol : x.video || x.inPlay));
   if (symbol && !stocks.length) summary.unshift(`${label(symbol)} is not on the strategy's lists (the 4 video stocks + 20 scanner stocks), so it has no signals.`);

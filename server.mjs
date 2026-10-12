@@ -51,6 +51,7 @@ import { ask as askApp } from './paper-bot/assistant.mjs';
 import { indexFunds } from './paper-bot/index-funds.mjs';
 import { loadDirectionLong } from './paper-bot/direction-long.mjs';
 import { loadIntradayTest } from './paper-bot/intraday-test.mjs';
+import { loadOdds, oddsFor } from './paper-bot/vwap-odds.mjs';
 import { vwapPullbackTest, saveVwapPullback, loadVwapPullback, paperSummary, paperUpdate, loadImprove, todaySignals, parseSizing, sizeTrade } from './paper-bot/vwap-pullback.mjs';
 import { bigMove, evaluateBigMove, saveBigMoveEval, loadBigMoveEval } from './paper-bot/big-move.mjs';
 import { testPositioning, saveResult as savePositioning, loadResult as loadPositioning } from './paper-bot/options-positioning.mjs';
@@ -528,13 +529,14 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === 'GET' && url.pathname === '/api/vwap-pullback') {
       const sizing = parseSizing(url.searchParams.get('capital') ?? undefined, url.searchParams.get('riskPct') ?? undefined);
-      return json(res, 200, { backtest: loadVwapPullback(), paper: paperSummary(undefined, sizing), improve: loadImprove() });
+      return json(res, 200, { backtest: loadVwapPullback(), paper: paperSummary(undefined, sizing), improve: loadImprove(), odds: loadOdds() });
     }
     if (req.method === 'GET' && url.pathname === '/api/vwap-today') {
       // live view: refreshed at most once a minute (Yahoo 5-minute bars)
       const sizing = parseSizing(url.searchParams.get('capital') ?? undefined, url.searchParams.get('riskPct') ?? undefined);
+      const oddsSaved = loadOdds();
       const key = sizing ? `${sizing.capital}|${sizing.riskPct}` : 'std';
-      if (!vwapTodayCache || vwapTodayCache.key !== key || Date.now() - vwapTodayCache.at > 60_000) vwapTodayCache = { at: Date.now(), key, data: await todaySignals({ sizing }) };
+      if (!vwapTodayCache || vwapTodayCache.key !== key || Date.now() - vwapTodayCache.at > 60_000) vwapTodayCache = { at: Date.now(), key, data: await todaySignals({ sizing, oddsLookup: (t) => oddsFor(t, oddsSaved) }) };
       return json(res, 200, vwapTodayCache.data);
     }
     if (req.method === 'GET' && url.pathname === '/api/position-size') {
@@ -546,7 +548,7 @@ const server = http.createServer(async (req, res) => {
       const r = await vwapPullbackTest({});
       saveVwapPullback(r);
       const paper = await paperUpdate({});
-      return json(res, 200, { backtest: r, paper, improve: loadImprove() });
+      return json(res, 200, { backtest: r, paper, improve: loadImprove(), odds: loadOdds() });
     }
     if (req.method === 'GET' && url.pathname === '/api/intraday-test') {
       return json(res, 200, loadIntradayTest() || { note: 'Not run yet (node paper-bot/intraday-test.mjs).' });
