@@ -6,17 +6,22 @@
     <title>Trading Research Dashboard</title>
     <style>
       :root {
-        --bg: #0f1420; --panel: #171e2e; --line: #263149; --ink: #e7ecf5;
-        --muted: #97a3ba; --accent: #5b9dff; --up: #34d399; --down: #f87171;
-        --warn: #fbbf24;
+        /* soft light theme */
+        --bg: #f3f5fb; --panel: #ffffff; --line: #e3e8f2; --ink: #1f2a44;
+        --muted: #66738c; --accent: #4f5bd5; --up: #0f9d6b; --down: #d64545;
+        --warn: #b7791f; --soft: #f1f4fb; --on-accent: #ffffff;
+        --shadow: 0 1px 2px rgba(31, 42, 68, 0.04), 0 4px 14px rgba(31, 42, 68, 0.06);
       }
       * { box-sizing: border-box; }
       body {
         margin: 0; background: var(--bg); color: var(--ink);
         font: 15px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
       }
-      header { padding: 20px 24px; border-bottom: 1px solid var(--line); }
-      h1 { margin: 0; font-size: 18px; }
+      header {
+        padding: 22px 24px 16px; border-bottom: 1px solid var(--line);
+        background: linear-gradient(135deg, #eef1ff 0%, #f6f3ff 45%, #eef8f6 100%);
+      }
+      h1 { margin: 0; font-size: 20px; letter-spacing: -0.01em; color: #2b3270; }
       .sub { color: var(--muted); font-size: 13px; margin-top: 4px; }
       .banner {
         margin: 12px 24px 0; padding: 10px 14px; border-radius: 8px; font-size: 13px;
@@ -29,36 +34,42 @@
         /* wide tables scroll inside their card instead of widening the page */
         .card table { display: block; overflow-x: auto; white-space: nowrap; }
       }
-      .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; min-width: 0; }
+      .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px; min-width: 0; box-shadow: var(--shadow); }
+      .card h2 { color: #2b3270; }
       .kv > div { min-width: 0; overflow-wrap: anywhere; }
       .card h2 { margin: 0 0 4px; font-size: 15px; }
       .card p.hint { margin: 0 0 12px; color: var(--muted); font-size: 12.5px; }
       .span2 { grid-column: 1 / -1; }
       label { display: block; font-size: 12px; color: var(--muted); margin: 8px 0 3px; }
       input, select, textarea, button {
-        font: inherit; color: var(--ink); background: #0d1320; border: 1px solid var(--line);
+        font: inherit; color: var(--ink); background: var(--soft); border: 1px solid var(--line);
         border-radius: 8px; padding: 8px 10px; width: 100%;
       }
+      input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(79, 91, 213, 0.15); background: #fff; }
       textarea { min-height: 80px; resize: vertical; }
       .row { display: flex; gap: 8px; flex-wrap: wrap; }
       .row > * { flex: 1; min-width: 120px; }
       button {
-        background: var(--accent); border: none; color: #071019; font-weight: 600;
+        background: var(--accent); border: none; color: var(--on-accent); font-weight: 600;
         cursor: pointer; width: auto; padding: 9px 16px; margin-top: 12px;
       }
+      button { transition: filter 0.15s, box-shadow 0.15s; box-shadow: 0 1px 2px rgba(79, 91, 213, 0.25); }
+      button:hover:not(:disabled) { filter: brightness(1.06); }
       button:disabled { opacity: 0.5; cursor: default; }
       .out { margin-top: 12px; white-space: pre-wrap; font-size: 14px; }
       .err { color: var(--down); }
       table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
-      th, td { text-align: right; padding: 5px 8px; border-bottom: 1px solid var(--line); }
+      th, td { text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+      th { color: var(--muted); font-weight: 600; background: var(--soft); }
+      tbody tr:hover td { background: #f8f9ff; }
       th:first-child, td:first-child { text-align: left; }
       .kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; margin-top: 10px; font-size: 14px; }
       .kv div:nth-child(odd) { color: var(--muted); }
       .quote-head { font-size: 15px; font-weight: 600; margin-top: 8px; }
       .note { color: var(--muted); font-size: 12px; margin-top: 10px; }
       .tabs { display: flex; gap: 6px; margin-bottom: 10px; }
-      .tabs button { background: #0d1320; color: var(--muted); border: 1px solid var(--line); margin: 0; padding: 6px 12px; }
-      .tabs button.active { background: var(--accent); color: #071019; border-color: var(--accent); }
+      .tabs button { background: var(--soft); color: var(--muted); border: 1px solid var(--line); margin: 0; padding: 6px 12px; }
+      .tabs button.active { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
     </style>
   </head>
   <body>
@@ -82,11 +93,11 @@
           <div style="flex:0"><button id="aaBtn" type="button" style="margin-top:0">Ask</button></div>
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
-          <button type="button" class="aaChip" style="margin:0;padding:4px 10px;background:#0d1320;color:var(--ink);border:1px solid var(--line)">Which is the best stock to invest today?</button>
-          <button type="button" class="aaChip" style="margin:0;padding:4px 10px;background:#0d1320;color:var(--ink);border:1px solid var(--line)">Tell me about Reliance</button>
-          <button type="button" class="aaChip" style="margin:0;padding:4px 10px;background:#0d1320;color:var(--ink);border:1px solid var(--line)">What will happen to HDFC Bank?</button>
-          <button type="button" class="aaChip" style="margin:0;padding:4px 10px;background:#0d1320;color:var(--ink);border:1px solid var(--line)">NIFTY call put this week</button>
-          <button type="button" class="aaChip" style="margin:0;padding:4px 10px;background:#0d1320;color:var(--ink);border:1px solid var(--line)">Which index fund?</button>
+          <button type="button" class="aaChip" style="margin:0;padding:4px 10px;background:var(--soft);color:var(--ink);border:1px solid var(--line)">Which is the best stock to invest today?</button>
+          <button type="button" class="aaChip" style="margin:0;padding:4px 10px;background:var(--soft);color:var(--ink);border:1px solid var(--line)">Tell me about Reliance</button>
+          <button type="button" class="aaChip" style="margin:0;padding:4px 10px;background:var(--soft);color:var(--ink);border:1px solid var(--line)">What will happen to HDFC Bank?</button>
+          <button type="button" class="aaChip" style="margin:0;padding:4px 10px;background:var(--soft);color:var(--ink);border:1px solid var(--line)">NIFTY call put this week</button>
+          <button type="button" class="aaChip" style="margin:0;padding:4px 10px;background:var(--soft);color:var(--ink);border:1px solid var(--line)">Which index fund?</button>
         </div>
         <div id="aaOut" style="margin-top:12px"></div>
       </section>
@@ -98,7 +109,7 @@
           running scorecard. <b>Run now</b> refreshes everything (~1–2 min); the scheduled monitor also updates it during market hours.</p>
         <div class="row" style="gap:8px">
           <button id="tdRefreshBtn" type="button">Refresh</button>
-          <button id="tdRunBtn" type="button" style="background:#0d1320;color:var(--ink);border:1px solid var(--line)">Run now</button>
+          <button id="tdRunBtn" type="button" style="background:var(--soft);color:var(--ink);border:1px solid var(--line)">Run now</button>
         </div>
         <div id="tdStatus" class="note" style="display:none"></div>
         <div id="tdOut" style="margin-top:12px"></div>
@@ -121,14 +132,14 @@
         </div>
         <div class="row" style="gap:8px">
           <button id="hdAddBtn" type="button">Add purchase</button>
-          <button id="hdRefreshBtn" type="button" style="background:#0d1320;color:var(--ink);border:1px solid var(--line)">Refresh analysis</button>
+          <button id="hdRefreshBtn" type="button" style="background:var(--soft);color:var(--ink);border:1px solid var(--line)">Refresh analysis</button>
         </div>
         <details style="margin-top:8px"><summary style="cursor:pointer;font-size:13px">Gains already booked this financial year (for the exemption and set-off)</summary>
           <div class="row">
             <div><label>Short-term gains booked (₹, losses negative)</label><input id="hdStcg" type="number" step="any" value="0" /></div>
             <div><label>Long-term gains booked (₹, losses negative)</label><input id="hdLtcg" type="number" step="any" value="0" /></div>
           </div>
-          <button id="hdRealBtn" type="button" style="background:#0d1320;color:var(--ink);border:1px solid var(--line)">Save booked gains</button>
+          <button id="hdRealBtn" type="button" style="background:var(--soft);color:var(--ink);border:1px solid var(--line)">Save booked gains</button>
         </details>
         <details style="margin-top:6px"><summary style="cursor:pointer;font-size:13px">Import from your broker (tradebook CSV — fills purchases and this year's booked gains)</summary>
           <div class="note">Zerodha: Console → Reports → Tradebook (equity, all years) → CSV. Groww: Stocks → Order history → download. Or any CSV with symbol, date, buy/sell, quantity, price.
@@ -137,7 +148,7 @@
             <div><label>Tradebook CSV</label><input id="hdFile" type="file" accept=".csv,text/csv" /></div>
             <div><label>Mode</label><select id="hdMode"><option value="replace">Replace my holdings</option><option value="merge">Add to my holdings</option></select></div>
           </div>
-          <button id="hdImportBtn" type="button" style="background:#0d1320;color:var(--ink);border:1px solid var(--line)">Import</button>
+          <button id="hdImportBtn" type="button" style="background:var(--soft);color:var(--ink);border:1px solid var(--line)">Import</button>
           <div id="hdImportOut" class="note"></div>
         </details>
         <div id="hdOut" style="margin-top:12px"></div>
@@ -225,9 +236,9 @@
         </div>
         <div class="row" style="margin-top:4px;gap:8px;flex-wrap:wrap">
           <button id="mktBtn" style="margin-top:0">Fetch</button>
-          <button id="descBtn" style="margin-top:0;background:#0d1320;color:var(--ink);border:1px solid var(--line)">Describe the data</button>
-          <button id="probBtn" style="margin-top:0;background:var(--accent);color:#071019;font-weight:700">Call / Put %</button>
-          <button id="newsBtn" style="margin-top:0;background:#0d1320;color:var(--ink);border:1px solid var(--line)">News</button>
+          <button id="descBtn" style="margin-top:0;background:var(--soft);color:var(--ink);border:1px solid var(--line)">Describe the data</button>
+          <button id="probBtn" style="margin-top:0;background:var(--accent);color:var(--on-accent);font-weight:700">Call / Put %</button>
+          <button id="newsBtn" style="margin-top:0;background:var(--soft);color:var(--ink);border:1px solid var(--line)">News</button>
         </div>
         <div id="chartOut" style="margin-top: 12px"></div>
         <div class="out" id="mktOut"></div>
@@ -292,8 +303,8 @@
         </label>
         <div class="row" style="margin-top:8px">
           <button id="pbBtn">Run scan</button>
-          <button id="pbBacktestBtn" style="background:#0d1320;color:var(--ink);border:1px solid var(--line)">Run backtest</button>
-          <button id="pbAgentsBtn" style="background:#0d1320;color:var(--ink);border:1px solid var(--line)">Run agents</button>
+          <button id="pbBacktestBtn" style="background:var(--soft);color:var(--ink);border:1px solid var(--line)">Run backtest</button>
+          <button id="pbAgentsBtn" style="background:var(--soft);color:var(--ink);border:1px solid var(--line)">Run agents</button>
         </div>
         <div id="pbStatus" class="note" style="display:none"></div>
         <div id="pbOut" style="margin-top:12px"></div>
@@ -348,8 +359,8 @@
           For the part that <i>is</i> predictable — the chance of a move bigger than ±1% / ±2% — use <b>Big-move odds</b>.
         </div>
         <div class="row" style="gap:8px;margin-bottom:10px">
-          <button type="button" id="gpTab15" class="gp-tab" style="margin-top:0;background:var(--accent);color:#071019;font-weight:700">15‑min only</button>
-          <button type="button" id="gpTabMulti" class="gp-tab" style="margin-top:0;background:#0d1320;color:var(--ink);border:1px solid var(--line)">Multi‑horizon mix</button>
+          <button type="button" id="gpTab15" class="gp-tab" style="margin-top:0;background:var(--accent);color:var(--on-accent);font-weight:700">15‑min only</button>
+          <button type="button" id="gpTabMulti" class="gp-tab" style="margin-top:0;background:var(--soft);color:var(--ink);border:1px solid var(--line)">Multi‑horizon mix</button>
           <input type="hidden" id="gpMode" value="15m" />
         </div>
         <div class="row">
@@ -397,7 +408,7 @@
         </p>
         <div class="row" style="gap:8px">
           <button id="hrEvalBtn" type="button">Evaluate due predictions</button>
-          <button id="hrStatsBtn" type="button" style="background:#0d1320;color:var(--ink);border:1px solid var(--line)">Refresh stats</button>
+          <button id="hrStatsBtn" type="button" style="background:var(--soft);color:var(--ink);border:1px solid var(--line)">Refresh stats</button>
         </div>
         <div id="hrOut" style="margin-top:12px"></div>
       </section>
@@ -413,9 +424,9 @@
         </p>
         <div class="row" style="gap:8px">
           <button id="stfBtn" type="button">Forward test (paper accounts)</button>
-          <button id="stbBtn" type="button" style="background:#0d1320;color:var(--ink);border:1px solid var(--line)">10-year backtests</button>
-          <button id="stHistBtn" type="button" style="background:#0d1320;color:var(--ink);border:1px solid var(--line)">Trend filter: 25-year crisis test</button>
-          <button id="stResetAcctBtn" type="button" style="background:#0d1320;color:var(--ink);border:1px solid var(--line)">Restart forward test</button>
+          <button id="stbBtn" type="button" style="background:var(--soft);color:var(--ink);border:1px solid var(--line)">10-year backtests</button>
+          <button id="stHistBtn" type="button" style="background:var(--soft);color:var(--ink);border:1px solid var(--line)">Trend filter: 25-year crisis test</button>
+          <button id="stResetAcctBtn" type="button" style="background:var(--soft);color:var(--ink);border:1px solid var(--line)">Restart forward test</button>
         </div>
         <div id="stsStatus" class="note" style="display:none"></div>
         <div id="stsOut" style="margin-top:12px"></div>
@@ -437,7 +448,7 @@
         </div>
         <div class="row" style="gap:8px">
           <button id="rkLiveBtn" type="button">Current ranking</button>
-          <button id="rkEvalBtn" type="button" style="background:#0d1320;color:var(--ink);border:1px solid var(--line)">Evidence (replay)</button>
+          <button id="rkEvalBtn" type="button" style="background:var(--soft);color:var(--ink);border:1px solid var(--line)">Evidence (replay)</button>
         </div>
         <div id="rkStatus" class="note" style="display:none"></div>
         <div id="rkOut" style="margin-top:12px"></div>
@@ -450,7 +461,7 @@
           price then; returns 1, 5 and 20 trading days later are measured against NIFTY. Builds evidence on post-earnings drift over time. Not advice.</p>
         <div class="row" style="gap:8px">
           <button id="evtShowBtn" type="button">Show events</button>
-          <button id="evtScanBtn" type="button" style="background:#0d1320;color:var(--ink);border:1px solid var(--line)">Scan NIFTY 50 news now</button>
+          <button id="evtScanBtn" type="button" style="background:var(--soft);color:var(--ink);border:1px solid var(--line)">Scan NIFTY 50 news now</button>
         </div>
         <div id="evtOut" style="margin-top:12px"></div>
       </section>
@@ -472,7 +483,7 @@
         </div>
         <div class="row" style="gap:8px">
           <button id="fmBtn" type="button">Forecast with Kronos</button>
-          <button id="fmReplayBtn" type="button" style="background:#0d1320;color:var(--ink);border:1px solid var(--line)">Re-run replay test (minutes)</button>
+          <button id="fmReplayBtn" type="button" style="background:var(--soft);color:var(--ink);border:1px solid var(--line)">Re-run replay test (minutes)</button>
         </div>
         <div id="fmOut" style="margin-top:12px"></div>
         <div id="fmReplay" style="margin-top:10px"></div>
@@ -499,7 +510,7 @@
         </div>
         <div class="row" style="gap:8px">
           <button id="ooBtn" type="button">Calculate odds</button>
-          <button id="ooEvalBtn" type="button" style="background:#0d1320;color:var(--ink);border:1px solid var(--line)">Are the odds calibrated? (replay)</button>
+          <button id="ooEvalBtn" type="button" style="background:var(--soft);color:var(--ink);border:1px solid var(--line)">Are the odds calibrated? (replay)</button>
         </div>
         <div id="ooOut" style="margin-top:12px"></div>
       </section>
@@ -525,7 +536,7 @@
           stop 2 × ATR, target 1:2, no new trades after 1 PM, exit by 3 PM, at most 2 trades a day. Tested after real intraday charges, then recorded as a paper
           trade every day after the close. Not investment advice.
         </p>
-        <button id="vpbBtn" type="button" style="background:#0d1320;color:var(--ink);border:1px solid var(--line)">Re-run backtest + update paper record (~30 s)</button>
+        <button id="vpbBtn" type="button" style="background:var(--soft);color:var(--ink);border:1px solid var(--line)">Re-run backtest + update paper record (~30 s)</button>
         <div id="vpbOut" style="margin-top:10px"></div>
       </section>
 
@@ -542,7 +553,7 @@
         </div>
         <div class="row" style="gap:8px">
           <button id="bmBtn" type="button">Show odds</button>
-          <button id="bmEvalBtn" type="button" style="background:#0d1320;color:var(--ink);border:1px solid var(--line)">Re-run replay (~1–2 min)</button>
+          <button id="bmEvalBtn" type="button" style="background:var(--soft);color:var(--ink);border:1px solid var(--line)">Re-run replay (~1–2 min)</button>
         </div>
         <div id="bmOut" style="margin-top:12px"></div>
         <div id="bmEval" style="margin-top:10px"></div>
@@ -592,7 +603,7 @@
         </div>
         <div class="row" style="gap:8px">
           <button id="vcBtn" type="button">Check</button>
-          <button id="vcEvalBtn" type="button" style="background:#0d1320;color:var(--ink);border:1px solid var(--line)">Forecast accuracy (replay)</button>
+          <button id="vcEvalBtn" type="button" style="background:var(--soft);color:var(--ink);border:1px solid var(--line)">Forecast accuracy (replay)</button>
         </div>
         <div id="vcOut" style="margin-top:12px"></div>
       </section>
@@ -608,8 +619,8 @@
         </p>
         <div class="row" style="gap:8px">
           <button id="pfRefreshBtn" type="button">Refresh</button>
-          <button id="pfApplyBtn" type="button" style="background:#0d1320;color:var(--ink);border:1px solid var(--line)">Apply today's signals</button>
-          <button id="pfResetBtn" type="button" style="background:#0d1320;color:var(--ink);border:1px solid var(--line)">Reset account</button>
+          <button id="pfApplyBtn" type="button" style="background:var(--soft);color:var(--ink);border:1px solid var(--line)">Apply today's signals</button>
+          <button id="pfResetBtn" type="button" style="background:var(--soft);color:var(--ink);border:1px solid var(--line)">Reset account</button>
         </div>
         <div id="pfStatus" class="note" style="display:none"></div>
         <div id="pfOut" style="margin-top:12px"></div>
@@ -622,7 +633,7 @@
         <div id="stForm" class="row"></div>
         <div class="row" style="gap:8px">
           <button id="stSaveBtn" type="button">Save settings</button>
-          <button id="stResetBtn" type="button" style="background:#0d1320;color:var(--ink);border:1px solid var(--line)">Restore defaults</button>
+          <button id="stResetBtn" type="button" style="background:var(--soft);color:var(--ink);border:1px solid var(--line)">Restore defaults</button>
         </div>
         <div id="stOut" class="note" style="margin-top:8px"></div>
       </section>
@@ -653,9 +664,9 @@
         </div>
         <div class="row" style="gap:8px">
           <button id="evRunBtn" type="button">Run replay</button>
-          <button id="evFitBtn" type="button" style="background:#0d1320;color:var(--ink);border:1px solid var(--line)">Fit &amp; use calibration</button>
-          <button id="evShowBtn" type="button" style="background:#0d1320;color:var(--ink);border:1px solid var(--line)">Saved calibration</button>
-          <button id="fiiBtn" type="button" style="background:#0d1320;color:var(--ink);border:1px solid var(--line)">FII positioning test</button>
+          <button id="evFitBtn" type="button" style="background:var(--soft);color:var(--ink);border:1px solid var(--line)">Fit &amp; use calibration</button>
+          <button id="evShowBtn" type="button" style="background:var(--soft);color:var(--ink);border:1px solid var(--line)">Saved calibration</button>
+          <button id="fiiBtn" type="button" style="background:var(--soft);color:var(--ink);border:1px solid var(--line)">FII positioning test</button>
         </div>
         <div id="evStatus" class="note" style="display:none"></div>
         <div id="evOut" style="margin-top:12px"></div>
@@ -929,15 +940,15 @@
           out.innerHTML = `
             <div class="note" style="margin-bottom:8px">${esc(d.disclaimer || '')}</div>
             <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px">
-              <div style="background:#0d1320;border:1px solid var(--line);border-radius:8px;padding:12px;text-align:center">
+              <div style="background:var(--soft);border:1px solid var(--line);border-radius:8px;padding:12px;text-align:center">
                 <div style="font-size:11px;color:var(--muted)">CALL (up)</div>
                 <div style="font-size:28px;font-weight:700;color:var(--muted)">${callPct}%</div>
               </div>
-              <div style="background:#0d1320;border:1px solid var(--line);border-radius:8px;padding:12px;text-align:center">
+              <div style="background:var(--soft);border:1px solid var(--line);border-radius:8px;padding:12px;text-align:center">
                 <div style="font-size:11px;color:var(--muted)">PUT (down)</div>
                 <div style="font-size:28px;font-weight:700;color:var(--muted)">${putPct}%</div>
               </div>
-              <div style="background:#0d1320;border:1px solid var(--line);border-radius:8px;padding:12px;text-align:center">
+              <div style="background:var(--soft);border:1px solid var(--line);border-radius:8px;padding:12px;text-align:center">
                 <div style="font-size:11px;color:var(--muted)">SIDEWAYS</div>
                 <div style="font-size:28px;font-weight:700;color:var(--muted)">${sidePct}%</div>
               </div>
@@ -1031,7 +1042,7 @@
         const col = last.equity >= first.equity ? 'var(--up)' : 'var(--down)';
         return `<div style="margin-top:12px">
           <div style="font-size:12px;color:var(--muted);margin-bottom:4px">Equity curve</div>
-          <svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;background:#0d1320;border-radius:8px">
+          <svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;background:var(--soft);border-radius:8px">
             <path d="${path}" fill="none" stroke="${col}" stroke-width="2"/>
             <text x="${padL}" y="${H - 6}" fill="var(--muted)" font-size="10">${esc(String(first.date || ''))}</text>
             <text x="${W - padR}" y="${H - 6}" text-anchor="end" fill="var(--muted)" font-size="10">${esc(String(last.date || ''))}</text>
@@ -1318,8 +1329,8 @@
       // --- Groww → Ling probability (tabs: 15m vs multi-horizon) ---
       function setGpTab(mode) {
         $('gpMode').value = mode;
-        const on = 'margin-top:0;background:var(--accent);color:#071019;font-weight:700';
-        const off = 'margin-top:0;background:#0d1320;color:var(--ink);border:1px solid var(--line)';
+        const on = 'margin-top:0;background:var(--accent);color:var(--on-accent);font-weight:700';
+        const off = 'margin-top:0;background:var(--soft);color:var(--ink);border:1px solid var(--line)';
         $('gpTab15').style.cssText = mode === '15m' ? on : off;
         $('gpTabMulti').style.cssText = mode === 'multi' ? on : off;
       }
@@ -1364,15 +1375,15 @@
 
           // Big Call / Put / Sideways cards
           html += `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin:12px 0">
-            <div style="background:#0d1320;border:1px solid var(--line);border-radius:10px;padding:14px;text-align:center">
+            <div style="background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:14px;text-align:center">
               <div style="font-size:12px;color:var(--muted)">CALL · probability price goes UP</div>
               <div style="font-size:32px;font-weight:700;color:var(--muted);margin-top:4px">${callPct}%</div>
             </div>
-            <div style="background:#0d1320;border:1px solid var(--line);border-radius:10px;padding:14px;text-align:center">
+            <div style="background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:14px;text-align:center">
               <div style="font-size:12px;color:var(--muted)">PUT · probability price goes DOWN</div>
               <div style="font-size:32px;font-weight:700;color:var(--muted);margin-top:4px">${putPct}%</div>
             </div>
-            <div style="background:#0d1320;border:1px solid var(--line);border-radius:10px;padding:14px;text-align:center">
+            <div style="background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:14px;text-align:center">
               <div style="font-size:12px;color:var(--muted)">SIDEWAYS · chop / no clear move</div>
               <div style="font-size:32px;font-weight:700;color:var(--muted);margin-top:4px">${sidePct}%</div>
             </div>
@@ -1392,7 +1403,7 @@
           if (em.available) {
             const fmt = (x) => Number(x).toFixed(2);
             const fp = (x) => Number(x).toFixed(2);
-            html += `<div style="margin-top:12px;padding:12px;border:1px solid var(--line);border-radius:10px;background:#0d1320">
+            html += `<div style="margin-top:12px;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--soft)">
               <div style="font-weight:700;margin-bottom:6px">Research range (ATR-based) · not a trade target</div>
               <div class="kv">
                 <div>Time window</div><div>${esc(em.timeWindow || '–')}</div>
@@ -1732,7 +1743,7 @@
           const rs = (v) => '₹' + Math.round(v).toLocaleString('en-IN');
           const lk = (v) => '₹' + (v >= 1e7 ? (v / 1e7).toFixed(2) + ' Cr' : (v / 1e5).toFixed(1) + ' L');
           let html = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px">${[['Worked half the time', g.sipNeeded.p50], ['Worked 3 times in 4', g.sipNeeded.p75], ['Worked 9 times in 10', g.sipNeeded.p90], ['Worked every time (worst start)', g.sipNeeded.p100]].map(([t, v], i) =>
-            `<div style="background:#0d1320;border:1px solid ${i === 2 ? 'var(--accent)' : 'var(--line)'};border-radius:10px;padding:10px;text-align:center"><div style="font-size:12px;color:var(--muted)">${t}</div><div style="font-size:20px;font-weight:700">${rs(v)}<span style="font-size:12px;color:var(--muted)">/mo</span></div></div>`).join('')}</div>
+            `<div style="background:var(--soft);border:1px solid ${i === 2 ? 'var(--accent)' : 'var(--line)'};border-radius:10px;padding:10px;text-align:center"><div style="font-size:12px;color:var(--muted)">${t}</div><div style="font-size:20px;font-weight:700">${rs(v)}<span style="font-size:12px;color:var(--muted)">/mo</span></div></div>`).join('')}</div>
             <div style="font-size:13px;margin-top:8px">To reach <b>${lk(g.target)}</b> in <b>${g.years} years</b>${g.lumpSum ? ` (with ${lk(g.lumpSum)} invested now)` : ''}: a SIP of about <b>${rs(g.sipNeeded.p90)}/month</b> would have been enough in 90% of the ${g.windows} past start months (you'd invest ${lk(g.invested90)} in total).</div>`;
           if (g.withSip) {
             const w = g.withSip;
@@ -1822,7 +1833,7 @@
       function hdRender(a) {
         if (a.empty) return `<div class="note">${esc(a.note)}</div>`;
         const t = a.tax;
-        const box = (title, val, sub = '') => `<div style="background:#0d1320;border:1px solid var(--line);border-radius:10px;padding:10px;text-align:center">
+        const box = (title, val, sub = '') => `<div style="background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:10px;text-align:center">
           <div style="font-size:12px;color:var(--muted)">${title}</div><div style="font-size:22px;font-weight:700">${val}</div><div style="font-size:12px;color:var(--muted)">${sub}</div></div>`;
         let html = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px">
           ${box('Value', rupee(a.totals.value), `cost ${rupee(a.totals.cost)} · ${pct1(a.totals.gainPct)}`)}
@@ -1835,7 +1846,7 @@
           `<tr><td style="text-align:left">${esc(l.symbol)}${l.error ? ` <span class="err" title="${esc(l.error)}">!</span>` : ''}</td><td>${l.qty}</td><td>${rupee(l.price)} · ${esc(l.date)}</td><td>${l.last == null ? '–' : l.last.toFixed(2)}</td>
            <td>${rupee(l.value)}</td><td style="color:${(l.gain || 0) >= 0 ? 'var(--up)' : 'var(--down)'}">${rupee(l.gain)} (${pct1(l.gainPct)})</td>
            <td>${l.term === 'long' ? 'long-term' : `short-term → long from ${esc(l.longTermFrom)}`}</td>
-           <td><button type="button" data-lot="${esc(l.id)}" style="margin:0;padding:2px 8px;background:#0d1320;color:var(--muted);border:1px solid var(--line)">remove</button></td></tr>`).join('')}</tbody></table>`;
+           <td><button type="button" data-lot="${esc(l.id)}" style="margin:0;padding:2px 8px;background:var(--soft);color:var(--muted);border:1px solid var(--line)">remove</button></td></tr>`).join('')}</tbody></table>`;
         html += `<div class="kv" style="margin-top:8px">
           <div>Unrealised short-term</div><div>gains ${rupee(t.unrealisedShortGain)} · losses ${rupee(t.unrealisedShortLoss)} (taxed at 20% + cess)</div>
           <div>Unrealised long-term</div><div>gains ${rupee(t.unrealisedLongGain)} · losses ${rupee(t.unrealisedLongLoss)} (12.5% + cess above ₹1.25 lakh/yr)</div></div>`;
@@ -2209,14 +2220,14 @@
         try {
           const r = await api('/api/foundation?' + new URLSearchParams({ model, symbol: $('fmSym').value.trim() }));
           if (model !== fmModel) return; // tab switched meanwhile
-          const box = (h, title) => `<div style="background:#0d1320;border:1px solid var(--line);border-radius:10px;padding:12px">
+          const box = (h, title) => `<div style="background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:12px">
               <div style="font-size:12px;color:var(--muted)">${title}</div>
               <div style="display:flex;gap:14px;margin-top:6px;font-size:14px">
                 <div>Call (up) <b style="font-size:22px">${fmPct(h.probUp)}</b></div>
                 <div>Put (down) <b style="font-size:22px">${fmPct(h.probDown)}</b></div>
                 <div>Sideways <b style="font-size:22px">${fmPct(h.probSideways)}</b></div></div>
               <div style="font-size:12px;color:var(--muted);margin-top:6px">Median move ${fmSigned(h.medianPct)} · 10–90% range ${fmSigned(h.lowPct)} to ${fmSigned(h.highPct)}</div></div>`;
-          out.innerHTML = `<div style="font-size:13px;margin-bottom:8px"><span style="background:var(--accent);color:#071019;border-radius:6px;padding:2px 8px;font-weight:700">Result from ${esc(r.modelLabel)}</span>
+          out.innerHTML = `<div style="font-size:13px;margin-bottom:8px"><span style="background:var(--accent);color:var(--on-accent);border-radius:6px;padding:2px 8px;font-weight:700">Result from ${esc(r.modelLabel)}</span>
               <span style="color:var(--muted)">${esc(r.source)}</span></div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">${box(r.horizons['1d'], 'Next session')}${box(r.horizons['5d'], 'Next 5 sessions')}</div>
             <div class="kv" style="margin-top:8px">
@@ -2251,10 +2262,10 @@
           const o = await api('/api/option-odds?' + q.toString());
           const pct = (x) => (x == null ? '–' : (x * 100).toFixed(1) + '%');
           out.innerHTML = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
-              <div style="background:#0d1320;border:1px solid var(--line);border-radius:10px;padding:12px;text-align:center">
+              <div style="background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:12px;text-align:center">
                 <div style="font-size:12px;color:var(--muted)">Chance of profit at expiry · forecast</div>
                 <div style="font-size:30px;font-weight:700">${pct(o.probProfit.forecastHistory ?? o.probProfit.forecastNormal)}</div></div>
-              <div style="background:#0d1320;border:1px solid var(--line);border-radius:10px;padding:12px;text-align:center">
+              <div style="background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:12px;text-align:center">
                 <div style="font-size:12px;color:var(--muted)">…as implied by the option's price</div>
                 <div style="font-size:30px;font-weight:700;color:var(--muted)">${pct(o.probProfit.impliedNormal)}</div></div>
             </div>
@@ -2356,7 +2367,7 @@
               <td style="color:${col(p.unrealized)}">${money(p.unrealized)} (${p.unrealizedPct.toFixed(1)}%)</td>
               <td>${p.stop != null ? Number(p.stop).toFixed(2) : '–'}</td><td>${p.target != null ? Number(p.target).toFixed(2) : '–'}</td>
               <td>${sentimentBadge(p.news)}</td>
-              <td><button type="button" data-close="${esc(p.symbol)}" style="margin:0;padding:4px 10px;font-size:12px;background:#0d1320;color:var(--ink);border:1px solid var(--line)">Close</button></td></tr>`;
+              <td><button type="button" data-close="${esc(p.symbol)}" style="margin:0;padding:4px 10px;font-size:12px;background:var(--soft);color:var(--ink);border:1px solid var(--line)">Close</button></td></tr>`;
           }
           html += '</tbody></table>';
         } else {
@@ -2494,7 +2505,7 @@
         for (const x of norm) g += `<polyline fill="none" stroke="${x.color}" stroke-width="1.8" points="${x.pts.map((p, i) => `${xf(i).toFixed(1)},${yf(p.v).toFixed(1)}`).join(' ')}"/>`;
         const first = norm[0].pts[0].date, last = norm[0].pts[norm[0].pts.length - 1].date;
         g += `<text x="${pl}" y="${H - 6}" font-size="10" fill="var(--muted)">${esc(first)}</text><text x="${W - pr}" y="${H - 6}" text-anchor="end" font-size="10" fill="var(--muted)">${esc(last)}</text>`;
-        return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;background:#0d1320;border-radius:8px;margin-top:8px">${g}</svg>
+        return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;background:var(--soft);border-radius:8px;margin-top:8px">${g}</svg>
           <div class="note">${all.map((x) => `<span style="color:${x.color}">■</span> ${esc(x.name)}`).join(' · ')} (start = 100)</div>`;
       }
       const COLORS = { nifty: 'var(--muted)', trend: 'var(--accent)', momentum: 'var(--up)' };
@@ -2695,7 +2706,7 @@
 
       // --- News brief ---
       function renderNews(n) {
-        let html = `<div style="margin-top:12px;padding:12px;border:1px solid var(--line);border-radius:10px;background:#0d1320">
+        let html = `<div style="margin-top:12px;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--soft)">
           <div style="font-weight:700;margin-bottom:6px">News · ${esc(n.company || n.symbol || '')}</div>`;
         if (n.events?.length) html += `<div style="margin-bottom:6px;font-size:13px;color:var(--warn)">⚠ Event risk in recent headlines: <b>${esc(n.events.join(', '))}</b> — moves around events are usually larger and less predictable.</div>`;
         if (n.brief) {
@@ -2783,7 +2794,7 @@
           for (const b of pts) g += `<circle cx="${x(b.meanPredicted).toFixed(1)}" cy="${y(b.observed).toFixed(1)}" r="${Math.min(6, 2 + Math.sqrt(b.n) / 8).toFixed(1)}" fill="${colors[label]}"><title>${label}: predicted ${(b.meanPredicted * 100).toFixed(0)}% → happened ${(b.observed * 100).toFixed(0)}% (n=${b.n})</title></circle>`;
         }
         return `<div style="flex:1;min-width:260px"><div style="font-size:12px;color:var(--muted);margin-bottom:2px">${esc(title)}</div>
-          <svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${esc(title)} reliability diagram" style="display:block;background:#0d1320;border-radius:8px">${g}
+          <svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${esc(title)} reliability diagram" style="display:block;background:var(--soft);border-radius:8px">${g}
           <text x="${W / 2}" y="${H - 1}" text-anchor="middle" font-size="9" fill="var(--muted)">predicted</text></svg></div>`;
       }
 
