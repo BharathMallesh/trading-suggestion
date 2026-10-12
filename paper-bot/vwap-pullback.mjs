@@ -538,9 +538,95 @@ export async function paperUpdate({ loadCandles = candles, now = new Date() } = 
   return { added, ...paperSummary(st) };
 }
 
+// "When can we trust it?": a fixed finish line, set before the results come in.
+export const TRUST = { trades: 100, days: 40, earlyStopTrades: 30 };
+
+/** Verdict on a paper record so far (one version). */
+export function trustMeter(sum) {
+  const n = sum.trades || 0;
+  const days = sum.days || 0;
+  const progress = Math.min(1, n / TRUST.trades, days / TRUST.days);
+  const base = { trades: n, days, needTrades: TRUST.trades, needDays: TRUST.days, progress, avgNetRs: sum.avgNetRs ?? null, tStat: sum.tStat ?? null };
+  if (n >= TRUST.earlyStopTrades && sum.tStat != null && sum.tStat <= -2) return { ...base, level: 'fail', verdict: 'Losing clearly after costs — this version does not work. Stop tracking it.' };
+  if (progress < 1) {
+    const ahead = n ? (sum.avgNetRs > 0 ? 'ahead of' : 'behind') : null;
+    return { ...base, level: 'early', verdict: n ? `Too early: ${n} of ${TRUST.trades} trades, ${days} of ${TRUST.days} days. So far ${ahead} break-even after costs — luck can't be ruled out yet.` : 'No trades yet.' };
+  }
+  if (sum.avgNetRs > 0 && sum.tStat >= 2) return { ...base, level: 'pass', verdict: 'Profitable after costs with a reliable margin (t ≥ 2) over enough trades. Next step: a tiny real size, still tracked.' };
+  if (sum.avgNetRs <= 0) return { ...base, level: 'fail', verdict: 'Enough trades, and it lost money after costs — it does not work.' };
+  return { ...base, level: 'unclear', verdict: 'Enough trades, slightly profitable but not reliably (t < 2) — keep paper trading, no real money.' };
+}
+
+/** One line per version for a session's paper trades, e.g. for the after-close alert. */
+export function closeSummary(st, date) {
+  return Object.entries(PAPER_VARIANTS).map(([k, v]) => {
+    const tr = (st?.trades || []).filter((x) => (x.variant || 'video') === k && x.date === date);
+    const short = { video: 'Video rules', improved: 'Improved', scanner: 'Scanner' }[k] || v.label;
+    if (!tr.length) return `${short}: no trades`;
+    const net = tr.reduce((a, x) => a + x.net, 0);
+    return `${short}: ${tr.length} trade${tr.length > 1 ? 's' : ''} ${net >= 0 ? '+' : '−'}₹${Math.abs(Math.round(net)).toLocaleString('en-IN')} (${tr.map((x) => `${x.symbol.replace('.NS', '')} ${x.reason}`).join(', ')})`;
+  });
+}
+
+/**
+ * Live view of today's session (or the latest one): each stock's position vs
+ * its 20 MA and VWAP, and the trades each paper version has taken so far,
+ * valued at the latest candle (after charges, as if closed now).
+ */
+export async function todaySignals({ loadCandles = candles, now = new Date() } = {}) {
+  const t = istNow(now);
+  const p1 = Math.floor(now.getTime() / 1000) - 8 * 86400;
+  const symbols = [...new Set([...VIDEO_STOCKS, ...Object.values(PAPER_VARIANTS).flatMap((v) => v.stocks || [])])];
+  const data = (await mapLimit(symbols, 4, async (s) => {
+    try {
+      // only whole 5-minute candles: Yahoo's still-forming candle (e.g. 12:07) is dropped
+      const rows = (await loadCandles(s, { period1: p1, interval: '5m' })).filter((r) => r.close > 0 && r.high > 0 && Number(hhmm(r).slice(3)) % 5 === 0);
+      return rows.length ? { s, rows, daily: await dailyContext(loadCandles, s) } : null;
+    } catch {
+      return null;
+    }
+  })).filter(Boolean);
+  if (!data.length) return { at: now.toISOString(), date: null, stocks: [], variants: {}, note: 'No 5-minute data available right now.' };
+  const date = data.map(({ rows }) => day(rows[rows.length - 1])).sort().pop();
+  const ist = new Date(now.getTime() + 19800_000);
+  const weekday = ist.getUTCDay() >= 1 && ist.getUTCDay() <= 5;
+  const live = weekday && date === t.date && t.mins >= 555 && t.mins < 930;
+  const stocks = data.map(({ s, rows, daily }) => {
+    const bars = indicators(rows, RULES).filter((b) => day(b) === date);
+    const b = bars[bars.length - 1];
+    if (!b) return null;
+    const info = sessionInfo(indicators(rows, RULES)).get(date) || {};
+    const trend = b.ma == null ? 'unknown' : b.close > b.ma && b.close > b.vwap ? 'up' : b.close < b.ma && b.close < b.vwap ? 'down' : 'mixed';
+    const dt = daily.get(date);
+    return {
+      symbol: s, video: VIDEO_STOCKS.includes(s), time: hhmm(b), price: b.close, ma: b.ma ?? null, vwap: b.vwap, trend,
+      dailyTrend: dt ? (dt.aboveAvg20 ? 'up' : 'down') : null, gapPct: info.gapPct ?? null,
+      inPlay: info.gapPct != null && Math.abs(info.gapPct) >= FILTERS.morningGap.morningGapPct,
+    };
+  }).filter(Boolean);
+  const variants = {};
+  for (const [k, v] of Object.entries(PAPER_VARIANTS)) {
+    const list = v.stocks || VIDEO_STOCKS;
+    const all = data.filter((x) => list.includes(x.s)).flatMap(({ s, rows, daily }) => backtestStock(s, rows, v.rules, { daily }));
+    const trades = accountTrades(all, v.rules.maxPerDay).filter((x) => x.date === date)
+      .map((x) => ({ ...x, open: x.reason === 'close' && live }));
+    variants[k] = { label: v.label, trades, netRs: trades.reduce((a, x) => a + x.net, 0), slotsLeft: Math.max(0, v.rules.maxPerDay - trades.length), stocks: list.length };
+  }
+  return {
+    at: now.toISOString(), date, live,
+    lastBar: stocks.map((x) => x.time).sort().pop(),
+    newEntriesUntil: RULES.lastEntry, exitAt: RULES.exitAt,
+    stocks, variants,
+    note: 'Same rules as the paper record, on the 5-minute candles so far. Open trades are valued at the latest candle after charges (as if closed now); they end at the stop, the target or 15:00. The official record is written after the close. Paper only — not a signal to trade.',
+  };
+}
+
 export function paperSummary(st = loadPaper()) {
   if (!st) return { startedAt: null, summary: { trades: 0 }, byVariant: {}, trades: [] };
-  const byVariant = Object.fromEntries(Object.entries(PAPER_VARIANTS).map(([k, v]) => [k, { label: v.label, ...summarise(st.trades.filter((x) => (x.variant || 'video') === k)) }]));
+  const byVariant = Object.fromEntries(Object.entries(PAPER_VARIANTS).map(([k, v]) => {
+    const sum = summarise(st.trades.filter((x) => (x.variant || 'video') === k));
+    return [k, { label: v.label, ...sum, trust: trustMeter(sum) }];
+  }));
   return { startedAt: st.startedAt, updatedAt: st.updatedAt, summary: byVariant.video, byVariant, trades: st.trades.slice(-20).reverse() };
 }
 
@@ -595,7 +681,17 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href &
     });
 } else if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href && process.argv.includes('--paper')) {
   paperUpdate()
-    .then((r) => console.log(`VWAP pullback paper: +${r.added} trades · since ${r.startedAt} · ${r.summary.trades} trades · total net ₹${Math.round(r.summary.totalNetRs || 0)}`))
+    .then(async (r) => {
+      console.log(`VWAP pullback paper: +${r.added} trades · since ${r.startedAt} · ${r.summary.trades} trades · total net ₹${Math.round(r.summary.totalNetRs || 0)}`);
+      const t = istNow();
+      const lines = closeSummary(loadPaper(), t.date);
+      console.log(lines.join('\n'));
+      const wd = new Date(Date.now() + 19800_000).getUTCDay();
+      if (process.argv.includes('--notify') && wd >= 1 && wd <= 5 && t.mins >= 15 * 60 + 35) {
+        const { notify } = await import('./monitor.mjs');
+        notify(`Strategy paper · ${t.date}`, lines.join(' · '));
+      }
+    })
     .catch((err) => {
       console.error('Error:', err.message);
       process.exit(1);

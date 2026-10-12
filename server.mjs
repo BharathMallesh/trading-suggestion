@@ -51,7 +51,7 @@ import { ask as askApp } from './paper-bot/assistant.mjs';
 import { indexFunds } from './paper-bot/index-funds.mjs';
 import { loadDirectionLong } from './paper-bot/direction-long.mjs';
 import { loadIntradayTest } from './paper-bot/intraday-test.mjs';
-import { vwapPullbackTest, saveVwapPullback, loadVwapPullback, paperSummary, paperUpdate, loadImprove } from './paper-bot/vwap-pullback.mjs';
+import { vwapPullbackTest, saveVwapPullback, loadVwapPullback, paperSummary, paperUpdate, loadImprove, todaySignals } from './paper-bot/vwap-pullback.mjs';
 import { bigMove, evaluateBigMove, saveBigMoveEval, loadBigMoveEval } from './paper-bot/big-move.mjs';
 import { testPositioning, saveResult as savePositioning, loadResult as loadPositioning } from './paper-bot/options-positioning.mjs';
 import { llmLastModel } from './ling-client.mjs';
@@ -63,6 +63,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT) || 3000;
 let expectCache = null; // /api/expectations (daily)
 let fundsCache = null; // /api/index-funds (daily)
+let vwapTodayCache = null; // /api/vwap-today (1 minute)
 const monthlyCache = {}; // goal planner: index → { at, data }
 // Bind to loopback only — this is a local tool holding a server-side API key,
 // not something to expose on the network.
@@ -527,6 +528,11 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === 'GET' && url.pathname === '/api/vwap-pullback') {
       return json(res, 200, { backtest: loadVwapPullback(), paper: paperSummary(), improve: loadImprove() });
+    }
+    if (req.method === 'GET' && url.pathname === '/api/vwap-today') {
+      // live view: refreshed at most once a minute (Yahoo 5-minute bars)
+      if (!vwapTodayCache || Date.now() - vwapTodayCache.at > 60_000) vwapTodayCache = { at: Date.now(), data: await todaySignals({}) };
+      return json(res, 200, vwapTodayCache.data);
     }
     if (req.method === 'POST' && url.pathname === '/api/vwap-pullback') {
       await readJson(req);

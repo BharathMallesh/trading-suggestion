@@ -7,7 +7,7 @@ import { execFileSync } from 'child_process';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { quote } from '../market-data.mjs';
-import { storeStatus } from './collector.mjs';
+import { storeStatus, storeGaps } from './collector.mjs';
 import { loadCalibration } from './calibration.mjs';
 import { computeStats } from './prediction-log.mjs';
 import { llmCredits, llmStatus, llmLastModel } from '../ling-client.mjs';
@@ -112,9 +112,12 @@ export async function healthChecks(opts = {}) {
     const latest = st.map((s) => String(s.to).slice(0, 10)).sort().pop();
     const want = lastSessionDate(now);
     const days = Math.max(...st.map((s) => s.days));
-    out.push(latest >= want
-      ? check('intraday store', 'ok', `${st.length} series · ${days} trading days · up to ${latest}`)
-      : check('intraday store', 'warn', `last bars ${latest}, expected ${want} — collector missed a run (Yahoo keeps ~1 month, so catch up soon)`));
+    const gaps = latest >= want ? storeGaps(want) : [];
+    out.push(latest < want
+      ? check('intraday store', 'warn', `last bars ${latest}, expected ${want} — collector missed a run (Yahoo keeps ~60 days of 5-minute bars, so catch up soon: npm run collect)`)
+      : gaps.length
+        ? check('intraday store', 'warn', `${st.length} series up to ${latest}, but: ${gaps.join(' · ')}`)
+        : check('intraday store', 'ok', `${st.length} series · ${days} trading days · up to ${latest} · no gaps`));
   }
 
   // 5. Calibration age

@@ -122,6 +122,38 @@ export async function backfillGroww({ symbols, days = 60, intervals = STORED_INT
   return report;
 }
 
+/**
+ * Gaps in the saved 5-minute history: series that stopped before `want` (the
+ * last full session), sessions NIFTY has but a stock is missing, and runs of
+ * more than 4 calendar days with no NIFTY bars (a missed collection — or a
+ * long market holiday). Returns plain-language issues; [] when all is well.
+ */
+export function storeGaps(want, interval = '5m') {
+  const dir = join(STORE, interval);
+  if (!existsSync(dir)) return [];
+  const daysOf = (rows) => new Set(rows.map((r) => String(r.date).slice(0, 10)));
+  const ref = [...daysOf(readStore('^NSEI', interval))].sort();
+  const issues = [];
+  for (let i = 1; i < ref.length; i++) {
+    const gap = (Date.parse(ref[i]) - Date.parse(ref[i - 1])) / 86400000;
+    if (gap > 4) issues.push(`no ${interval} bars between ${ref[i - 1]} and ${ref[i]} (${gap - 1} days) — missed collection or a long holiday`);
+  }
+  const stale = [];
+  const holes = [];
+  for (const f of readdirSync(dir)) {
+    const sym = f.replace(/\.json$/, '');
+    const days = daysOf(readStore(sym, interval));
+    if (!days.size) continue;
+    const sorted = [...days].sort();
+    if (want && sorted[sorted.length - 1] < want) stale.push(`${sym} (last ${sorted[sorted.length - 1]})`);
+    const missing = ref.filter((d) => d >= sorted[0] && d <= sorted[sorted.length - 1] && !days.has(d)); // after its last day = stale (above)
+    if (missing.length) holes.push(`${sym} missing ${missing.length} day${missing.length > 1 ? 's' : ''} (${missing.slice(0, 3).join(', ')}${missing.length > 3 ? '…' : ''})`);
+  }
+  if (stale.length) issues.push(`not updated since the last session: ${stale.slice(0, 5).join(', ')}${stale.length > 5 ? ` and ${stale.length - 5} more` : ''}`);
+  if (holes.length) issues.push(`days missing vs NIFTY: ${holes.slice(0, 5).join('; ')}${holes.length > 5 ? ` and ${holes.length - 5} more` : ''}`);
+  return issues;
+}
+
 /** Summary of what is stored: bars + first/last date per file. */
 export function storeStatus() {
   const out = [];
@@ -162,6 +194,13 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       const st = storeStatus();
       const days = Math.max(0, ...st.map((s) => s.days));
       console.log(`Store: ${st.length} series, up to ${days} trading days of intraday history.`);
+      const { lastSessionDate } = await import('./health.mjs');
+      const gaps = storeGaps(lastSessionDate());
+      for (const g of gaps) console.log(`  GAP: ${g}`);
+      if ((gaps.length || failed.length) && args.includes('--notify')) {
+        const { notify } = await import('./monitor.mjs');
+        notify('Trading research · 5-minute history has gaps', [...(failed.length ? [`${failed.length} series failed to download`] : []), ...gaps].join(' · '));
+      }
     }
   } catch (err) {
     console.error('Error:', err.message);

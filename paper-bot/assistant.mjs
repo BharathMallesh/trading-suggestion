@@ -21,6 +21,7 @@ import { loadCalibration } from './calibration.mjs';
 import { loadHoldings } from './holdings.mjs';
 import { indexFunds } from './index-funds.mjs';
 import { badRequest } from '../util.mjs';
+import { todaySignals, paperSummary } from './vwap-pullback.mjs';
 
 // Common names → NSE symbols (in addition to the NIFTY 500 tickers themselves).
 const NAMES = {
@@ -38,7 +39,7 @@ const NAMES = {
 };
 for (const [sym, name] of Object.entries(ALIASES)) NAMES[name.toLowerCase()] = NAMES[name.toLowerCase()] || sym;
 
-const STOP = new Set(['A', 'I', 'IS', 'IT', 'ON', 'OF', 'TO', 'THE', 'AND', 'FOR', 'ME', 'MY', 'WHAT', 'WILL', 'TELL', 'ABOUT', 'BUY', 'SELL', 'CALL', 'PUT', 'BEST', 'STOCK', 'TODAY', 'NOW', 'IN', 'BE', 'DO', 'HOW', 'WHICH', 'WEEK', 'THIS', 'SHOULD', 'CAN', 'HAPPEN', 'INVEST', 'OPTION', 'OPTIONS']);
+const STOP = new Set(['A', 'I', 'IS', 'IT', 'ON', 'OF', 'TO', 'THE', 'AND', 'FOR', 'ME', 'MY', 'WHAT', 'WILL', 'TELL', 'ABOUT', 'BUY', 'SELL', 'CALL', 'PUT', 'BEST', 'STOCK', 'TODAY', 'NOW', 'IN', 'BE', 'DO', 'HOW', 'WHICH', 'WEEK', 'THIS', 'SHOULD', 'CAN', 'HAPPEN', 'INVEST', 'OPTION', 'OPTIONS', 'STRATEGY', 'SIGNAL', 'SIGNALS', 'PAPER', 'SCANNER', 'ANY', 'DID', 'GO', 'VWAP', 'SETUP']);
 
 let universe = null; // NIFTY 500 tickers (cached per process)
 async function tickers() {
@@ -76,6 +77,7 @@ export function detectIntent(question, symbol) {
   const q = String(question).toLowerCase();
   if (/\b(index fund|etf|mutual fund|which fund)\b/.test(q)) return 'funds';
   if (/\b(sip|goal|target|lakh|crore|retire)\b/.test(q) && !symbol) return 'goal';
+  if (/\b(strategy|vwap|pullback|signals?|paper (trade|trades|record)|scanner|setup|intraday trade)\b/.test(q)) return 'strategy';
   if (/\b(call|put|option|options|ce|pe|straddle)\b/.test(q)) return 'options';
   if (symbol) return 'stock';
   if (/\b(best|invest|buy|which stock|stocks|today|market|briefing|tomorrow|week)\b/.test(q)) return 'briefing';
@@ -249,10 +251,47 @@ export async function fundsAnswer() {
   return { intent: 'funds', title: 'Index funds', summary: ['Funds on the same index should return the same; the gap to the best is what costs and tracking took. The top few are within a few hundredths of a percent — any of them is fine. Full list in "Index-fund picker".'], sections, caveat: 'Not a recommendation of any fund; check the expense ratio and (for ETFs) trading liquidity.' };
 }
 
+const rs = (v) => (v == null ? '–' : `${v < 0 ? '−' : '+'}₹${Math.abs(Math.round(v)).toLocaleString('en-IN')}`);
+
+/** "How did the strategy do today?" / "Any signal on Trent?" — the VWAP pullback paper versions. */
+export async function strategyAnswer(symbol = null, { loadSignals = todaySignals, loadPaper = paperSummary } = {}) {
+  const [live, paper] = await Promise.all([loadSignals({}), Promise.resolve(loadPaper())]);
+  const when = live.date ? `${live.live ? 'today so far' : `on ${live.date}`} (candles to ${live.lastBar})` : 'now';
+  const summary = [];
+  for (const v of Object.values(live.variants || {})) {
+    const tr = symbol ? v.trades.filter((t) => t.symbol === symbol) : v.trades;
+    const name = v.label.split(':')[0].replace(/ \(.*$/, '');
+    summary.push(tr.length
+      ? `${name}: ${tr.map((t) => `${t.symbol.replace('.NS', '')} ${t.side} at ${t.time} (${t.open ? 'open' : t.reason}) ${rs(t.net)}`).join('; ')}.`
+      : `${name}: no trade${symbol ? ` on ${label(symbol)}` : ''} ${when}.`);
+  }
+  const sections = [];
+  const stocks = (live.stocks || []).filter((x) => (symbol ? x.symbol === symbol : x.video || x.inPlay));
+  if (symbol && !stocks.length) summary.unshift(`${label(symbol)} is not on the strategy's lists (the 4 video stocks + 20 scanner stocks), so it has no signals.`);
+  if (stocks.length) {
+    sections.push({
+      heading: `Position vs 20 MA and VWAP ${when}`, kind: 'table', columns: ['Stock', 'Price', '20 MA', 'VWAP', 'Trend', 'Daily trend', 'Move by 09:30'],
+      rows: stocks.map((x) => [x.symbol.replace('.NS', ''), x.price.toFixed(1), x.ma?.toFixed(1) ?? '–', x.vwap.toFixed(1), x.trend === 'up' ? 'above both (longs only)' : x.trend === 'down' ? 'below both (shorts only)' : 'mixed (no trade)', x.dailyTrend || '–', x.gapPct == null ? '–' : `${x.gapPct >= 0 ? '+' : ''}${x.gapPct.toFixed(2)}%`]),
+    });
+  }
+  const pv = Object.values(paper.byVariant || {});
+  if (pv.length) {
+    sections.push({
+      heading: `Paper record since ${paper.startedAt || '–'}: can we trust it yet?`, kind: 'table', columns: ['Version', 'Trades', 'Avg after costs', 'Verdict'],
+      rows: pv.map((v) => [v.label.split(':')[0].replace(/ \(.*$/, ''), String(v.trades || 0), v.trades ? rs(v.avgNetRs) : '–', v.trust?.verdict || '–']),
+    });
+  }
+  return {
+    intent: 'strategy', symbol, title: symbol ? `${label(symbol)} in the VWAP pullback strategy` : 'VWAP pullback strategy',
+    summary, sections,
+    caveat: 'Paper simulation of the Dhan video strategy. The backtest lost money after costs and no improvement is proven yet — not a signal to trade.',
+  };
+}
+
 export function helpAnswer() {
   return {
     intent: 'help', title: 'What you can ask',
-    summary: ['Try: "Which is the best stock to invest today?", "Tell me about Reliance", "What will happen to TCS?", "NIFTY call put this week", "Options on INFY", "Which index fund?"'],
+    summary: ['Try: "Which is the best stock to invest today?", "Tell me about Reliance", "What will happen to TCS?", "NIFTY call put this week", "Options on INFY", "Which index fund?", "How did the strategy do today?", "Any signal on Trent?"'],
     sections: [], caveat: NO_DIRECTION,
   };
 }
@@ -264,6 +303,7 @@ export async function ask(question, { symbols = [] } = {}) {
   if (q.length > 300) throw badRequest('Please keep the question under 300 characters.');
   const symbol = await resolveSymbol(q);
   const intent = detectIntent(q, symbol);
+  if (intent === 'strategy') return strategyAnswer(symbol && symbol !== '^NSEI' ? symbol : null);
   if (intent === 'stock') return stockReport(symbol);
   if (intent === 'options') return optionsAnswer(symbol || '^NSEI');
   if (intent === 'funds') return fundsAnswer();

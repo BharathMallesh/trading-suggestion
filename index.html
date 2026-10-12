@@ -95,6 +95,7 @@
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
           <button type="button" class="aaChip" style="margin:0;padding:4px 10px;background:var(--soft);color:var(--ink);border:1px solid var(--line)">Which is the best stock to invest today?</button>
           <button type="button" class="aaChip" style="margin:0;padding:4px 10px;background:var(--soft);color:var(--ink);border:1px solid var(--line)">Tell me about Reliance</button>
+          <button type="button" class="aaChip" style="margin:0;padding:4px 10px;background:var(--soft);color:var(--ink);border:1px solid var(--line)">How did the strategy do today?</button>
           <button type="button" class="aaChip" style="margin:0;padding:4px 10px;background:var(--soft);color:var(--ink);border:1px solid var(--line)">What will happen to HDFC Bank?</button>
           <button type="button" class="aaChip" style="margin:0;padding:4px 10px;background:var(--soft);color:var(--ink);border:1px solid var(--line)">NIFTY call put this week</button>
           <button type="button" class="aaChip" style="margin:0;padding:4px 10px;background:var(--soft);color:var(--ink);border:1px solid var(--line)">Which index fund?</button>
@@ -536,6 +537,9 @@
           stop 2 × ATR, target 1:2, no new trades after 1 PM, exit by 3 PM, at most 2 trades a day. Tested after real intraday charges, then recorded as a paper
           trade every day after the close. Not investment advice.
         </p>
+        <div style="font-size:14px"><b>Today's signals</b> <span id="vpbTodayWhen" class="note" style="display:inline"></span>
+          <button id="vpbTodayBtn" type="button" style="margin-left:6px;padding:3px 10px;background:var(--soft);color:var(--ink);border:1px solid var(--line)">Refresh</button></div>
+        <div id="vpbToday" style="margin:6px 0 14px">Loading…</div>
         <button id="vpbBtn" type="button" style="background:var(--soft);color:var(--ink);border:1px solid var(--line)">Re-run backtest + update paper record (~30 s)</button>
         <div id="vpbOut" style="margin-top:10px"></div>
       </section>
@@ -1704,7 +1708,28 @@
       // --- My money / Research lab views ---
       const MONEY_CARDS = ['todayCard'];
       const MONEY_TITLES = /^(Today|My portfolio|What to expect|Market data|Option calculator|Live candles|Big-move odds|Call \/ Put payoff odds|Volatility check|Strategies|Settings)/;
+      // Tools whose direction calls were tested and found no edge: labelled, and (except the Call/Put card) moved to the end of their view.
+      const NO_EDGE = /^(Paper-Bot|Candle AI read|Live candles|Foundation models|Direction over months|Options positioning|Same stocks every day)/;
+      let noEdgeDone = false;
+      function markNoEdge() {
+        if (noEdgeDone) return;
+        noEdgeDone = true;
+        const main = document.querySelector('main');
+        for (const sec of [...document.querySelectorAll('main > section.card')]) {
+          const t = sec.querySelector('h2')?.textContent.trim() || '';
+          if (!NO_EDGE.test(t)) continue;
+          const b = document.createElement('div');
+          b.className = 'noEdge';
+          b.style.cssText = 'margin:-4px 0 10px;padding:6px 10px;border-radius:8px;font-size:12px;background:var(--soft);color:var(--muted);border-left:3px solid var(--warn)';
+          b.textContent = /^Same stocks/.test(t)
+            ? 'Tested: loses money after costs so far; improvements not proven. Kept as a paper experiment, not for real trades.'
+            : 'Tested: no reliable edge for up / down — the live scorecard and back-tests matched chance. Kept for curiosity and tracking, not for decisions.';
+          sec.querySelector('h2').after(b);
+          if (!/^Live candles/.test(t)) main.appendChild(sec); // keeps its listeners; last in whichever view (the Call/Put card stays where you put it)
+        }
+      }
       function tagViews() {
+        markNoEdge();
         for (const sec of document.querySelectorAll('main > section.card')) {
           if (sec.dataset.view) continue;
           const t = sec.querySelector('h2')?.textContent.trim() || '';
@@ -2037,6 +2062,14 @@
             <div style="overflow-x:auto"><table style="font-size:12px"><thead><tr><th style="text-align:left">Version</th><th>Video stocks: trades</th><th>Win</th><th>Avg after costs</th><th>16 other stocks: trades</th><th>Win</th><th>Avg after costs</th></tr></thead><tbody>${r2.map((v) => `<tr><td style="text-align:left">${esc(label(v.name))}</td>${cell(v.video)}${cell(v.others)}</tr>`).join('')}</tbody></table></div>
             <div class="note">None is proven: every version lost in the first half of the period and did better in the second, so the market's mood mattered more than the filter. The best (morning gap) is now paper-tracked as a third version. The test gets longer every day as 5-minute candles are saved.</div></details>`;
         }
+        const meters = Object.values(p.byVariant || {}).filter((x) => x.trust);
+        if (meters.length) {
+          const col = { pass: 'var(--up)', fail: 'var(--down)', unclear: 'var(--warn)', early: 'var(--accent)' };
+          html += `<div style="font-size:13px;margin-top:8px"><b>When can we trust it?</b> <span class="note" style="display:inline">Finish line set in advance: ${meters[0].trust.needTrades} trades over ${meters[0].trust.needDays} trading days, profitable after costs with t ≥ 2.</span></div>` +
+            meters.map((x) => `<div style="margin:6px 0"><div style="display:flex;justify-content:space-between;gap:8px;font-size:12px"><span>${esc(x.label)}</span><span>${x.trust.trades}/${x.trust.needTrades} trades · ${x.trust.days}/${x.trust.needDays} days</span></div>
+              <div style="height:8px;background:var(--soft);border-radius:4px;overflow:hidden"><div style="height:100%;width:${Math.round(x.trust.progress * 100)}%;background:${col[x.trust.level]}"></div></div>
+              <div class="note" style="color:${x.trust.level === 'early' ? 'var(--muted)' : col[x.trust.level]}">${esc(x.trust.verdict)}</div></div>`).join('');
+        }
         const anyPaper = Object.values(p.byVariant || {}).some((x) => x.trades);
         if (anyPaper) {
           html += head + Object.values(p.byVariant).map((x) => row(x.label, x)).join('') + '</tbody></table>' +
@@ -2045,6 +2078,38 @@
         } else html += '<div class="note">No paper trades recorded yet.</div>';
         $('vpbOut').innerHTML = html;
       }
+      async function vpbToday() {
+        try {
+          const d = await api('/api/vwap-today');
+          const rs = (v) => (v == null ? '–' : (v < 0 ? '−₹' : '+₹') + Math.abs(Math.round(v)).toLocaleString('en-IN'));
+          $('vpbTodayWhen').textContent = d.date ? `${d.live ? 'live' : 'last session'} · ${d.date} · candles to ${d.lastBar} · new trades until ${d.newEntriesUntil}, all closed by ${d.exitAt}` : '';
+          let h = '';
+          for (const v of Object.values(d.variants || {})) {
+            h += `<div style="font-size:13px;margin-top:8px"><b>${esc(v.label)}</b> — ${v.trades.length ? `${v.trades.length} trade${v.trades.length > 1 ? 's' : ''}, <span style="color:${v.netRs >= 0 ? 'var(--up)' : 'var(--down)'}">${rs(v.netRs)}</span>` : 'no trades'}${d.live ? ` · ${v.slotsLeft} slot${v.slotsLeft === 1 ? '' : 's'} left today` : ''}</div>`;
+            if (v.trades.length) h += `<table style="font-size:12px;margin-top:4px"><thead><tr><th style="text-align:left">Stock</th><th>Side</th><th>Entry time</th><th>Qty</th><th>Entry</th><th>Stop</th><th>Target</th><th>${d.live ? 'Now / exit' : 'Exit'}</th><th>Status</th><th>P&amp;L after charges</th></tr></thead><tbody>${v.trades.map((t) =>
+              `<tr><td style="text-align:left">${esc(t.symbol.replace('.NS', ''))}</td><td>${esc(t.side)}</td><td>${esc(t.time)}</td><td>${t.qty}</td><td>${t.entry.toFixed(2)}</td><td>${t.stop.toFixed(2)}</td><td>${t.target == null ? 'trailing' : t.target.toFixed(2)}</td><td>${t.exit.toFixed(2)}</td><td>${t.open ? '<b>open</b>' : esc(t.reason === 'close' ? 'closed at last candle' : t.reason)}</td><td style="color:${t.net >= 0 ? 'var(--up)' : 'var(--down)'}"><b>${rs(t.net)}</b></td></tr>`).join('')}</tbody></table>`;
+          }
+          const st = (d.stocks || []).filter((x) => x.video || x.inPlay);
+          if (st.length) h += `<details style="margin-top:8px"><summary style="cursor:pointer;font-size:13px">Where each stock stands (4 video stocks + scanner stocks that moved ≥ 0.5% by 09:30)</summary>
+            <table style="font-size:12px"><thead><tr><th style="text-align:left">Stock</th><th>Price</th><th>20 MA</th><th>VWAP</th><th>Trend now</th><th>Daily trend</th><th>Move by 09:30</th></tr></thead><tbody>${st.map((x) =>
+              `<tr><td style="text-align:left">${esc(x.symbol.replace('.NS', ''))}${x.video ? '' : ' <span class="note" style="display:inline">scanner</span>'}</td><td>${x.price.toFixed(1)}</td><td>${x.ma?.toFixed(1) ?? '–'}</td><td>${x.vwap.toFixed(1)}</td><td style="color:${x.trend === 'up' ? 'var(--up)' : x.trend === 'down' ? 'var(--down)' : 'var(--muted)'}">${x.trend === 'up' ? 'above both → longs only' : x.trend === 'down' ? 'below both → shorts only' : 'mixed → no trade'}</td><td>${esc(x.dailyTrend || '–')}</td><td>${x.gapPct == null ? '–' : (x.gapPct >= 0 ? '+' : '') + x.gapPct.toFixed(2) + '%'}</td></tr>`).join('')}</tbody></table></details>`;
+          h += `<div class="note">${esc(d.note || '')}</div>`;
+          $('vpbToday').innerHTML = h;
+          return d.live;
+        } catch (e) {
+          $('vpbToday').innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
+          return false;
+        }
+      }
+      // refresh every 3 minutes while the market is open
+      (async function tick() {
+        const live = await vpbToday();
+        if (live) setTimeout(tick, 180_000);
+      })();
+      $('vpbTodayBtn').addEventListener('click', () => {
+        $('vpbToday').textContent = 'Loading…';
+        vpbToday();
+      });
       (async () => {
         try {
           vpbRender(await api('/api/vwap-pullback'));
