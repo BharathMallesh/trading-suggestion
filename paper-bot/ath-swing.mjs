@@ -50,6 +50,8 @@ export const RULES = {
   poleAtr: 4, poleMaxDays: 10, flagMin: 3, flagMax: 15, flagHoldHalf: 0.5,
   atr: 14, stopAtr: 1, chandelierAtr: 3, maxHold: 250, slippagePct: 0.1,
   riskPct: 1, maxOpen: 10, maxPositionPct: 20, capital: 1000000, cashRatePct: 6,
+  marketFilter: false, // only trade while NIFTY is above its 200-day average (tested as an improvement)
+  setups: 'both', // 'both' | 'flag' | 'base'
 };
 
 // ------------------------------------------------------------ indicators ---
@@ -113,13 +115,28 @@ export function indicators(rows, r = RULES) {
 /** Structurally strong on day i: recent all-time high and not far below it. */
 export const isStrong = (b, r = RULES) => b.athAge <= r.athWithinDays && b.close >= b.ath * (1 - r.athMaxDrawdown);
 
+/** NIFTY above its 200-day average on each date (known at that day's close). */
+export function marketMap(niftyRows) {
+  const m = new Map();
+  let sum = 0;
+  for (let i = 0; i < niftyRows.length; i++) {
+    sum += niftyRows[i].close;
+    if (i >= 200) sum -= niftyRows[i - 200].close;
+    if (i >= 199) m.set(niftyRows[i].date, niftyRows[i].close > sum / 200);
+  }
+  return m;
+}
+
 /** Setup on day i (signal at its close), or null. */
-export function setupAt(bars, i, r = RULES) {
+export function setupAt(bars, i, r = RULES, ctx = {}) {
   const b = bars[i];
   if (!b.atr || !isStrong(b, r)) return null;
+  if (r.marketFilter && ctx.market && !ctx.market.get(b.date)) return null; // NIFTY below its 200-day average
+  const allowBase = r.setups !== 'flag';
+  const allowFlag = r.setups !== 'base';
   // A: oversold base breakout
   const recentRsi = bars.slice(Math.max(0, i - r.oversoldWithin), i + 1).map((x) => x.weeklyRsi).filter((x) => x != null);
-  if (recentRsi.length && Math.min(...recentRsi) <= r.rsiOversold && i >= r.baseLookback) {
+  if (allowBase && recentRsi.length && Math.min(...recentRsi) <= r.rsiOversold && i >= r.baseLookback) {
     let lowIdx = i - r.baseLookback;
     for (let k = i - r.baseLookback; k < i; k++) if (bars[k].low < bars[lowIdx].low) lowIdx = k;
     const age = i - lowIdx;
@@ -132,7 +149,7 @@ export function setupAt(bars, i, r = RULES) {
     }
   }
   // B: flag breakout
-  for (let flagLen = r.flagMin; flagLen <= r.flagMax; flagLen++) {
+  for (let flagLen = r.flagMin; allowFlag && flagLen <= r.flagMax; flagLen++) {
     const top = i - flagLen - 1; // pole top candle
     if (top - r.poleMaxDays < 0) break;
     const poleTop = bars[top].high;
@@ -157,12 +174,12 @@ function costs(entry, exit, qty) {
 }
 
 /** All trades for one stock (one position at a time). R and % results; sizing is done by the portfolio. */
-export function tradesFor(symbol, rows, r = RULES) {
-  const bars = indicators(rows, r);
+export function tradesFor(symbol, rows, r = RULES, ctx = {}) {
+  const bars = ctx.bars || indicators(rows, r); // ctx.bars: precomputed (same ATR / RSI settings) to test many variants quickly
   const out = [];
   const slip = r.slippagePct / 100;
   for (let i = 30; i + 1 < bars.length; i++) {
-    const sig = setupAt(bars, i, r);
+    const sig = setupAt(bars, i, r, ctx);
     if (!sig) continue;
     const e = bars[i + 1];
     const stop0 = sig.pivotLow - r.stopAtr * bars[i].atr;
@@ -217,6 +234,7 @@ export function tradesFor(symbol, rows, r = RULES) {
       symbol, setup: sig.setup, signalDate: bars[i].date, entryDate: e.date, exitDate: bars[exitIdx].date,
       entry, stop: stop0, exit: exitFill, reason, open, days: exitIdx - (i + 1),
       riskPct: riskPerShare / entry, retPct, r: (retPct * entry) / riskPerShare,
+      trail, // trailing stop at the exit (for an open trade: the stop to watch now)
     });
     i = exitIdx; // one position per stock at a time
   }
@@ -225,23 +243,64 @@ export function tradesFor(symbol, rows, r = RULES) {
 
 // ------------------------------------------------------------- portfolio ---
 
-/** Portfolio: 1% risk per trade, max open positions and position size; trades taken in date order. */
-export function portfolio(trades, r = RULES) {
+// Indian tax (for the after-tax comparison): short-term gains 15% → 20% from 23 Jul 2024,
+// long-term 10% → 12.5% above ₹1 lakh → ₹1.25 lakh, plus 4% cess; liquid-fund interest at a 30% slab.
+export const stcgRate = (d) => (d >= '2024-07-23' ? 0.2 : 0.15) * 1.04;
+export const ltcgRate = (d) => (d >= '2024-07-23' ? 0.125 : 0.1) * 1.04;
+export const ltcgExemption = (d) => (d >= '2024-07-23' ? 125000 : 100000);
+const SLAB = 0.3 * 1.04;
+
+/**
+ * Portfolio: 1% risk per trade, max open positions and position size; trades taken in date order.
+ * Idle cash earns a liquid-fund rate. With { tax: true }: each financial year's net trading gain is
+ * taxed as short-term (losses carried forward) and interest at the slab rate, paid on 1 April.
+ * yearEquity: equity on 1 January each year (open positions at cost), for yearly comparisons.
+ */
+export function portfolio(trades, r = RULES, { tax = false } = {}) {
   const sorted = [...trades].sort((a, b) => a.entryDate.localeCompare(b.entryDate) || a.symbol.localeCompare(b.symbol));
   let cash = r.capital;
   let cashDate = sorted[0]?.entryDate ?? null;
   const open = [];
   const taken = [];
   const curve = [];
-  let investedDays = 0; // sum over time of (share of equity invested × days), for "time in the market"
-  // idle cash earns a liquid-fund rate (≈6%/yr, before tax) between events
+  const yearEquity = {};
+  if (cashDate) yearEquity[cashDate.slice(0, 4)] = r.capital;
+  let investedDays = 0;
+  let fyGain = 0;
+  let fyInterest = 0;
+  let carryLoss = 0;
+  let taxPaid = 0;
+  const equity = () => cash + open.reduce((a, p) => a + p.value, 0);
+  const grow = (to) => {
+    const days = (Date.parse(to) - Date.parse(cashDate)) / 86400000;
+    if (days <= 0) return;
+    const eq = equity();
+    if (eq > 0) investedDays += (1 - cash / eq) * days;
+    const interest = cash * ((1 + r.cashRatePct / 100) ** (days / 365) - 1);
+    cash += interest;
+    fyInterest += interest;
+    cashDate = to;
+  };
+  // move the clock to `date`, stopping at 1 January (snapshot) and 1 April (tax) on the way
   const accrue = (date) => {
     if (!cashDate || date <= cashDate) return;
-    const days = (Date.parse(date) - Date.parse(cashDate)) / 86400000;
-    const eq = cash + open.reduce((a, p) => a + p.value, 0);
-    if (eq > 0) investedDays += (1 - cash / eq) * days;
-    cash *= (1 + r.cashRatePct / 100) ** (days / 365);
-    cashDate = date;
+    for (let y = Number(cashDate.slice(0, 4)); y <= Number(date.slice(0, 4)); y++) {
+      for (const b of [`${y}-01-01`, `${y}-04-01`]) {
+        if (b <= cashDate || b > date) continue;
+        grow(b);
+        if (b.endsWith('01-01')) yearEquity[String(y)] = equity();
+        else if (tax) {
+          const taxable = fyGain - carryLoss;
+          const t = (taxable > 0 ? taxable * stcgRate(`${y}-03-31`) : 0) + Math.max(0, fyInterest) * SLAB;
+          carryLoss = taxable > 0 ? 0 : -taxable;
+          cash -= t;
+          taxPaid += t;
+          fyGain = 0;
+          fyInterest = 0;
+        }
+      }
+    }
+    grow(date);
   };
   const closeUpTo = (date) => {
     open.sort((a, b) => a.exitDate.localeCompare(b.exitDate));
@@ -249,14 +308,14 @@ export function portfolio(trades, r = RULES) {
       const p = open.shift();
       accrue(p.exitDate);
       cash += p.value * (1 + p.t.retPct);
+      fyGain += p.value * p.t.retPct;
     }
     accrue(date);
   };
-  const equityAt = () => cash + open.reduce((a, p) => a + p.value, 0); // open positions at cost (conservative)
   for (const t of sorted) {
     closeUpTo(t.entryDate);
     if (open.length >= r.maxOpen) continue;
-    const eq = equityAt();
+    const eq = equity();
     const value = Math.min((eq * r.riskPct) / 100 / t.riskPct, (eq * r.maxPositionPct) / 100, cash);
     if (value < eq * 0.01) continue;
     cash -= value;
@@ -267,7 +326,36 @@ export function portfolio(trades, r = RULES) {
   const lastDate = sorted.reduce((a, t) => (t.exitDate > a ? t.exitDate : a), cashDate || '');
   closeUpTo(lastDate);
   const span = cashDate && sorted.length ? (Date.parse(lastDate) - Date.parse(sorted[0].entryDate)) / 86400000 : 0;
-  return { taken, finalEquity: cash, curve, timeInMarket: span > 0 ? investedDays / span : null };
+  return { taken, finalEquity: cash, curve, yearEquity, endDate: lastDate, taxPaid, timeInMarket: span > 0 ? investedDays / span : null };
+}
+
+/** Calendar-year returns from {year: equity on 1 Jan} plus the final equity. */
+export function yearlyReturns(yearEquity, finalEquity, endYear) {
+  const ys = Object.keys(yearEquity).sort();
+  const out = {};
+  for (let k = 0; k < ys.length; k++) {
+    const next = k + 1 < ys.length ? yearEquity[ys[k + 1]] : finalEquity;
+    if (k + 1 >= ys.length && ys[k] >= endYear) break;
+    out[ys[k]] = next / yearEquity[ys[k]] - 1;
+  }
+  return out;
+}
+
+/** Mix two yearly-return series with yearly rebalancing: CAGR, worst year, deepest fall (yearly steps). */
+export function mixYears(a, b, wA) {
+  const years = Object.keys(a).filter((y) => b[y] != null).sort();
+  let v = 1;
+  let peak = 1;
+  let dd = 0;
+  let worst = Infinity;
+  for (const y of years) {
+    const ret = wA * a[y] + (1 - wA) * b[y];
+    v *= 1 + ret;
+    peak = Math.max(peak, v);
+    dd = Math.max(dd, 1 - v / peak);
+    worst = Math.min(worst, ret);
+  }
+  return { years: years.length, cagr: years.length ? v ** (1 / years.length) - 1 : null, worstYear: years.length ? worst : null, maxDrawdown: dd };
 }
 
 // ----------------------------------------------------------------- stats ---
@@ -365,11 +453,54 @@ async function loadDaily(loadCandles, symbols, from = '2005-01-01', now = new Da
   })).filter(Boolean);
 }
 
-/** Full backtest: trades on every stock, summaries by setup / half / year, a portfolio, NIFTY comparison. */
-export async function athSwingTest({ loadCandles = candles, from = '2005-01-01', testFrom = '2010-01-01' } = {}) {
+async function wideUniverse(exclude) {
+  try {
+    const idx = await loadIndexList('nifty500');
+    const ex = new Set(exclude);
+    return (idx.symbols || []).map((s) => (/\.(NS|BO)$/.test(s) ? s : `${s}.NS`)).filter((s) => !ex.has(s));
+  } catch {
+    return [];
+  }
+}
+
+/** Improvement grid: the market filter and a few stop / trailing settings, per setup choice. */
+export const VARIANTS = (() => {
+  const out = [];
+  for (const setups of ['both', 'flag']) {
+    for (const marketFilter of [false, true]) {
+      for (const chandelierAtr of [2.5, 3, 4]) {
+        for (const stopAtr of [1, 1.5]) {
+          out.push({ name: `${setups === 'flag' ? 'flags only' : 'both setups'}${marketFilter ? ' · market filter' : ''} · trail ${chandelierAtr} ATR · stop ${stopAtr} ATR`, rules: { ...RULES, setups, marketFilter, chandelierAtr, stopAtr } });
+        }
+      }
+    }
+  }
+  return out;
+})();
+
+/** NIFTY total-return level (≈1.2%/yr dividends added) by date. */
+function niftyTR(rows) {
+  let tr = 1;
+  return rows.map((x, i) => {
+    if (i) tr *= (x.close / rows[i - 1].close) * (1 + 0.012 / 252);
+    return { date: x.date, tr };
+  });
+}
+
+/**
+ * Full backtest: trades on every stock, summaries by setup / half / year, a portfolio vs NIFTY,
+ * plus: improvement test (chosen on the first half, judged on the second and on NIFTY 500 stocks
+ * outside the NIFTY 200), after-tax comparison and an index + strategy (core + satellite) mix.
+ */
+export async function athSwingTest({ loadCandles = candles, from = '2005-01-01', testFrom = '2010-01-01', now = new Date() } = {}) {
   const symbols = await universe();
-  const data = await loadDaily(loadCandles, symbols, from);
-  const all = data.flatMap(({ s, rows }) => tradesFor(s, rows)).filter((t) => t.entryDate >= testFrom);
+  const data = (await loadDaily(loadCandles, symbols, from, now)).map((x) => ({ ...x, bars: indicators(x.rows) }));
+  const wdata = (await loadDaily(loadCandles, await wideUniverse(symbols), from, now)).map((x) => ({ ...x, bars: indicators(x.rows) }));
+  const niftyAll = completedOnly((await loadCandles('^NSEI', { period1: Math.floor(Date.parse(from) / 1000), interval: '1d' })).filter((x) => x.close > 0), now);
+  const market = marketMap(niftyAll);
+  const run = (dset, rules) => dset.flatMap(({ s, rows, bars }) => tradesFor(s, rows, rules, { bars, market })).filter((t) => t.entryDate >= testFrom);
+
+  const all = run(data, RULES);
   const done = all.filter((t) => !t.open);
   const dates = done.map((t) => t.entryDate).sort();
   const mid = dates[dates.length >> 1];
@@ -377,24 +508,87 @@ export async function athSwingTest({ loadCandles = candles, from = '2005-01-01',
   for (const t of done) (byYear[t.entryDate.slice(0, 4)] ||= []).push(t);
   const pf = portfolio(all);
   const pfFlag = portfolio(all.filter((t) => t.setup === 'flag breakout'));
-  const nifty = (await loadCandles('^NSEI', { period1: Math.floor(Date.parse(testFrom) / 1000), interval: '1d' })).filter((x) => x.close > 0);
+  const pfTax = portfolio(all, RULES, { tax: true });
+  const nifty = niftyAll.filter((x) => x.date >= testFrom);
   const yrs = (Date.parse(nifty[nifty.length - 1].date) - Date.parse(nifty[0].date)) / (365.25 * 86400000);
   const pfDone = pf.taken.filter((t) => !t.open);
+
+  // 1 + 2: improvement test
+  const rows = VARIANTS.map((v) => {
+    const tr = run(data, v.rules).filter((t) => !t.open);
+    return { name: v.name, rules: v.rules, train: summarise(tr.filter((t) => t.entryDate < mid)), test: summarise(tr.filter((t) => t.entryDate >= mid)) };
+  });
+  const eligible = rows.filter((x) => x.train.trades >= 60);
+  const pickRow = [...eligible].sort((a, b) => (b.train.tStat ?? -9) - (a.train.tStat ?? -9))[0];
+  const wideTrades = run(wdata, pickRow.rules).filter((t) => !t.open);
+  const wideTest = summarise(wideTrades.filter((t) => t.entryDate >= mid));
+  const combined = summarise([...run(data, pickRow.rules).filter((t) => !t.open && t.entryDate >= mid), ...wideTrades.filter((t) => t.entryDate >= mid)]);
+  const adopt = pickRow.test.avgR > 0 && wideTest.avgR > 0 && combined.tStat >= 2;
+  const marketOnly = rows.find((x) => x.rules.setups === 'both' && x.rules.marketFilter && x.rules.chandelierAtr === 3 && x.rules.stopAtr === 1);
+  const pickAll = run(data, pickRow.rules);
+  const pfPick = portfolio(pickAll);
+  const pfPickTax = portfolio(pickAll, pickRow.rules, { tax: true });
+
+  // 3: the same base rules on NIFTY 500 stocks outside the NIFTY 200
+  const wideBase = summarise(run(wdata, RULES));
+
+  // 4: after tax (strategy: short-term gains each year; NIFTY fund: long-term gain once at the end)
+  const tr = niftyTR(nifty);
+  const idxEnd = RULES.capital * (tr[tr.length - 1].tr / tr[0].tr);
+  const idxGain = idxEnd - RULES.capital;
+  const endDate = nifty[nifty.length - 1].date;
+  const idxAfterTax = idxEnd - Math.max(0, idxGain - ltcgExemption(endDate)) * ltcgRate(endDate);
+
+  // 5: core + satellite (calendar years, yearly rebalancing)
+  const thisYear = String(new Date(now.getTime() + 19800_000).getUTCFullYear());
+  const idxYear = {};
+  for (let i = 0; i < tr.length; i++) {
+    const y = tr[i].date.slice(0, 4);
+    if (!(y in idxYear)) idxYear[y] = tr[i].tr;
+  }
+  const idxYearly = {};
+  const iy = Object.keys(idxYear).sort();
+  for (let k = 0; k + 1 < iy.length; k++) if (iy[k] < thisYear) idxYearly[iy[k]] = idxYear[iy[k + 1]] / idxYear[iy[k]] - 1;
+  const swYearly = yearlyReturns(pf.yearEquity, pf.finalEquity, thisYear);
+  const mixes = [1, 0.9, 0.8, 0.7, 0].map((w) => ({ indexPct: Math.round(w * 100), strategyPct: Math.round((1 - w) * 100), ...mixYears(idxYearly, swYearly, w) }));
+  const pkYearly = yearlyReturns(pfPick.yearEquity, pfPick.finalEquity, thisYear);
+  const mixesPick = [1, 0.9, 0.8, 0.7, 0].map((w) => ({ indexPct: Math.round(w * 100), strategyPct: Math.round((1 - w) * 100), ...mixYears(idxYearly, pkYearly, w) }));
+
   return {
-    at: new Date().toISOString(), rules: RULES, stocks: data.length, from: testFrom, to: nifty[nifty.length - 1].date,
+    at: new Date().toISOString(), rules: RULES, stocks: data.length, wideStocks: wdata.length, from: testFrom, to: endDate,
     all: summarise(all), firstHalf: summarise(done.filter((t) => t.entryDate < mid)), secondHalf: summarise(done.filter((t) => t.entryDate >= mid)), splitDate: mid,
     bySetup: { 'oversold base breakout': summarise(done.filter((t) => t.setup === 'oversold base breakout')), 'flag breakout': summarise(done.filter((t) => t.setup === 'flag breakout')) },
     byYear: Object.fromEntries(Object.entries(byYear).sort().map(([y, v]) => [y, summarise(v)])),
     portfolio: {
       trades: pfDone.length, startCapital: RULES.capital, finalEquity: pf.finalEquity,
       cagr: cagr(RULES.capital, pf.finalEquity, yrs), maxDrawdown: maxDrawdown(pf.curve),
-      niftyCagr: cagr(nifty[0].close, nifty[nifty.length - 1].close, yrs) + 0.012, // + ≈1.2%/yr dividends
+      niftyCagr: cagr(tr[0].tr, tr[tr.length - 1].tr, yrs),
       years: yrs, timeInMarket: pf.timeInMarket, cashRatePct: RULES.cashRatePct,
       flagOnly: { trades: pfFlag.taken.filter((t) => !t.open).length, finalEquity: pfFlag.finalEquity, cagr: cagr(RULES.capital, pfFlag.finalEquity, yrs), maxDrawdown: maxDrawdown(pfFlag.curve), timeInMarket: pfFlag.timeInMarket },
     },
+    improve: {
+      variants: rows.map((x) => ({ name: x.name, train: x.train, test: x.test })),
+      pick: { name: pickRow.name, rules: pickRow.rules, train: pickRow.train, test: pickRow.test, wideTest, combined, adopt, portfolioCagr: cagr(RULES.capital, pfPick.finalEquity, yrs), portfolioMaxDrawdown: maxDrawdown(pfPick.curve) },
+      marketFilter: marketOnly ? { train: marketOnly.train, test: marketOnly.test } : null,
+      rule: 'Each version is scored on trades before the split date only (by t-statistic, needing 60+ trades); the pick is then judged on later trades, and on NIFTY 500 stocks outside the NIFTY 200 that were never used. Adopted only if both are profitable and the combined t ≥ 2.',
+    },
+    wide: { stocks: wdata.length, base: wideBase },
+    afterTax: {
+      strategy: { preTax: pf.finalEquity, afterTax: pfTax.finalEquity, taxPaid: pfTax.taxPaid, cagrPre: cagr(RULES.capital, pf.finalEquity, yrs), cagrAfter: cagr(RULES.capital, pfTax.finalEquity, yrs) },
+      improved: { preTax: pfPick.finalEquity, afterTax: pfPickTax.finalEquity, taxPaid: pfPickTax.taxPaid, cagrPre: cagr(RULES.capital, pfPick.finalEquity, yrs), cagrAfter: cagr(RULES.capital, pfPickTax.finalEquity, yrs) },
+      index: { preTax: idxEnd, afterTax: idxAfterTax, cagrPre: cagr(RULES.capital, idxEnd, yrs), cagrAfter: cagr(RULES.capital, idxAfterTax, yrs) },
+      note: 'Strategy: each financial year\'s net trading gain taxed as short-term (15%, 20% from 23 Jul 2024, +4% cess; losses carried forward) and liquid-fund interest at a 30% slab. NIFTY fund held throughout: long-term tax once at the end (12.5% above ₹1.25 lakh). Simplified; check with a tax professional.',
+    },
+    coreSatellite: { mixes, mixesPick, years: Object.keys(idxYearly).filter((y) => swYearly[y] != null).length, note: 'Calendar years with yearly rebalancing, before tax. Yearly steps understate falls inside a year.' },
     topTrades: [...done].sort((a, b) => b.r - a.r).slice(0, 10),
     note: 'Universe = today\'s NIFTY 200 (survivorship bias: stocks that collapsed and left the index are missing, which flatters a strong-stock strategy). Patterns are approximated by fixed rules. Entries next open, exits next open after a close below the Chandelier stop, delivery charges + 0.1% slippage a side. Portfolio: 1% risk per trade, ≤10 open, ≤20% per stock; idle cash earns 6%/yr (liquid fund); open positions valued at cost. NIFTY includes ≈1.2%/yr dividends. Research only.',
   };
+}
+
+/** Rules in use for live signals: the improvement-test pick if it was adopted, else the original rules. */
+export function activeRules(saved = loadAthSwing()) {
+  const p = saved?.improve?.pick;
+  return p?.adopt && p.rules ? { ...RULES, ...p.rules } : RULES;
 }
 
 export function saveAthSwing(r) {
@@ -411,7 +605,7 @@ export function loadAthSwing() {
 // ------------------------------------------------- live scan + paper record ---
 
 /** Today's watchlist: strong stocks, setups that triggered at the latest close, and ones forming. */
-export async function athSwingScan({ loadCandles = candles, now = new Date() } = {}) {
+export async function athSwingScan({ loadCandles = candles, now = new Date(), rules = activeRules() } = {}) {
   const symbols = await universe();
   const data = await loadDaily(loadCandles, symbols, '2005-01-01', now);
   const strong = [];
@@ -423,20 +617,21 @@ export async function athSwingScan({ loadCandles = candles, now = new Date() } =
     const i = bars.length - 1;
     const b = bars[i];
     lastDate = lastDate && lastDate > b.date ? lastDate : b.date;
-    if (!b.atr || !isStrong(b)) continue;
+    if (!b.atr || !isStrong(b, rules)) continue;
     const fromAth = 1 - b.close / b.ath;
     strong.push({ symbol: s, close: b.close, ath: b.ath, fromAthPct: fromAth * 100, athDaysAgo: b.athAge, weeklyRsi: b.weeklyRsi, atrPct: (b.atr / b.close) * 100 });
-    const sig = setupAt(bars, i);
+    const sig = setupAt(bars, i, rules);
     if (sig) {
-      const stop = sig.pivotLow - RULES.stopAtr * b.atr;
-      triggered.push({ symbol: s, date: b.date, setup: sig.setup, close: b.close, trigger: sig.trigger, stop, riskPct: ((b.close - stop) / b.close) * 100, chandelier: b.close - RULES.chandelierAtr * b.atr });
-    } else if (b.weeklyRsi != null && b.weeklyRsi <= RULES.rsiOversold + 5) {
+      const stop = sig.pivotLow - rules.stopAtr * b.atr;
+      triggered.push({ symbol: s, date: b.date, setup: sig.setup, close: b.close, trigger: sig.trigger, stop, riskPct: ((b.close - stop) / b.close) * 100, chandelier: b.close - rules.chandelierAtr * b.atr });
+    } else if (rules.setups !== 'flag' && b.weeklyRsi != null && b.weeklyRsi <= rules.rsiOversold + 5) {
       forming.push({ symbol: s, note: `weekly RSI ${b.weeklyRsi.toFixed(0)} — oversold in a strong stock; waiting for a base of 5+ days and a breakout`, close: b.close });
     }
   }
   strong.sort((a, b) => a.fromAthPct - b.fromAthPct);
   return {
     at: new Date().toISOString(), date: lastDate, universe: data.length, strongCount: strong.length,
+    rules: { chandelierAtr: rules.chandelierAtr, stopAtr: rules.stopAtr, setups: rules.setups, marketFilter: rules.marketFilter, improved: rules !== RULES },
     triggered, forming, strong: strong.slice(0, 40),
     note: 'Signals use completed daily candles: a "triggered" stock closed above its breakout level today; the strategy would buy at the next open with the stop shown. Paper only.',
   };
@@ -450,25 +645,60 @@ export function loadAthPaper() {
   }
 }
 
-/** Forward paper record: every trade the rules take with entry on or after the start date; exits updated daily. */
+/** Forward paper record: every trade each version takes with entry on or after the start date; exits updated daily. */
 export async function athPaperUpdate({ loadCandles = candles, now = new Date() } = {}) {
   const st = loadAthPaper() || { startedAt: new Date(now.getTime() + 19800_000).toISOString().slice(0, 10), trades: [] };
   const symbols = await universe();
   const data = await loadDaily(loadCandles, symbols, '2005-01-01', now);
-  const fresh = data.flatMap(({ s, rows }) => tradesFor(s, rows)).filter((t) => t.entryDate >= st.startedAt);
-  const key = (t) => `${t.symbol}|${t.entryDate}`;
-  const prev = new Map(st.trades.map((t) => [key(t), t]));
+  const versions = { original: RULES };
+  const act = activeRules();
+  if (act !== RULES) versions.improved = act;
+  const key = (t) => `${t.version}|${t.symbol}|${t.entryDate}`;
+  const prev = new Map(st.trades.map((t) => [key({ version: 'original', ...t }), t]));
+  const fresh = [];
+  for (const [v, rules] of Object.entries(versions)) {
+    for (const t of data.flatMap(({ s, rows }) => tradesFor(s, rows, rules)).filter((x) => x.entryDate >= st.startedAt)) fresh.push({ ...t, version: v });
+  }
+  const before = new Set(st.trades.map((t) => key({ version: 'original', ...t })));
   st.trades = fresh.map((t) => ({ ...t, firstSeen: prev.get(key(t))?.firstSeen || now.toISOString() }));
   st.updatedAt = now.toISOString();
   writeJsonAtomic(PAPER(), st);
-  return { startedAt: st.startedAt, trades: st.trades.length, open: st.trades.filter((t) => t.open).length, summary: summarise(st.trades) };
+  const newOnes = st.trades.filter((t) => !before.has(key(t)));
+  const exitsToday = st.trades.filter((t) => !t.open && t.exitDate === new Date(now.getTime() + 19800_000).toISOString().slice(0, 10));
+  return {
+    startedAt: st.startedAt, trades: st.trades.length, open: st.trades.filter((t) => t.open).length,
+    byVersion: Object.fromEntries(Object.keys(versions).map((v) => [v, summarise(st.trades.filter((t) => t.version === v))])),
+    summary: summarise(st.trades.filter((t) => t.version === (versions.improved ? 'improved' : 'original'))),
+    newOnes, exitsToday,
+  };
 }
 
 // CLI
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   if (process.argv.includes('--paper')) {
     athPaperUpdate()
-      .then((r) => console.log(`Strong-stock swing paper: since ${r.startedAt} · ${r.trades} trades (${r.open} open)`))
+      .then(async (r) => {
+        console.log(`Strong-stock swing paper: since ${r.startedAt} · ${r.trades} trades (${r.open} open)`);
+        if (!process.argv.includes('--notify')) return;
+        // evening summary: new signals at today's close (bought at tomorrow's open) and today's paper exits
+        const { isTradingDay } = await import('./market-calendar.mjs');
+        const t = new Date(Date.now() + 19800_000);
+        if (!isTradingDay(t.toISOString().slice(0, 10)) || t.getUTCHours() * 60 + t.getUTCMinutes() < 15 * 60 + 35) return;
+        const scan = await athSwingScan({});
+        const ver = activeRules() !== RULES ? 'improved' : 'original';
+        const parts = [];
+        if (scan.triggered.length) parts.push(`${scan.triggered.length} new signal${scan.triggered.length > 1 ? 's' : ''}: ${scan.triggered.slice(0, 4).map((x) => `${x.symbol.replace('.NS', '')} ${x.setup === 'flag breakout' ? 'flag' : 'base'} (stop ₹${x.stop.toFixed(1)})`).join(', ')} — buy at tomorrow's open on paper`);
+        const mine = r.exitsToday.filter((x) => x.version === ver);
+        if (mine.length) parts.push(`exits: ${mine.map((x) => `${x.symbol.replace('.NS', '')} ${x.r >= 0 ? '+' : ''}${x.r.toFixed(1)}R`).join(', ')}`);
+        const { execFile } = await import('node:child_process');
+        if (parts.length) execFile('osascript', ['-e', 'on run argv', '-e', 'display notification (item 2 of argv) with title (item 1 of argv)', '-e', 'end run', 'Strong-stock swing', parts.join(' · ').slice(0, 220)], () => {});
+        console.log(parts.join(' · ') || 'No new swing signals today.');
+        // price alerts at the trailing stops of open paper positions (My trades → Price alerts)
+        const { syncSourceAlerts } = await import('./journal.mjs');
+        const open = loadAthPaper()?.trades.filter((x) => x.open && x.version === ver && x.trail > 0) || [];
+        const n = await syncSourceAlerts('swing-paper', open.map((x) => ({ symbol: x.symbol, op: 'below', price: x.trail, note: `Swing paper: trailing stop (bought ${x.entryDate})` })));
+        console.log(`Trailing-stop alerts for open swing paper positions: ${n}`);
+      })
       .catch((err) => {
         console.error('Error:', err.message);
         process.exit(1);
@@ -490,6 +720,21 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
         console.log(`Portfolio (1% risk, ≤10 open, cash at 6%): ${pf.trades} trades · ₹${(pf.startCapital / 1e5).toFixed(0)}L → ₹${(pf.finalEquity / 1e5).toFixed(1)}L · CAGR ${p(pf.cagr, 1)} vs NIFTY ${p(pf.niftyCagr, 1)} · max drawdown ${p(pf.maxDrawdown)} · invested ${p(pf.timeInMarket)} of the time`);
         console.log(`  flag breakouts only: ${pf.flagOnly.trades} trades · CAGR ${p(pf.flagOnly.cagr, 1)} · max drawdown ${p(pf.flagOnly.maxDrawdown)} · invested ${p(pf.flagOnly.timeInMarket)}`);
         console.log(`Exits: ${JSON.stringify(r.all.exits)}`);
+        const im = r.improve.pick;
+        console.log(`\nIMPROVEMENT TEST (pick on trades before ${r.splitDate}): ${im.name}`);
+        line('  train', im.train);
+        line('  test (same stocks, later)', im.test);
+        line(`  test (${r.wideStocks} other NIFTY 500)`, im.wideTest);
+        console.log(`  combined t ${im.combined.tStat?.toFixed(2)} → ${im.adopt ? 'ADOPTED' : 'not adopted'} · portfolio CAGR ${p(im.portfolioCagr, 1)} · max drawdown ${p(im.portfolioMaxDrawdown)}`);
+        if (r.improve.marketFilter) {
+          line('  market filter: train', r.improve.marketFilter.train);
+          line('  market filter: test', r.improve.marketFilter.test);
+        }
+        line(`NIFTY 500 ex-200 (${r.wide.stocks})`, r.wide.base);
+        const at = r.afterTax;
+        console.log(`After tax: strategy ${p(at.strategy.cagrPre, 1)} → ${p(at.strategy.cagrAfter, 1)} a year · NIFTY fund ${p(at.index.cagrPre, 1)} → ${p(at.index.cagrAfter, 1)}`);
+        console.log('Core + satellite (index % / strategy %: CAGR · worst year · deepest fall):');
+        for (const m of r.coreSatellite.mixes) console.log(`  ${m.indexPct}/${m.strategyPct}: ${p(m.cagr, 1)} · ${p(m.worstYear, 1)} · ${p(m.maxDrawdown)}`);
         console.log(`\n${r.note}`);
       })
       .catch((err) => {

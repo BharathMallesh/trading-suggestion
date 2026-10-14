@@ -2040,6 +2040,7 @@
       });
 
       // --- Strong-stock swing ---
+      const VARIANTS_COUNT = 24;
       (async () => {
         try {
           const d = await api('/api/ath-swing');
@@ -2061,10 +2062,37 @@
                 <tr><td>Losing streaks</td><td>Longest run of losses: <b>${a.longestLosingStreak}</b> in a row. With a ${pc(a.winRate)} win rate over ${a.trades} trades, a streak that long happens by chance ${pc(a.streakProbability)} of the time${a.streakProbability < 0.05 ? ' — unusually long, a sign the edge may be weaker than the win rate suggests' : ''}.</td></tr>
               </tbody></table>
               <div style="margin:8px 0;padding:8px 10px;border-radius:8px;background:var(--soft);font-size:13px"><b>Verdict:</b> slightly positive per trade (${R(a.avgR)}, t ${a.tStat?.toFixed(1)}), not statistically reliable. Flag breakouts did best; oversold-base breakouts about broke even. As a portfolio it trailed simply holding NIFTY, but with far smaller falls. The stock list is today's NIFTY 200, which flatters the result (stocks that collapsed are missing). Paper-tracked from ${esc(d.paper?.startedAt || 'today')}.</div>
+              ${(() => {
+                const im = b.improve;
+                if (!im) return '';
+                const k = im.pick;
+                const at = b.afterTax;
+                const mixT = (list) => `<table style="font-size:12px"><thead><tr><th style="text-align:left">NIFTY fund / strategy</th><th>Per year</th><th>Worst year</th><th>Deepest fall</th></tr></thead><tbody>${list.map((m) => `<tr><td style="text-align:left">${m.indexPct}% / ${m.strategyPct}%</td><td>${pc(m.cagr, 1)}</td><td>${pc(m.worstYear, 1)}</td><td>${pc(m.maxDrawdown)}</td></tr>`).join('')}</tbody></table>`;
+                return `<div style="margin-top:10px;padding:10px 12px;border-radius:10px;border:1px solid ${k.adopt ? 'var(--up)' : 'var(--line)'}">
+                  <div style="font-size:14px"><b>Improvement test</b> (${VARIANTS_COUNT} versions scored on trades before ${esc(b.splitDate)}, then judged on later trades and on ${b.wideStocks} NIFTY 500 stocks never used)</div>
+                  <div style="font-size:13px;margin-top:4px">Best on the first half: <b>${esc(k.name)}</b>. Later trades: ${R(k.test.avgR)} (t ${k.test.tStat?.toFixed(1)}) · other NIFTY 500 stocks: ${R(k.wideTest.avgR)} (t ${k.wideTest.tStat?.toFixed(1)}) · combined t ${k.combined.tStat?.toFixed(1)} →
+                    <b style="color:${k.adopt ? 'var(--up)' : 'var(--muted)'}">${k.adopt ? 'ADOPTED: the live scan now uses these rules' : 'not adopted'}</b>${k.adopt ? ` · portfolio ${pc(k.portfolioCagr, 1)} a year, worst fall ${pc(k.portfolioMaxDrawdown)}` : ''}.</div>
+                  ${im.marketFilter ? `<div class="note">Market filter (trade only while NIFTY is above its 200-day average): ${R(im.marketFilter.train.avgR)} on the first half, ${R(im.marketFilter.test.avgR)} on the second — it did not help, so it is not used.</div>` : ''}
+                  <div class="note">Original rules on ${b.wide.stocks} NIFTY 500 stocks outside the NIFTY 200: ${R(b.wide.base.avgR)} per trade (t ${b.wide.base.tStat?.toFixed(1)}) — the edge is not limited to the biggest companies.</div>
+                  <div class="note">${esc(im.rule)}</div>
+                </div>
+                <div style="font-size:14px;margin-top:10px"><b>After tax</b> (₹10 lakh, ${esc(b.from)} → ${esc(b.to)})</div>
+                <table style="font-size:12px"><thead><tr><th style="text-align:left"></th><th>Before tax</th><th>After tax</th></tr></thead><tbody>
+                  <tr><td style="text-align:left">Strategy, original rules</td><td>${pc(at.strategy.cagrPre, 1)} a year</td><td><b>${pc(at.strategy.cagrAfter, 1)}</b></td></tr>
+                  ${at.improved ? `<tr><td style="text-align:left">Strategy, improved rules</td><td>${pc(at.improved.cagrPre, 1)} a year</td><td><b>${pc(at.improved.cagrAfter, 1)}</b></td></tr>` : ''}
+                  <tr><td style="text-align:left">NIFTY index fund, held throughout</td><td>${pc(at.index.cagrPre, 1)} a year</td><td><b>${pc(at.index.cagrAfter, 1)}</b></td></tr></tbody></table>
+                <div class="note">${esc(at.note)}</div>
+                <div style="font-size:14px;margin-top:10px"><b>Core + satellite</b>: part NIFTY fund, part strategy, rebalanced yearly (${b.coreSatellite.years} calendar years)</div>
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px">
+                  <div style="min-width:0"><div class="note">With the original rules</div>${mixT(b.coreSatellite.mixes)}</div>
+                  ${b.coreSatellite.mixesPick ? `<div style="min-width:0"><div class="note">With the improved rules</div>${mixT(b.coreSatellite.mixesPick)}</div>` : ''}
+                </div>
+                <div class="note">${esc(b.coreSatellite.note)} Adding a slice of the strategy mainly makes the bad years milder; it barely changes the long-run return.</div>`;
+              })()}
               <details><summary style="cursor:pointer;font-size:13px">By year</summary><div style="overflow-x:auto"><table style="font-size:12px"><thead><tr><th style="text-align:left">Year</th><th>Trades</th><th>Won</th><th>Avg per trade</th></tr></thead><tbody>${Object.entries(b.byYear).map(([y, v]) => `<tr><td style="text-align:left">${esc(y)}</td><td>${v.trades}</td><td>${pc(v.winRate)}</td><td style="color:${v.avgR >= 0 ? 'var(--up)' : 'var(--down)'}">${R(v.avgR)}</td></tr>`).join('')}</tbody></table></div></details>`;
           } else html += '<div class="note">Backtest not run yet (the weekly refit runs it).</div>';
           const p = d.paper;
-          if (p) html += `<div style="font-size:14px;margin-top:10px"><b>Paper record</b> since ${esc(p.startedAt)}: ${p.summary.trades ? `${p.summary.trades} closed trades · won ${pc(p.summary.winRate)} · ${R(p.summary.avgR)} per trade` : 'no closed trades yet'}${p.open.length ? ` · ${p.open.length} open: ${p.open.map((t) => esc(t.symbol.replace('.NS', ''))).join(', ')}` : ''}. Updated after each close.</div>`;
+          if (p) html += `<div style="font-size:14px;margin-top:10px"><b>Paper record</b> since ${esc(p.startedAt)} (original and improved rules side by side): ${Object.entries(p.byVersion || {}).map(([v, x]) => `${esc(v)}: ${x.trades ? `${x.trades} closed · won ${pc(x.winRate)} · ${R(x.avgR)}` : 'no closed trades yet'}`).join(' · ') || 'no trades yet'}${p.open.length ? ` · open: ${p.open.map((t) => `${esc(t.symbol.replace('.NS', ''))} (${esc(t.version || 'original')}, trailing stop ${t.trail?.toFixed(1) ?? '–'})`).join(', ')}` : ''}. Updated after each close; a Mac notification lists new signals and exits, and the open positions' trailing stops are set as price alerts in My trades.</div>`;
           html += `<div class="note">${esc(b?.note || '')}</div>`;
           $('athOut').innerHTML = html;
         } catch (e) {
@@ -2088,7 +2116,8 @@
         $('athScan').innerHTML = '<div class="note">Scanning NIFTY 200 on completed daily candles (about 20 seconds)…</div>';
         try {
           const d = await api('/api/ath-swing/scan');
-          let html = `<div style="font-size:14px"><b>Latest completed day: ${esc(d.date)}</b> · ${d.strongCount} of ${d.universe} stocks are structurally strong</div>`;
+          let html = `<div style="font-size:14px"><b>Latest completed day: ${esc(d.date)}</b> · ${d.strongCount} of ${d.universe} stocks are structurally strong</div>
+            <div class="note">Rules in use: ${d.rules?.improved ? '<b>improved</b> (adopted by the improvement test)' : 'original'} · stop ${d.rules?.stopAtr ?? 1} ATR below the low · trailing stop ${d.rules?.chandelierAtr ?? 3} ATR below the highest high · ${d.rules?.setups === 'flag' ? 'flag breakouts only' : 'base and flag breakouts'}</div>`;
           html += d.triggered.length ? `<div style="font-size:14px;margin-top:8px;color:var(--up)"><b>Signals: breakout at the close (${d.triggered.length})</b></div><div style="overflow-x:auto"><table style="font-size:12px"><thead><tr><th style="text-align:left">Stock</th><th>Setup</th><th>Close</th><th>Breakout level</th><th>Stop (1 ATR below the low)</th><th>Risk</th><th>Trailing stop now</th><th></th></tr></thead><tbody>${d.triggered.map((t, i) =>
             `<tr><td style="text-align:left"><b>${esc(t.symbol.replace('.NS', ''))}</b></td><td>${esc(t.setup)}</td><td>${t.close.toFixed(1)}</td><td>${t.trigger.toFixed(1)}</td><td>${t.stop.toFixed(1)}</td><td>${t.riskPct.toFixed(1)}%</td><td>${t.chandelier.toFixed(1)}</td><td><button type="button" data-plan="${i}" style="margin:0;padding:3px 10px">Plan this trade</button></td></tr>`).join('')}</tbody></table></div>
             <div class="note">The rules buy at the next session's open. "Plan this trade" opens My trades with the stock, entry and stop filled in so you can see the share count and charges.</div>` : '<div class="note" style="margin-top:6px">No breakout signals at the latest close.</div>';

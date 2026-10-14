@@ -489,17 +489,18 @@ details.faq p { margin-top: 8px; color: var(--muted); }
             <li><div><b>Setup B, flag:</b> a quick strong rise (at least 4× its normal daily move within 10 days), then a short pause of 3–15 days that keeps most of the gain. Buy on the first close above the top of the rise.</div></li>
             <li><div><b>Enter</b> at the next day’s opening price.</div></li>
             <li><div><b>Stop-loss</b> 1 ATR (one normal day’s move) below the base or flag low.</div></li>
-            <li><div><b>No fixed target.</b> A trailing “Chandelier” stop follows the price up: the highest price since entry minus 3 ATR. Exit at the next open after a close below it. Small losses, occasional big winners.</div></li>
+            <li><div><b>No fixed target.</b> A trailing “Chandelier” stop follows the price up: the highest price since entry minus <b>4 ATR</b> (the improved rule; the original used 3). Exit at the next open after a close below it. Small losses, occasional big winners.</div></li>
             <li><div><b>Size</b> each trade to risk 1% of capital, with at most 10 positions open.</div></li>
           </ol>
           <div class="cols">
-            <div><h4>Using the card</h4><ol><li>Open the <b>Trading strategies</b> tab → <span class="btn">Strong-stock swing</span> sub-tab.</li><li>Press <span class="btn">Scan today's signals</span> (about 20 seconds). It uses completed daily candles only.</li><li><b>Signals</b> list stocks that broke out at the latest close, with the stop and risk. <span class="btn">Plan this trade</span> opens My trades with everything filled in.</li><li><b>Watch</b> lists oversold strong stocks still building a base.</li></ol></div>
-            <div><h4>What the backtest found (NIFTY 200, 2010–2026, after charges)</h4><ul>
-              <li>788 trades, 37% won, <b>+0.06 R per trade</b>: slightly positive but not statistically reliable.</li>
-              <li><b>Flag breakouts</b> did best (+0.13 R); oversold-base breakouts about broke even.</li>
-              <li>The trader’s claim holds: the best 10% of trades made <b>4.5×</b> the total profit; the other 90% lost money together.</li>
-              <li>As a portfolio it made about <b>6.7% a year</b> (flags only 7.8%) vs NIFTY’s ~10%, but its worst fall was only 7–11%.</li>
-              <li>The stock list is today’s NIFTY 200, which flatters the result.</li>
+            <div><h4>Using the card</h4><ol><li>Open the <b>Trading strategies</b> tab → <span class="btn">Strong-stock swing</span> sub-tab.</li><li>Press <span class="btn">Scan today's signals</span> (about 20 seconds). It uses completed daily candles only.</li><li><b>Signals</b> list stocks that broke out at the latest close, with the stop and risk. <span class="btn">Plan this trade</span> opens My trades with everything filled in.</li><li><b>Watch</b> lists oversold strong stocks still building a base.</li><li>Each evening a Mac notification lists new signals and paper exits, and the trailing stops of open paper positions appear as price alerts in My trades.</li></ol></div>
+            <div><h4>What the tests found (2010–2026, after charges)</h4><ul>
+              <li><b>Original rules</b> (3 ATR trail): +0.06 R a trade, not reliable; about 6.7% a year as a portfolio.</li>
+              <li><b>Improvement test:</b> 24 versions were scored on 2010–mid 2020 only. The best (a looser 4 ATR trail) was then checked on later years (+0.21 R) and on 281 other NIFTY 500 stocks never used (+0.19 R). It passed, so the live scan uses it: about <b>10.8% a year</b> before tax vs NIFTY 10.4%, worst fall 15%.</li>
+              <li><b>Market filter</b> (trade only when NIFTY is above its 200-day average) did not help, so it is not used.</li>
+              <li><b>After tax</b> (short-term gains every year): about <b>8.7%</b> a year vs <b>9.7%</b> for a NIFTY fund held throughout.</li>
+              <li><b>Core + satellite:</b> 80% NIFTY fund + 20% strategy earned about the same as 100% NIFTY but its worst year was milder (−17.5% vs −21.7%).</li>
+              <li>The stock list is today’s index list, which flatters the result.</li>
             </ul></div>
           </div>
           <div class="example"><b>Should I trade it with real money?</b> Not yet. It is tracked on paper from 14 October 2026; judge it after many months of results.</div>

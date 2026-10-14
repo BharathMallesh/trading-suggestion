@@ -584,7 +584,8 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === 'GET' && url.pathname === '/api/ath-swing') {
       const paper = loadAthPaper();
-      return json(res, 200, { backtest: loadAthSwing(), paper: paper ? { startedAt: paper.startedAt, updatedAt: paper.updatedAt, summary: athSummarise(paper.trades), open: paper.trades.filter((t) => t.open), recent: paper.trades.filter((t) => !t.open).slice(-15).reverse() } : null });
+      const byVersion = paper ? Object.fromEntries([...new Set(paper.trades.map((t) => t.version || 'original'))].map((v) => [v, athSummarise(paper.trades.filter((t) => (t.version || 'original') === v))])) : {};
+      return json(res, 200, { backtest: loadAthSwing(), paper: paper ? { startedAt: paper.startedAt, updatedAt: paper.updatedAt, summary: athSummarise(paper.trades), byVersion, open: paper.trades.filter((t) => t.open), recent: paper.trades.filter((t) => !t.open).slice(-15).reverse() } : null });
     }
     if (req.method === 'GET' && url.pathname === '/api/ath-swing/scan') {
       // strong-stock swing scan on completed daily candles (NIFTY 200)

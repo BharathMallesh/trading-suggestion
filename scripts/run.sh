@@ -33,7 +33,7 @@ case "${1:-}" in
     # same-stocks intraday strategy: record today's paper trades (after the close) and send the day's summary
     node paper-bot/vwap-pullback.mjs --paper --notify
     # strong-stock swing strategy: forward paper record on completed daily candles
-    node paper-bot/ath-swing.mjs --paper
+    node paper-bot/ath-swing.mjs --paper --notify
     # breakfast strategy: record the day's 9:20 sector picks
     node paper-bot/breakfast.mjs --paper ;;
   monitor)

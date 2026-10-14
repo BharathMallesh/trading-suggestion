@@ -287,6 +287,22 @@ export async function addAlert({ symbol, op, price, note = '' }, { now = new Dat
     return a;
   });
 }
+/**
+ * Keep a set of app-managed alerts in step (e.g. trailing stops of the swing strategy's open paper
+ * positions): active alerts with this `source` are replaced by `list` [{symbol, op, price, note}].
+ */
+export function syncSourceAlerts(source, list, { now = new Date() } = {}) {
+  return locked(() => {
+    const st = loadJournal();
+    st.alerts = st.alerts.filter((a) => a.source !== source || a.triggeredAt);
+    for (const x of list.slice(0, 50)) {
+      st.alerts.push({ id: id(), source, symbol: normSymbol(x.symbol), op: x.op, price: +(+x.price).toFixed(2), note: String(x.note || '').slice(0, 120), createdAt: now.toISOString(), lastChecked: now.toISOString(), triggeredAt: null });
+    }
+    save(st);
+    return st.alerts.filter((a) => a.source === source && !a.triggeredAt).length;
+  });
+}
+
 export function deleteAlert(aid) {
   return locked(() => {
     const st = loadJournal();
