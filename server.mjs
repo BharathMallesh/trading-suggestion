@@ -54,7 +54,9 @@ import { loadIntradayTest } from './paper-bot/intraday-test.mjs';
 import { loadOdds, oddsFor } from './paper-bot/vwap-odds.mjs';
 import { tradesVsIndex } from './paper-bot/vs-index.mjs';
 import { loadFactorLab } from './paper-bot/factor-lab.mjs';
-import { vwapPullbackTest, saveVwapPullback, loadVwapPullback, paperSummary, paperUpdate, loadImprove, todaySignals, parseSizing, sizeTrade } from './paper-bot/vwap-pullback.mjs';
+import { todayScan } from './paper-bot/today-scan.mjs';
+import { vwapPullbackTest, saveVwapPullback, loadVwapPullback, paperSummary, paperUpdate, loadImprove, todaySignals, parseSizing, sizeTrade, noteLiveSeen } from './paper-bot/vwap-pullback.mjs';
+import { nseOpenNow } from './paper-bot/market-calendar.mjs';
 import { bigMove, evaluateBigMove, saveBigMoveEval, loadBigMoveEval } from './paper-bot/big-move.mjs';
 import { testPositioning, saveResult as savePositioning, loadResult as loadPositioning } from './paper-bot/options-positioning.mjs';
 import { llmLastModel } from './ling-client.mjs';
@@ -67,6 +69,7 @@ const PORT = Number(process.env.PORT) || 3000;
 let expectCache = null; // /api/expectations (daily)
 let fundsCache = null; // /api/index-funds (daily)
 let vwapTodayCache = null; // /api/vwap-today (1 minute)
+let todayScanCache = null; // /api/today-scan (2 minutes)
 const monthlyCache = {}; // goal planner: index → { at, data }
 // Bind to loopback only — this is a local tool holding a server-side API key,
 // not something to expose on the network.
@@ -181,6 +184,12 @@ const server = http.createServer(async (req, res) => {
     // --- static page ---
     if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
       const html = await readFile(join(HERE, 'index.html'), 'utf8');
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      return res.end(html);
+    }
+    // plain-language user guide (docs/user-guide.html)
+    if (req.method === 'GET' && (url.pathname === '/guide' || url.pathname === '/guide/')) {
+      const html = await readFile(join(HERE, 'docs', 'user-guide.html'), 'utf8');
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       return res.end(html);
     }
@@ -539,6 +548,11 @@ const server = http.createServer(async (req, res) => {
       const sizing = parseSizing(url.searchParams.get('capital') ?? undefined, url.searchParams.get('riskPct') ?? undefined);
       return json(res, 200, { backtest: loadVwapPullback(), paper: paperSummary(undefined, sizing), improve: loadImprove(), odds: loadOdds() });
     }
+    if (req.method === 'GET' && url.pathname === '/api/today-scan') {
+      // "Analyse today": NIFTY 50 trend scan; at most one fresh scan every 2 minutes
+      if (!todayScanCache || Date.now() - todayScanCache.at > 120_000) todayScanCache = { at: Date.now(), data: await todayScan({}) };
+      return json(res, 200, todayScanCache.data);
+    }
     if (req.method === 'GET' && url.pathname === '/api/vwap-today') {
       // live view: refreshed at most once a minute (Yahoo 5-minute bars)
       const sizing = parseSizing(url.searchParams.get('capital') ?? undefined, url.searchParams.get('riskPct') ?? undefined);
@@ -861,6 +875,20 @@ server.listen(PORT, HOST, () => {
     const tick = () => evaluatePending({}).catch(() => {});
     setTimeout(tick, 10_000).unref();
     setInterval(tick, 15 * 60_000).unref();
+  }
+  // Strategy: snapshot today's signals every 5 minutes while NSE is open, so the
+  // after-close paper record can show which trades were actually visible live.
+  if (process.env.VWAP_LIVE_SNAPSHOT !== '0') {
+    const snap = async () => {
+      if (!nseOpenNow()) return;
+      try {
+        noteLiveSeen(await todaySignals({}));
+      } catch {
+        /* data source busy: next snapshot */
+      }
+    };
+    setTimeout(snap, 20_000).unref();
+    setInterval(snap, 5 * 60_000).unref();
   }
   if (!process.env.OPENROUTER_API_KEY) {
     console.log('(Ask panel needs OPENROUTER_API_KEY — market data and the option calculator work without it.)');

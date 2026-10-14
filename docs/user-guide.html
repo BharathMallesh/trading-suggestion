@@ -1,0 +1,629 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- Served by the app at /guide. Plain-language guide to every card; keep it in step with index.html. -->
+<title>Trading Research Guide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Literata:opsz,wght@7..72,500;7..72,650&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a reference manual — sticky contents rail on wide screens, one readable column; cards keyed by trust level, matching the app's own indigo-on-cool-white look */
+:root {
+  --bg: #f3f5fb;
+  --panel: #ffffff;
+  --ink: #1b2240;
+  --muted: #5d6585;
+  --line: #dde2f0;
+  --soft: #eef1fa;
+  --accent: #4f5bd5;
+  --accent-ink: #ffffff;
+  --good: #137a4b;
+  --good-bg: #e3f4ec;
+  --care: #9a5b00;
+  --care-bg: #fbf0dc;
+  --exp: #6b5f7a;
+  --exp-bg: #efeaf4;
+  --bad: #b3261e;
+  --display: "Literata", Georgia, "Times New Roman", serif;
+  --body: "Public Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11152a; --panel: #181d36; --ink: #e6e9f8; --muted: #a0a8c8; --line: #2b3254; --soft: #20264a;
+    --accent: #8f99ff; --accent-ink: #11152a;
+    --good: #5fd39b; --good-bg: #173327; --care: #f0b65a; --care-bg: #3a2c12; --exp: #c6b6dc; --exp-bg: #2a2440; --bad: #ff8a80;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11152a; --panel: #181d36; --ink: #e6e9f8; --muted: #a0a8c8; --line: #2b3254; --soft: #20264a;
+  --accent: #8f99ff; --accent-ink: #11152a;
+  --good: #5fd39b; --good-bg: #173327; --care: #f0b65a; --care-bg: #3a2c12; --exp: #c6b6dc; --exp-bg: #2a2440; --bad: #ff8a80;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; }
+.back { display: inline-flex; gap: 6px; align-items: center; font-weight: 600; text-decoration: none; }
+body { background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 16px; line-height: 1.6; padding-inline: 16px; padding-block: 0 64px; }
+a { color: var(--accent); }
+a:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+h1, h2, h3 { font-family: var(--display); font-weight: 650; text-wrap: balance; line-height: 1.2; margin: 0; }
+h1 { font-size: clamp(2rem, 5vw, 2.9rem); letter-spacing: -0.01em; }
+h2 { font-size: 1.65rem; }
+h3 { font-size: 1.2rem; }
+p { margin: 0; }
+code, .mono { font-family: var(--mono); font-size: 0.88em; }
+code { background: var(--soft); padding: 1px 6px; border-radius: 4px; }
+.wrap { max-width: 1180px; margin: 0 auto; display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 48px; }
+header.top { max-width: 1180px; margin: 0 auto; padding-block: 48px 32px; display: grid; gap: 16px; }
+.eyebrow { font-size: 0.78rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.lede { font-size: 1.15rem; color: var(--muted); max-width: 64ch; }
+nav.toc { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 20px); align-self: start; max-height: calc(100vh - 40px); overflow: auto; font-size: 0.92rem; padding-block: 4px; }
+nav.toc ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+nav.toc a { display: block; padding: 5px 10px; border-radius: 6px; color: var(--ink); text-decoration: none; }
+nav.toc a:hover { background: var(--soft); }
+nav.toc .sub a { padding-left: 22px; color: var(--muted); font-size: 0.88rem; }
+nav.toc .label { font-size: 0.72rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); padding: 14px 10px 4px; font-weight: 600; }
+main { min-width: 0; display: grid; gap: 56px; }
+section.part { display: grid; gap: 20px; scroll-margin-top: 20px; }
+.prose { display: grid; gap: 14px; max-width: 68ch; }
+.prose ul, .prose ol { margin: 0; padding-left: 1.3em; display: grid; gap: 6px; }
+.callout { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; display: grid; gap: 10px; max-width: 72ch; }
+.callout.warn { border-color: var(--care); background: var(--care-bg); }
+.callout h3 { font-size: 1.05rem; }
+.legend { display: flex; flex-wrap: wrap; gap: 10px; }
+.badge { display: inline-flex; align-items: center; gap: 6px; font-size: 0.78rem; font-weight: 600; padding: 3px 10px; border-radius: 999px; white-space: nowrap; }
+.badge::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.b-good { color: var(--good); background: var(--good-bg); }
+.b-care { color: var(--care); background: var(--care-bg); }
+.b-exp { color: var(--exp); background: var(--exp-bg); }
+.cards { display: grid; gap: 16px; }
+article.tool { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px 22px; display: grid; gap: 12px; scroll-margin-top: 20px; }
+article.tool header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 16px; }
+article.tool .what { color: var(--muted); max-width: 70ch; }
+.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px 28px; }
+.cols > div { min-width: 0; display: grid; gap: 6px; align-content: start; }
+.cols h4 { margin: 0; font-size: 0.74rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+.cols ol, .cols ul { margin: 0; padding-left: 1.2em; display: grid; gap: 5px; }
+.btn { font-family: var(--body); font-size: 0.86em; font-weight: 600; background: var(--soft); border: 1px solid var(--line); border-radius: 6px; padding: 0 6px; white-space: nowrap; }
+.example { font-size: 0.92rem; background: var(--soft); border-radius: 8px; padding: 10px 12px; }
+.example b { font-weight: 600; }
+.views { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+.view { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; display: grid; gap: 8px; }
+.tbl { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+table { width: 100%; border-collapse: collapse; font-size: 0.93rem; }
+th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { background: var(--soft); font-weight: 600; font-size: 0.82rem; letter-spacing: 0.04em; color: var(--muted); }
+tr:last-child td { border-bottom: 0; }
+td.term { font-weight: 600; white-space: nowrap; }
+.num { font-variant-numeric: tabular-nums; font-family: var(--mono); font-size: 0.88em; }
+.steps { counter-reset: s; list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; max-width: 72ch; }
+.steps > li { counter-increment: s; display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 12px; align-items: start; }
+.steps > li::before { content: counter(s); width: 30px; height: 30px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; font-weight: 700; font-size: 0.9rem; }
+.tasks { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+.task { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; display: grid; gap: 10px; align-content: start; }
+.task ol { margin: 0; padding-left: 1.2em; display: grid; gap: 5px; }
+details.faq { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; max-width: 76ch; }
+details.faq summary { cursor: pointer; font-weight: 600; }
+details.faq p { margin-top: 8px; color: var(--muted); }
+.faqs { display: grid; gap: 10px; }
+.schedule { display: grid; gap: 0; max-width: 72ch; border-left: 2px solid var(--line); padding-left: 18px; }
+.schedule div { padding: 8px 0; display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 12px; }
+.schedule .when { font-family: var(--mono); font-size: 0.86rem; color: var(--accent); padding-top: 2px; }
+@media (max-width: 900px) {
+  .wrap { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+  nav.toc { position: static; max-height: none; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 8px; }
+  nav.toc ol { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+  nav.toc .sub, nav.toc .label { display: none; }
+  .schedule div { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+}
+@media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
+</style>
+</head>
+<body>
+
+
+<header class="top">
+  <a class="back" href="/">← Back to the app</a>
+  <div class="eyebrow">User guide · for complete beginners</div>
+  <h1>How to use the Trading Research app</h1>
+  <p class="lede">A plain-language walk through every screen, button and word in the app. No knowledge of the stock market is needed. Read “Start here” first; after that, jump to whatever you want to do.</p>
+  <div class="legend" aria-label="Trust levels used in this guide">
+    <span class="badge b-good">Reliable: tested and works</span>
+    <span class="badge b-care">Use with care: small or limited edge</span>
+    <span class="badge b-exp">Experiment: no proven edge</span>
+  </div>
+</header>
+
+<div class="wrap">
+  <nav class="toc" aria-label="Contents">
+    <ol>
+      <li class="label">Basics</li>
+      <li><a href="#start">Start here</a></li>
+      <li><a href="#open">Opening the app</a></li>
+      <li><a href="#trust">The three trust levels</a></li>
+      <li><a href="#words">Words you will see</a></li>
+      <li class="label">Screens</li>
+      <li><a href="#money">My money view</a></li>
+      <li class="sub"><a href="#t-ask">Ask the app</a></li>
+      <li class="sub"><a href="#t-today">Today</a></li>
+      <li class="sub"><a href="#t-portfolio">My portfolio</a></li>
+      <li class="sub"><a href="#t-expect">What to expect</a></li>
+      <li class="sub"><a href="#t-goal">Goal planner</a></li>
+      <li class="sub"><a href="#t-tilts">Market tilts</a></li>
+      <li class="sub"><a href="#t-funds">Index-fund picker</a></li>
+      <li class="sub"><a href="#t-predict">Call / Put prediction</a></li>
+      <li class="sub"><a href="#t-callput">Call / Put payoff odds</a></li>
+      <li class="sub"><a href="#t-bigmove">Big-move odds</a></li>
+      <li><a href="#lab">Research lab view</a></li>
+      <li class="sub"><a href="#t-vwap">YouTube strategy: where it is</a></li>
+      <li class="sub"><a href="#t-vwap-how">YouTube strategy: how it works</a></li>
+      <li class="sub"><a href="#t-labothers">All other lab cards</a></li>
+      <li class="label">Using it</li>
+      <li><a href="#tasks">Common tasks, step by step</a></li>
+      <li><a href="#auto">What runs by itself</a></li>
+      <li><a href="#safety">Golden rules</a></li>
+      <li><a href="#faq">Problems and questions</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <!-- START HERE -->
+    <section class="part" id="start">
+      <h2>Start here</h2>
+      <div class="prose">
+        <p>This app is a <b>research assistant for Indian stock-market investing</b>. It reads public market data (prices from Yahoo Finance, files from the National Stock Exchange, mutual-fund prices from AMFI) and turns it into facts you can use: how risky something is, what has happened to money invested in the past, how much tax you would owe, and whether an idea actually worked when tested.</p>
+        <p>Three things it <b>never</b> does:</p>
+        <ul>
+          <li><b>It never buys or sells anything.</b> It is not connected to any broker account that can place orders. Every “trade” you see is a <i>paper trade</i>: pretend money, recorded to see how an idea would have done.</li>
+          <li><b>It never tells you to buy or sell a particular stock.</b> It gives facts and odds, and you decide.</li>
+          <li><b>It does not predict whether a price will go up or down.</b> This was tested many ways (from 30 minutes ahead to 3 years ahead, with charts, AI models and news). Nothing did better than a coin flip. The app says so wherever it matters.</li>
+        </ul>
+      </div>
+      <div class="callout">
+        <h3>The one-paragraph summary</h3>
+        <p>Looking for the <b>YouTube intraday strategy</b>? It is in Research lab → “Same stocks every day”, explained <a href="#t-vwap">here</a>. Looking for the <b>Call / Put prediction</b>? It is in My money, explained <a href="#t-predict">here</a>.</p>
+        <p>The parts of this app you can rely on are about <b>risk, cost, tax and long-term investing</b>: how much a stock usually moves, the real chance an option pays off, what a monthly investment (SIP) in an index fund has done in good and bad periods, which index fund kept the most of its returns, and how to save tax. The parts about <b>short-term trading and up/down guesses</b> are kept in the Research lab as experiments, clearly labelled, so you can see what was tried and why it did not work.</p>
+      </div>
+    </section>
+
+    <!-- OPEN -->
+    <section class="part" id="open">
+      <h2>Opening the app</h2>
+      <ol class="steps">
+        <li><div>The app runs on the owner’s Mac. It starts by itself when the Mac is switched on and someone logs in, so there is usually nothing to start.</div></li>
+        <li><div>Open a web browser (Safari or Chrome) on that Mac and go to <code>http://127.0.0.1:3000</code>. Bookmark it.</div></li>
+        <li><div>At the top you will see two buttons: <span class="btn">My money</span> and <span class="btn">Research lab</span>. These switch between the two halves of the app. The app remembers which one you used last.</div></li>
+        <li><div>Each box on the page is called a <b>card</b>. Every card has a title, a short grey explanation under it, and its own buttons. Results appear inside the card after you press a button. Some cards fill in by themselves when the page opens.</div></li>
+      </ol>
+      <div class="views">
+        <div class="view">
+          <h3>My money</h3>
+          <p>For everyday investors: your own shares, tax, what to expect from investing, choosing a fund, option odds and risk. Start here.</p>
+        </div>
+        <div class="view">
+          <h3>Research lab</h3>
+          <p>Every experiment the app has run, including the ones that found nothing useful: up/down prediction, AI models, the YouTube intraday strategy, option selling. Interesting, but not a basis for decisions.</p>
+        </div>
+      </div>
+      <div class="callout warn">
+        <h3>If the page does not load</h3>
+        <p>The Mac may be asleep or the app may have stopped. Wake the Mac, wait a minute and reload. If it still fails, see <a href="#faq">Problems and questions</a>.</p>
+      </div>
+    </section>
+
+    <!-- TRUST -->
+    <section class="part" id="trust">
+      <h2>The three trust levels</h2>
+      <div class="prose">
+        <p>Every tool in this guide carries one of three labels. They come from the app’s own tests on past data the tools had never seen.</p>
+      </div>
+      <div class="tbl">
+        <table>
+          <thead><tr><th>Label</th><th>Meaning</th><th>How to use it</th></tr></thead>
+          <tbody>
+            <tr><td><span class="badge b-good">Reliable</span></td><td>Arithmetic on real data (tax, past returns, fund costs) or a forecast that clearly beat simple methods when tested.</td><td>Use it to make decisions, alongside your own judgement.</td></tr>
+            <tr><td><span class="badge b-care">Use with care</span></td><td>Has a small, real edge, or only works in certain situations.</td><td>Use it as one input. Do not bet large amounts on it.</td></tr>
+            <tr><td><span class="badge b-exp">Experiment</span></td><td>Tested and found <b>no reliable edge</b>, or still being tested with pretend money.</td><td>Look, learn, follow along. Do not trade real money on it. In the app these cards carry a grey “Tested: no reliable edge” note.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- WORDS -->
+    <section class="part" id="words">
+      <h2>Words you will see</h2>
+      <div class="prose"><p>You do not need to learn these all at once. Come back here when a word on screen is unclear.</p></div>
+      <div class="tbl">
+        <table>
+          <thead><tr><th>Word</th><th>What it means</th></tr></thead>
+          <tbody>
+            <tr><td class="term">Stock / share</td><td>A small piece of ownership in a company, bought and sold on the stock exchange (NSE or BSE in India).</td></tr>
+            <tr><td class="term">Symbol / ticker</td><td>The short code for a stock, such as <code>RELIANCE</code> or <code>TCS</code>. The app adds <code>.NS</code> for NSE (<code>RELIANCE.NS</code>). You can usually just type the company name in “Ask the app”.</td></tr>
+            <tr><td class="term">NIFTY 50</td><td>An index: the combined value of India’s 50 largest companies. When people say “the market went up 1%”, they usually mean NIFTY. The app writes it <code>^NSEI</code>.</td></tr>
+            <tr><td class="term">Sensex</td><td>A similar index of 30 large companies on the BSE.</td></tr>
+            <tr><td class="term">Index fund / ETF</td><td>A mutual fund that simply buys every stock in an index, so you get the market’s return for a very small fee. An ETF is the same thing traded on the exchange like a share.</td></tr>
+            <tr><td class="term">SIP</td><td>Systematic Investment Plan: investing a fixed amount every month (for example ₹5,000) automatically.</td></tr>
+            <tr><td class="term">Lump sum</td><td>Investing a big amount once, instead of monthly.</td></tr>
+            <tr><td class="term">Return / CAGR</td><td>How much your money grew. CAGR is the average growth <i>per year</i>, so different periods can be compared.</td></tr>
+            <tr><td class="term">XIRR</td><td>Yearly return when money went in and out on different dates (like a SIP or your own trades).</td></tr>
+            <tr><td class="term">Drawdown / worst fall</td><td>The biggest drop from a high point before recovering. “Worst fall 30%” means ₹1 lakh would at some point have been worth ₹70,000.</td></tr>
+            <tr><td class="term">Volatility</td><td>How much a price usually swings. High volatility means bigger daily ups and downs, in either direction.</td></tr>
+            <tr><td class="term">Option: Call / Put</td><td>A contract you pay a small amount for. A <b>Call</b> pays off if the price ends <b>above</b> a chosen level (the <b>strike</b>) by the <b>expiry</b> date; a <b>Put</b> pays off if it ends <b>below</b>. Most bought options expire worthless.</td></tr>
+            <tr><td class="term">Premium</td><td>The price you pay to buy an option. If the option expires worthless, you lose all of it.</td></tr>
+            <tr><td class="term">Breakeven</td><td>The price the stock must reach by expiry for an option to just pay back its premium.</td></tr>
+            <tr><td class="term">IV (implied volatility)</td><td>How big a move option prices are expecting. India VIX is the IV of NIFTY options.</td></tr>
+            <tr><td class="term">Intraday</td><td>Buying and selling on the same day. Delivery means holding the shares overnight or longer.</td></tr>
+            <tr><td class="term">Long / Short</td><td>Long = buy first, profit if price rises. Short = sell first, profit if price falls (only allowed intraday in the cash market).</td></tr>
+            <tr><td class="term">Stop-loss / target</td><td>Prices decided before entering a trade: exit at the stop to limit the loss, exit at the target to take the profit.</td></tr>
+            <tr><td class="term">VWAP</td><td>Volume-weighted average price: the average price paid for a stock today, weighted by how much traded at each price.</td></tr>
+            <tr><td class="term">Moving average (20 MA)</td><td>The average of the last 20 prices, used to see the short-term trend.</td></tr>
+            <tr><td class="term">ATR</td><td>Average true range: how much a stock typically moves in one candle (one 5-minute bar, for example). Used to place stops.</td></tr>
+            <tr><td class="term">Candle</td><td>One bar on a price chart showing the open, high, low and close for a period (5 minutes, 1 day…).</td></tr>
+            <tr><td class="term">Paper trade</td><td>A pretend trade recorded by the app with no real money, to test an idea honestly.</td></tr>
+            <tr><td class="term">Backtest</td><td>Running a strategy’s rules on past data to see how it would have done.</td></tr>
+            <tr><td class="term">Out of sample / unseen days</td><td>Testing a rule on data that was <i>not</i> used to create it. The only fair test; the app uses it everywhere.</td></tr>
+            <tr><td class="term">Charges</td><td>Brokerage, STT (securities transaction tax), exchange fees, GST and stamp duty paid on every trade. The app always subtracts them.</td></tr>
+            <tr><td class="term">P&amp;L</td><td>Profit and loss.</td></tr>
+            <tr><td class="term">STCG / LTCG</td><td>Short-term / long-term capital gains tax. In India, shares held under 1 year: 20% on profit. Over 1 year: 12.5% on profit above ₹1.25 lakh per financial year. Plus 4% cess.</td></tr>
+            <tr><td class="term">Tax harvesting</td><td>Selling and re-buying shares to use the yearly ₹1.25 lakh tax-free long-term gain, or to book losses that cancel taxable gains.</td></tr>
+            <tr><td class="term">Factor / tilt</td><td>Owning a group of stocks with one trait (strong momentum, high quality, low volatility, cheap valuation) instead of the whole index.</td></tr>
+            <tr><td class="term">t-stat / “t ≥ 2”</td><td>A measure of whether a result is real or likely luck. Roughly, 2 or more means “probably not luck”.</td></tr>
+            <tr><td class="term">Brier score</td><td>A score for probability forecasts. Lower is better. Used to check whether the app’s odds are honest.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- MY MONEY -->
+    <section class="part" id="money">
+      <h2>My money view</h2>
+      <div class="prose"><p>Press <span class="btn">My money</span> at the top. The main cards are explained below. The smaller cards that also sit in this view (Market data, Option calculator, Strategies, Volatility check, Settings) are described in <a href="#t-labothers">All other cards</a>.</p></div>
+      <div class="cards">
+
+        <article class="tool" id="t-ask">
+          <header><h3>Ask the app</h3><span class="badge b-good">Reliable facts</span></header>
+          <p class="what">Type a question in plain English and the app answers using its tested tools. The easiest place to start.</p>
+          <div class="cols">
+            <div><h4>Steps</h4><ol><li>Click in <b>Your question</b> and type, for example “Tell me about Reliance”.</li><li>Press <span class="btn">Ask</span> or Enter. Or tap one of the grey example buttons under the box.</li><li>Read the answer: a short summary, tables, and a note at the bottom about what the answer cannot tell you.</li></ol></div>
+            <div><h4>Questions it understands</h4><ul><li><b>A stock:</b> “What will happen to TCS?”, “How is SBI doing?”</li><li><b>Today’s market:</b> “Which is the best stock to invest today?”</li><li><b>Options:</b> “NIFTY call put this week”, “Options on Infosys”</li><li><b>Funds:</b> “Which index fund?”</li><li><b>The strategy:</b> “How did the strategy do today?”, “Any signal on Trent?”</li></ul></div>
+          </div>
+          <div class="example"><b>Good to know:</b> asking “what will happen” gives facts about risk (how much it usually moves, the chance of a big move, recent news), not a prediction of up or down. The app will say clearly that direction cannot be predicted.</div>
+        </article>
+
+        <article class="tool" id="t-today">
+          <header><h3>Today</h3><span class="badge b-good">Reliable</span></header>
+          <p class="what">One screen with everything the app checked recently: alerts, whether its data is healthy, market volatility, results announcements, and the weekly scorecard.</p>
+          <div class="cols">
+            <div><h4>Steps</h4><ol><li>It fills in by itself. Press <span class="btn">Refresh</span> to load the latest saved check.</li><li>Press <span class="btn">Run now</span> to check everything again (takes 1–2 minutes).</li></ol></div>
+            <div><h4>How to read it</h4><ul><li><b>Alerts</b> in an orange box need your attention (for example, a stock you own has an announcement, or the market dropped below its long-term average).</li><li><b>Health</b> warnings are about the app’s own data (a missed download, no AI credits).</li><li><b>Weekly scorecard</b> appears on Fridays after 3 PM.</li><li>On exchange holidays it says “closed (NSE holiday: …)”.</li></ul></div>
+          </div>
+        </article>
+
+        <article class="tool" id="t-portfolio">
+          <header><h3>My portfolio</h3><span class="badge b-good">Reliable</span></header>
+          <p class="what">Enter the shares you actually own. The app works out the tax if you sold today, how to use the yearly ₹1.25 lakh tax-free gain, losses that could cancel taxable gains, how much your holdings typically swing, and what past crashes would do to them. Your data stays on this Mac.</p>
+          <div class="cols">
+            <div><h4>Add shares by hand</h4><ol><li>Fill <b>Symbol</b> (e.g. INFY), <b>Quantity</b>, <b>Buy price (₹)</b> and <b>Buy date</b>.</li><li>Press <span class="btn">Add purchase</span>. Repeat for every purchase (one row per purchase, even of the same stock).</li><li>If you already sold shares this financial year, enter the gains in the “booked” boxes and press <span class="btn">Save booked gains</span>.</li><li>Press <span class="btn">Refresh analysis</span>.</li></ol></div>
+            <div><h4>Or import from your broker</h4><ol><li>Download your tradebook as a CSV file. Zerodha: Console → Reports → Tradebook → equity, all years. Groww: Stocks → Order history → download.</li><li>Open <b>Import from your broker</b>, choose the file, pick “Replace” or “Add to”, press <span class="btn">Import</span>.</li><li>Export your <b>full history</b>: sales need their original purchases for the tax to be exact.</li></ol></div>
+            <div><h4>Did my trading beat NIFTY?</h4><ol><li>After importing a tradebook, press <span class="btn">Check</span>.</li><li>The app pretends every rupee you put into a stock went into NIFTY on the same day instead, and compares.</li><li>Green text: your choices beat simply owning the index. Red: the index would have done better. “Score vs NIFTY” above 1.00 means you beat it.</li></ol></div>
+          </div>
+          <div class="example"><b>Example:</b> you bought 10 Infosys shares at ₹1,500 two years ago and they are now ₹1,700. The card shows a long-term gain of ₹2,000, that it falls inside the ₹1.25 lakh yearly exemption so the tax would be ₹0, and how much more of the exemption you could still use this year. This is arithmetic, not advice; check with a tax professional before acting.</div>
+        </article>
+
+        <article class="tool" id="t-expect">
+          <header><h3>What to expect</h3><span class="badge b-good">Reliable</span></header>
+          <p class="what">What really happened to money left in an index for 3, 5, 10 or 15 years, for every possible starting month since 1997: the worst, typical and best results, and the deepest fall you would have had to sit through.</p>
+          <div class="cols">
+            <div><h4>Steps</h4><ol><li>Enter a <b>Monthly SIP (₹)</b> amount and choose the <b>Index</b> (Sensex or NIFTY 50).</li><li>Read the table row for the number of years you plan to stay invested.</li></ol></div>
+            <div><h4>How to read it</h4><ul><li><b>Worst / median / best</b>: the range of outcomes people actually got.</li><li><b>% lost money</b>: how often that holding period ended below what was put in.</li><li><b>Deepest fall</b>: the worst temporary drop along the way. Knowing this in advance helps you not panic-sell.</li><li>Longer periods have far fewer losing cases. That is the main lesson.</li></ul></div>
+          </div>
+        </article>
+
+        <article class="tool" id="t-goal">
+          <header><h3>Goal planner</h3><span class="badge b-good">Reliable</span></header>
+          <p class="what">How much to invest every month to reach a target, judged on every past starting month, including the bad ones.</p>
+          <div class="cols">
+            <div><h4>Steps</h4><ol><li>Enter your <b>Target (₹)</b>, for example 50,00,000, and the number of <b>Years</b>.</li><li>Optional: money you can invest now (<b>Lump sum</b>) and the SIP you plan.</li><li>Press <span class="btn">Plan</span>.</li></ol></div>
+            <div><h4>How to read it</h4><ul><li>“SIP needed in 50% of cases” is the typical amount; “90%” is the safer amount that would have worked in most past periods.</li><li>If you entered your planned SIP, it shows how often that would have reached the target, and the worst and best ending values.</li></ul></div>
+          </div>
+        </article>
+
+        <article class="tool" id="t-tilts">
+          <header><h3>Market tilts</h3><span class="badge b-care">Use with care</span></header>
+          <p class="what">Compares NSE’s special indices (momentum, quality, low volatility, value, alpha, midcap, smallcap) with NIFTY 50 since 2012, using only data NSE actually published. It shows how much extra each earned per year, and the price paid for it.</p>
+          <div class="cols">
+            <div><h4>Steps</h4><ol><li>Nothing to press; the table fills in by itself and refreshes weekly.</li><li>Scroll the table sideways on a small screen.</li></ol></div>
+            <div><h4>How to read it</h4><ul><li><b>Extra per year</b>: return above NIFTY (green) or below (red).</li><li><b>Worst fall</b> compared with NIFTY’s worst fall in the same period.</li><li><b>Longest behind NIFTY</b>: how many years it lagged before catching up. Several winners lagged for 2–6 years.</li><li>Funds tracking these indices charge more than a NIFTY fund, so real returns are a bit lower.</li></ul></div>
+          </div>
+        </article>
+
+        <article class="tool" id="t-funds">
+          <header><h3>Index-fund picker</h3><span class="badge b-good">Reliable</span></header>
+          <p class="what">Every fund that tracks the same index should earn the same. This card shows which ones kept the most, using official daily fund prices.</p>
+          <div class="cols">
+            <div><h4>Steps</h4><ol><li>Choose the <b>Index</b>: NIFTY 50, NIFTY Next 50 or Sensex.</li><li>Read the list, best first.</li></ol></div>
+            <div><h4>How to read it</h4><ul><li><b>Gap to best</b>: how much less a fund earned per year than the best one. That gap is lost to fees and sloppy tracking.</li><li><b>Tracking error</b>: how faithfully it follows the index. Lower is better.</li><li>The top few are usually within a few hundredths of a percent; any of them is fine. ETFs are bought at market price, so check they trade a lot.</li></ul></div>
+          </div>
+        </article>
+
+        <article class="tool" id="t-predict">
+          <header><h3>Call / Put prediction (card name: “Live candles → Ling probability”)</h3><span class="badge b-exp">Experiment: not better than chance</span></header>
+          <p class="what">This is the card that answers “will it go up or down?”. You pick a stock, and it shows three percentages: <b>Call (up)</b>, <b>Put (down)</b> and <b>Sideways</b> for the next few minutes, hours or day. It uses recent price candles, an AI model (Ling) and, optionally, news. It is kept in My money because it is the most-asked question, but read “What the record shows” before you rely on it.</p>
+          <div class="cols">
+            <div><h4>Steps</h4><ol>
+              <li>Choose a mode at the top: <span class="btn">15‑min only</span> looks at one timeframe; <span class="btn">Multi‑horizon mix</span> blends 2 months, 1 month, today, the last hour and the last 15 minutes.</li>
+              <li>Type a <b>Symbol</b>, for example HDFCBANK, RELIANCE or ^NSEI for NIFTY.</li>
+              <li>Choose the <b>Interval</b>: 5, 15 or 60 minutes. Smaller intervals describe only the next short stretch (5-minute odds cover roughly the next 20 minutes).</li>
+              <li>Leave <b>Data source</b> on “Yahoo only” (Groww needs a paid subscription).</li>
+              <li>Leave “Include news sentiment” ticked if you want news to tilt the odds slightly.</li>
+              <li>Press <span class="btn">Fetch + get probabilities</span>.</li>
+            </ol></div>
+            <div><h4>How to read it</h4><ul>
+              <li><b>Call %</b> = chance the price ends clearly <b>up</b>. <b>Put %</b> = clearly <b>down</b>. <b>Sideways %</b> = stays within its normal small range. The three add up to 100%.</li>
+              <li>The largest one is the card’s <b>lean</b>. If two are equal it says Sideways / no lean.</li>
+              <li>“Clearly” is measured against the stock’s own usual move (its ATR), so a small wiggle counts as sideways.</li>
+              <li>Typical numbers are around <span class="num">27% up · 26% down · 46% sideways</span>. Those are simply how often each happens in general.</li>
+            </ul></div>
+            <div><h4>What the record shows</h4><ul>
+              <li>Every prediction is saved and later checked against what really happened. See the <b>Live scorecard</b> box at the bottom of the card, or the <b>Prediction hit-rate</b> card.</li>
+              <li>So far (October 2026) <b>111 predictions were scored and only about 7% of the leans came true</b>. Its probability scores were worse than a coin flip. Simply guessing “up” every time would have been right 63% of the time. Most of those predictions came before a fix on 9 October, but nothing since shows an edge.</li>
+              <li>Over 31,000 past cases, and in a 14-year test, nothing predicted direction better than the plain average.</li>
+            </ul></div>
+          </div>
+          <div class="example"><b>So what is it good for?</b> Seeing the normal odds of up, down and sideways for a stock, and watching the live scorecard to judge for yourself. <b>Do not buy a Call because it says “Call 40%”, or a Put because it says “Put 40%”.</b> For deciding whether an option is worth its price, use <a href="#t-callput">Call / Put payoff odds</a> below. For whether a big move is likely, use <a href="#t-bigmove">Big-move odds</a>.</div>
+        </article>
+
+        <div class="callout">
+          <h3>Two “Call / Put” cards: what is the difference?</h3>
+          <div class="tbl">
+            <table>
+              <thead><tr><th></th><th>Call / Put prediction</th><th>Call / Put payoff odds</th></tr></thead>
+              <tbody>
+                <tr><td class="term">Question it answers</td><td>Will the price go up, down or sideways next?</td><td>If I buy this option at this price, what is the chance it pays off by expiry?</td></tr>
+                <tr><td class="term">Based on</td><td>Guessing direction from charts, AI and news</td><td>How much the stock is expected to move, in either direction</td></tr>
+                <tr><td class="term">Tested result</td><td>Not better than chance</td><td>Honest odds: “80%” happened about 79% of the time</td></tr>
+                <tr><td class="term">Use it to</td><td>Look and learn only</td><td>Avoid overpaying, set realistic expectations, size small</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <article class="tool" id="t-callput">
+          <header><h3>Call / Put payoff odds</h3><span class="badge b-care">Use with care</span></header>
+          <p class="what">Before buying an option: what is the real chance it ends above its breakeven by expiry? Based on how much the stock is expected to move, not on guessing direction. When tested, its “80%” happened about 79% of the time.</p>
+          <div class="cols">
+            <div><h4>Steps</h4><ol><li>Enter the <b>Symbol</b> (e.g. ^NSEI for NIFTY), <b>Type</b> (Call or Put), <b>Strike</b> and <b>Days to expiry</b>.</li><li>If your broker shows the option’s price, enter it as <b>Premium</b>; otherwise leave it blank.</li><li>Press <span class="btn">Calculate odds</span>.</li></ol></div>
+            <div><h4>How to read it</h4><ul><li><b>Chance of ending profitable</b>: often around 1 in 3 for bought options. That is normal.</li><li><b>Breakeven</b>: where the price must be at expiry just to get your money back.</li><li>Use it to avoid overpaying and to size small. It does not say which way the market will go.</li></ul></div>
+          </div>
+        </article>
+
+        <article class="tool" id="t-bigmove">
+          <header><h3>Big-move odds</h3><span class="badge b-good">Reliable</span></header>
+          <p class="what">The chance that the next day or week moves more than ±1%, ±2% and so on, up <i>or</i> down. The size of moves is predictable (busy periods cluster, results days are known); the direction is not.</p>
+          <div class="cols">
+            <div><h4>Steps</h4><ol><li>Enter a <b>Symbol</b> and press <span class="btn">Show odds</span>.</li></ol></div>
+            <div><h4>How to read it</h4><ul><li>Compare each chance with “past year”. If today’s chance is 2× the usual, risk is higher than normal; consider a smaller position or wider stop.</li></ul></div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <!-- LAB -->
+    <section class="part" id="lab">
+      <h2>Research lab view</h2>
+      <div class="prose"><p>Press <span class="btn">Research lab</span> at the top. These cards are experiments. Most found that the idea does <b>not</b> work after costs, and the app says so. Cards with a grey “Tested: no reliable edge” note are moved to the bottom.</p></div>
+      <div class="cards">
+        <article class="tool" id="t-vwap">
+          <header><h3>Same stocks every day (the YouTube strategy)</h3><span class="badge b-exp">Experiment: paper only</span></header>
+          <p class="what">An intraday trading strategy from the Dhan YouTube video “The Power of Trading the Same Stocks Every Day”, coded into the app exactly as the video describes. The app tests it honestly and follows it every day with pretend money.</p>
+
+          <div class="callout">
+            <h3>Where to find it</h3>
+            <ol class="steps">
+              <li><div>Open the app and press <span class="btn">Research lab</span> at the top.</div></li>
+              <li><div>Scroll down to the card called <b>Same stocks every day</b> (subtitle “VWAP + 20 MA pullback · intraday · backtest + live paper”). It sits near the bottom, among the cards marked “Tested”.</div></li>
+              <li><div>Or ask in <b>Ask the app</b> (My money): “How did the strategy do today?” or “Any signal on Trent?”.</div></li>
+            </ol>
+          </div>
+
+          <h3 id="t-vwap-how" style="font-size:1.05rem">How the strategy works, step by step</h3>
+          <div class="prose"><p>The strategy trades the same four stocks every day: <b>Bajaj Finserv, Trent, Titan and Maruti</b>. It watches their 5-minute charts, so each candle is 5 minutes of trading. The app checks these rules after every candle.</p></div>
+          <ol class="steps">
+            <li><div><b>Draw two lines on the chart.</b> The <b>20 MA</b>, the average of the last 20 candles’ closing prices, shows the short-term trend. <b>VWAP</b>, today’s average price weighted by volume, shows whether buyers or sellers have been in control today.</div></li>
+            <li><div><b>Decide the direction allowed today.</b> If the price is <b>above both lines</b>, only <b>buy</b> trades (long) are allowed. If it is <b>below both</b>, only <b>short</b> trades (sell first, buy back later) are allowed. If it is between them (mixed), no trade.</div></li>
+            <li><div><b>Wait for a pullback.</b> In an uptrend, wait for a candle whose low dips down to touch the 20 MA but which closes back above it (and above VWAP). That shows the trend held. In a downtrend, the mirror: a candle whose high touches the 20 MA but closes back below it.</div></li>
+            <li><div><b>Enter on the next candle.</b> The trade starts at the opening price of the following 5-minute candle.</div></li>
+            <li><div><b>Set the stop-loss</b> 2 × ATR away from the entry (ATR is how much the stock usually moves in one candle). Below the entry for a buy, above it for a short.</div></li>
+            <li><div><b>Set the target</b> at twice that distance on the other side: risk ₹1 to make ₹2 (a “1:2” trade).</div></li>
+            <li><div><b>Size the trade</b> so that hitting the stop loses about ₹1,000 (1% of ₹1 lakh), or 1% of whatever capital you set under “Your size”.</div></li>
+            <li><div><b>Exit</b> when the price hits the target (profit) or the stop (loss), whichever comes first. Anything still open at <b>3:00 PM</b> is closed at the market price.</div></li>
+            <li><div><b>Daily limits:</b> new trades only between 9:30 AM and 1:00 PM, one trade per stock per day, at most <b>2 trades a day</b> in total.</div></li>
+          </ol>
+
+          <div class="example">
+            <b>Worked example, a real signal from 12 October 2026:</b> Bajaj Finserv was below both its 20 MA and VWAP, so only shorts were allowed. At 9:35 a candle rose to touch the 20 MA and closed back below it: a pullback. The app “sold short” 94 shares at the 9:40 open, at <span class="num">₹1,739.68</span>. Stop-loss: <span class="num">₹1,750.29</span> (2 × ATR above). Target: <span class="num">₹1,718.45</span> (twice the risk below). If the price fell to the target, the trade would make about ₹2,000 minus charges. If it rose to the stop, it would lose about ₹1,000 plus charges, roughly ₹1,100. If neither happened by 3:00 PM, it would close at whatever the price was then. By midday the price was around ₹1,722–1,725 and the trade showed about +₹1,200 after charges, still open.
+          </div>
+
+          <h3 style="font-size:1.05rem">The three versions the app follows</h3>
+          <div class="tbl">
+            <table>
+              <thead><tr><th>Version</th><th>Rules</th><th>Why it exists</th></tr></thead>
+              <tbody>
+                <tr><td class="term">Video rules</td><td>Exactly as above.</td><td>The strategy as taught.</td></tr>
+                <tr><td class="term">Improved</td><td>Same, plus: only trade in the direction of the stock’s daily trend (above or below its 20-day average), and a wider stop of 3 × ATR.</td><td>The best of 21 variations tried. It did well on the four video stocks but lost on 16 other stocks, so it is not proven.</td></tr>
+                <tr><td class="term">Morning scanner</td><td>Same as Improved, but it scans 20 large stocks each morning and only trades those that have already moved at least 0.5% from yesterday’s close by 9:30, in that direction.</td><td>The best idea from a second round of tests. Roughly break-even in testing; being tracked to see if it holds.</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3 style="font-size:1.05rem">What the tests found</h3>
+          <div class="prose"><ul>
+            <li>On about 40 trading days of real 5-minute data, the video rules <b>lost about ₹57–235 per trade after charges</b> (about ₹100 a trade goes to brokerage, taxes and slippage).</li>
+            <li>Only about <b>38%</b> of past signals ended in profit. A 1:2 strategy needs roughly 38–40% just to break even after costs.</li>
+            <li>Eleven extra filters were tested (limit orders, trailing stops, volume, morning gap, trend day, and others). None was reliably profitable on days it had not seen.</li>
+            <li>Every version lost in the first half of the test period and did better in the second, which suggests market mood mattered more than the rules.</li>
+            <li>The app saves 5-minute data every day, so each week the test covers more days and becomes more reliable.</li>
+          </ul></div>
+
+          <h3 style="font-size:1.05rem">Using the card</h3>
+          <div class="cols">
+            <div><h4>Your size</h4><ol><li>Enter your <b>Capital</b> and <b>Risk per trade</b> (1% is common) and press <span class="btn">Apply</span>.</li><li>All amounts on the card are then shown at your size.</li><li><b>Position-size calculator:</b> enter an entry and a stop price and press <span class="btn">Calculate</span>. It shows how many shares to buy and what you would really lose at the stop including charges.</li></ol></div>
+            <div><h4>Today’s signals</h4><ul><li>Shows the trades each version took today, with entry, stop, target, current profit/loss and status (open or closed). Refreshes every 3 minutes while the market is open.</li><li><b>Chance at entry</b>: how often similar past signals ended in profit, about 38%.</li><li>“Where each stock stands” shows whether each stock is above both lines (only buys allowed), below both (only short sells) or mixed (no trade).</li></ul></div>
+            <div><h4>When can we trust it?</h4><ul><li>A progress bar per version towards a finish line set in advance: 100 trades over 40 trading days, profitable after costs with t ≥ 2.</li><li>Until then it says “too early”. A version losing clearly is marked “does not work”.</li><li>A Mac notification after each day’s close sums up the day.</li></ul></div>
+          </div>
+          <div class="example"><b>Should I trade it with real money?</b> No, not yet. Wait until the trust meter says it passed. If it never passes, the strategy does not work, and you will have lost nothing finding out.</div>
+        </article>
+
+        <article class="tool" id="t-labothers">
+          <header><h3>All other cards, in brief</h3><span class="badge b-exp">Mostly experiments</span></header>
+          <p class="what">What each remaining card does, and what its test found.</p>
+          <div class="tbl">
+            <table>
+              <thead><tr><th>Card</th><th>What it does</th><th>Trust</th></tr></thead>
+              <tbody>
+                <tr><td class="term">Live candles → Ling probability</td><td>The Call / Put prediction card. Full explanation in <a href="#t-predict">My money → Call / Put prediction</a>.</td><td><span class="badge b-exp">Experiment</span></td></tr>
+                <tr><td class="term">Market data</td><td>Look up a price chart, quotes and news for any symbol. Press <span class="btn">Fetch</span>.</td><td><span class="badge b-good">Data</span></td></tr>
+                <tr><td class="term">Option calculator</td><td>Maths only: enter spot, strike, days, IV and see the option’s theoretical price, risk numbers (greeks) and payoff. No data fetched.</td><td><span class="badge b-good">Maths</span></td></tr>
+                <tr><td class="term">Strategies</td><td>Two slow, rule-based strategies run with pretend money against simply holding NIFTY: a trend filter (hold NIFTY above its 200-day average, otherwise a liquid fund) and a momentum top-20. Includes 10-year and 25-year tests.</td><td><span class="badge b-care">Use with care</span></td></tr>
+                <tr><td class="term">Volatility check</td><td>Compares how big a move option prices expect with the app’s forecast. Volatility is where the app showed real skill.</td><td><span class="badge b-good">Reliable</span></td></tr>
+                <tr><td class="term">Settings</td><td>Brokerage and charges used in all calculations. Match them to your broker.</td><td>—</td></tr>
+                <tr><td class="term">Ask (research · explain)</td><td>An AI answers finance questions, explains concepts or summarises pasted text. It refuses to predict prices. Needs AI credits.</td><td><span class="badge b-care">Explanations</span></td></tr>
+                <tr><td class="term">Prediction hit-rate</td><td>The scorecard of every Call/Put guess the app made, checked against what happened.</td><td><span class="badge b-good">Honest record</span></td></tr>
+                <tr><td class="term">Stock ranking</td><td>Ranks stocks against each other by momentum, low volatility and closeness to their yearly high, with a replay test of whether that worked.</td><td><span class="badge b-care">Use with care</span></td></tr>
+                <tr><td class="term">Earnings &amp; rating events</td><td>Records results announcements and broker upgrades and measures what the price did afterwards. Builds evidence slowly.</td><td><span class="badge b-exp">Collecting data</span></td></tr>
+                <tr><td class="term">Selling volatility</td><td>Replays option-selling strategies on 7+ years of real NIFTY option prices after costs. Sellers win often but can lose many weeks of profit in one week.</td><td><span class="badge b-exp">Experiment</span></td></tr>
+                <tr><td class="term">Paper portfolio</td><td>A pretend delivery account that follows the app’s daily signals.</td><td><span class="badge b-exp">Experiment</span></td></tr>
+                <tr><td class="term">Model evaluation</td><td>Technical: replays the up/down model on past data and scores it against simple baselines.</td><td><span class="badge b-exp">Experiment</span></td></tr>
+                <tr><td class="term">Paper-Bot</td><td>Older signal scanner, backtest and AI “agents” brief.</td><td><span class="badge b-exp">No edge</span></td></tr>
+                <tr><td class="term">Candle AI read</td><td>Sends a chart to an AI and gets a bullish/bearish opinion.</td><td><span class="badge b-exp">No edge</span></td></tr>
+                <tr><td class="term">Foundation models (Kronos, Chronos-Bolt)</td><td>Two open-source AI forecasting models running on this Mac. Each tab shows its own forecast and its replay record.</td><td><span class="badge b-exp">No edge</span></td></tr>
+                <tr><td class="term">Direction over months and years</td><td>Tests whether valuation (P/E) or trend predicts NIFTY over months to years.</td><td><span class="badge b-exp">No edge</span></td></tr>
+                <tr><td class="term">Options positioning</td><td>Tests whether put-call ratio, open interest or skew predict NIFTY.</td><td><span class="badge b-exp">No edge</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <!-- TASKS -->
+    <section class="part" id="tasks">
+      <h2>Common tasks, step by step</h2>
+      <div class="tasks">
+        <div class="task">
+          <h3>“I want to start investing every month”</h3>
+          <ol>
+            <li>My money → <b>Goal planner</b>: enter your target and years, press <span class="btn">Plan</span>. Note the “90% of cases” SIP.</li>
+            <li><b>What to expect</b>: enter that SIP and look at the worst case and deepest fall for your years, so nothing surprises you.</li>
+            <li><b>Index-fund picker</b>: choose NIFTY 50 and pick one of the top few funds (direct plan, growth).</li>
+            <li>Start the SIP in your own broker or fund app. This app does not invest for you.</li>
+          </ol>
+        </div>
+        <div class="task">
+          <h3>“I own shares. What tax would I pay?”</h3>
+          <ol>
+            <li>My money → <b>My portfolio</b>: import your tradebook or add each purchase.</li>
+            <li>Press <span class="btn">Refresh analysis</span>.</li>
+            <li>Read “tax if sold today”, the unused part of the ₹1.25 lakh exemption, and the harvesting plan.</li>
+            <li>Before March 31 each year, check the harvesting suggestions with a tax professional.</li>
+          </ol>
+        </div>
+        <div class="task">
+          <h3>“I want to buy a Call or Put option”</h3>
+          <ol>
+            <li><b>Call / Put payoff odds</b>: enter the option and your broker’s price, press <span class="btn">Calculate odds</span>.</li>
+            <li>If the chance of profit is about 1 in 3 or lower, expect to lose the premium most times.</li>
+            <li><b>Big-move odds</b>: is a large move more likely than usual right now?</li>
+            <li>Only spend an amount you are fully prepared to lose.</li>
+          </ol>
+        </div>
+        <div class="task">
+          <h3>“Will NIFTY or my stock go up or down today?”</h3>
+          <ol>
+            <li>My money → <b>Call / Put prediction</b>: enter the symbol and press <span class="btn">Fetch + get probabilities</span>.</li>
+            <li>Read the Call / Put / Sideways percentages, then scroll to the <b>Live scorecard</b> to see how often this card has been right.</li>
+            <li>Treat the answer as “nobody knows”: the record is not better than chance.</li>
+            <li>To plan for risk instead, check <b>Big-move odds</b> (is a big move likely?) and, before buying an option, <b>Call / Put payoff odds</b>.</li>
+          </ol>
+        </div>
+        <div class="task">
+          <h3>“I want to follow the YouTube strategy”</h3>
+          <ol>
+            <li>Research lab → <b>Same stocks every day</b>. Set <b>Your size</b>.</li>
+            <li>Watch <b>Today’s signals</b> during market hours, or ask “How did the strategy do today?”.</li>
+            <li>Check the <b>When can we trust it?</b> meter each week.</li>
+            <li>Do not use real money until it says it passed.</li>
+          </ol>
+        </div>
+        <div class="task">
+          <h3>“Is my own trading any good?”</h3>
+          <ol>
+            <li>Download your full tradebook from your broker.</li>
+            <li>My portfolio → <b>Import</b>, then <b>Did my trading beat NIFTY?</b> → <span class="btn">Check</span>.</li>
+            <li>If the index would have done better, consider putting more into an index fund and less into picking stocks.</li>
+          </ol>
+        </div>
+        <div class="task">
+          <h3>“What is happening in the market today?”</h3>
+          <ol>
+            <li>My money → <b>Today</b> → <span class="btn">Refresh</span> for alerts and volatility.</li>
+            <li>Or Ask the app: “Which is the best stock to invest today?”. You will get a market briefing with facts, not tips.</li>
+          </ol>
+        </div>
+      </div>
+    </section>
+
+    <!-- AUTO -->
+    <section class="part" id="auto">
+      <h2>What runs by itself</h2>
+      <div class="prose"><p>The Mac does these jobs automatically, as long as it is switched on and awake. You do not need to press anything.</p></div>
+      <div class="schedule">
+        <div><span class="when">Always</span><span>The app itself runs in the background whenever the Mac is logged in.</span></div>
+        <div><span class="when">10:00 · 13:00 · 15:00</span><span>On trading days: checks your watchlist and portfolio, data health and alerts. The 3 PM Friday run writes the weekly scorecard.</span></div>
+        <div><span class="when">16:05</span><span>On trading days: saves the day’s 5-minute price history, records the strategy’s paper trades and sends a Mac notification with the day’s result.</span></div>
+        <div><span class="when">18:30 daily</span><span>Backs up all the app’s data to a backup folder and iCloud.</span></div>
+        <div><span class="when">Saturday 10:00</span><span>Re-tests the models on the newest data, refreshes the NSE holiday list and the Market tilts table.</span></div>
+      </div>
+      <div class="callout">
+        <h3>Keep the Mac awake at 4 PM</h3>
+        <p>If the Mac is asleep at 16:05, that day’s data is missed. The owner can set an automatic wake-up once in Terminal:</p>
+        <p><code>sudo pmset repeat wakeorpoweron MTWRF 15:55:00</code></p>
+      </div>
+    </section>
+
+    <!-- SAFETY -->
+    <section class="part" id="safety">
+      <h2>Golden rules</h2>
+      <ol class="steps">
+        <li><div><b>Never trade real money because of an up/down guess</b>, from this app or anyone else. The app’s own tests show those guesses are no better than chance.</div></li>
+        <li><div><b>Use the app for risk, cost and tax decisions.</b> How much to invest, which fund, how big a position, how much tax: that is where it is reliable.</div></li>
+        <li><div><b>Paper-trade any new strategy first</b>, until it has enough trades to judge. The trust meter tells you when.</div></li>
+        <li><div><b>Only risk what you can afford to lose.</b> 1% of your capital per trade is a common limit, and the position-size calculator does the maths.</div></li>
+        <li><div><b>Expect bad years.</b> Every investment shown here had long losing stretches. Look at the “deepest fall” before you invest.</div></li>
+        <li><div><b>This is research and education, not financial advice.</b> For big decisions, speak to a SEBI-registered adviser and a tax professional.</div></li>
+      </ol>
+    </section>
+
+    <!-- FAQ -->
+    <section class="part" id="faq">
+      <h2>Problems and questions</h2>
+      <div class="faqs">
+        <details class="faq"><summary>The page will not open at 127.0.0.1:3000</summary><p>Wake the Mac and wait a minute; the app restarts by itself. If it still does not open, ask the owner to restart the Mac. The “Today” card will show “Dashboard server is not running” if the scheduled checks found it stopped.</p></details>
+        <details class="faq"><summary>A card shows a red “Error” message</summary><p>Usually the free data source (Yahoo or NSE) is busy or blocking for a few minutes. Wait and press the button again. A wrong symbol also causes this: use NSE symbols such as RELIANCE or TCS, or type the company name in Ask the app.</p></details>
+        <details class="faq"><summary>It says “OpenRouter has no credits”</summary><p>The AI writing features (news summaries, the Ask research box) use a paid AI service. Without credits the app uses free backup models, which are slower and sometimes unavailable. Everything else works normally.</p></details>
+        <details class="faq"><summary>Why are option prices or live option data missing?</summary><p>Live option prices for stocks need a paid Groww Trading API subscription. Without it, enter the premium and IV your broker shows into the card yourself.</p></details>
+        <details class="faq"><summary>The strategy shows “No trades yet”</summary><p>Paper trades are recorded only after the market closes (after 4:05 PM) on trading days. During the day, see “Today’s signals” instead.</p></details>
+        <details class="faq"><summary>Why does the app keep saying it cannot predict direction?</summary><p>Because it tested that thoroughly and it is true, for this app and, the evidence suggests, for almost everyone. The app would rather tell you plainly than give you confident numbers that lose money.</p></details>
+        <details class="faq"><summary>Is my portfolio data sent anywhere?</summary><p>No. Holdings and tradebooks are stored only on this Mac (and in its backups). The app only downloads public market data.</p></details>
+        <details class="faq"><summary>Can the app place an order for me?</summary><p>No. It has no ability to buy or sell. All trades shown are pretend (paper) trades.</p></details>
+      </div>
+    </section>
+  </main>
+</div>
+
+</body>
+</html>

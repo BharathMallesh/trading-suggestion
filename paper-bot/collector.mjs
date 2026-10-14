@@ -177,7 +177,14 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const args = process.argv.slice(2);
   await import('./settings.mjs');
   const { PAPER, EVAL_UNIVERSE, VIDEO_STOCKS } = await import('./config.mjs');
-  const symbols = [...new Set([...EVAL_UNIVERSE, ...PAPER.symbols, ...VIDEO_STOCKS, '^NSEI', '^INDIAVIX'])];
+  let nifty50 = [];
+  try {
+    const idx = JSON.parse(readFileSync(join(__dir, 'data', 'index-nifty50.json'), 'utf8'));
+    nifty50 = (idx.symbols || []).map((s) => (/\.(NS|BO)$/.test(s) ? s : `${s}.NS`));
+  } catch {
+    /* list not downloaded yet */
+  }
+  const symbols = [...new Set([...EVAL_UNIVERSE, ...PAPER.symbols, ...VIDEO_STOCKS, ...nifty50, '^NSEI', '^INDIAVIX'])];
   try {
     if (args.includes('--status')) {
       const st = storeStatus();

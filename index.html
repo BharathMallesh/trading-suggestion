@@ -79,6 +79,7 @@
       <div class="tabs" id="viewTabs" style="margin-top:10px">
         <button type="button" class="active" data-view="money">My money</button>
         <button type="button" data-view="lab">Research lab</button>
+        <a href="/guide" target="_blank" rel="noopener" style="margin-left:auto;align-self:center;font-weight:600;color:var(--accent);text-decoration:none;font-size:14px" title="Step-by-step guide to every card, for beginners">? Help &amp; guide</a>
       </div>
       <div id="labHint" class="note" style="margin-top:6px">More tools (Paper-Bot, Candle AI read, Ask, Kronos / Chronos, model tests…) are under <a href="#" id="labLink" style="color:var(--accent)">Research lab</a>.</div>
       <div class="note" id="viewNote">My money: your portfolio, tax, risk and what to expect — the parts that tested reliable. The Research lab holds the experiments (most found no edge).</div>
@@ -101,6 +102,16 @@
           <button type="button" class="aaChip" style="margin:0;padding:4px 10px;background:var(--soft);color:var(--ink);border:1px solid var(--line)">Which index fund?</button>
         </div>
         <div id="aaOut" style="margin-top:12px"></div>
+      </section>
+
+      <!-- Analyse today: NIFTY 50 trend scan with the past follow-through record -->
+      <section class="card span2" data-view="money" id="scanCard">
+        <h2>Analyse today <span style="font-size:12px;color:var(--warn);font-weight:500">NIFTY 50 · WHAT EACH STOCK IS DOING NOW · WITH THE PAST RECORD</span></h2>
+        <p class="hint">One click scans the NIFTY 50 stocks on today's 5-minute candles: which are trending up, which are trending down, how well the trend lines up with the
+          daily trend, the morning move and NIFTY, and any fresh setup for the VWAP + 20 MA strategy. Next to each stock: how often stocks in the same situation, at the same time of day,
+          kept going that way until 3:15 PM over the last ~40 trading days.</p>
+        <button id="scanBtn" type="button">Analyse today</button>
+        <div id="scanOut" style="margin-top:12px"></div>
       </section>
 
       <!-- Today: everything an investor checks, on one screen -->
@@ -1735,6 +1746,46 @@
       });
       for (const chip of document.querySelectorAll('.aaChip')) chip.addEventListener('click', () => aaAsk(chip.textContent));
 
+      // --- Analyse today ---
+      async function scanRun() {
+        $('scanBtn').disabled = true;
+        $('scanOut').innerHTML = '<div class="note">Scanning the NIFTY 50 stocks (10–20 seconds)…</div>';
+        try {
+          const d = await api('/api/today-scan');
+          const pc = (x) => (x == null ? '–' : Math.round(x * 100) + '%');
+          const sg = (x, k = 2) => (x == null ? '–' : (x >= 0 ? '+' : '') + x.toFixed(k) + '%');
+          const chip = (l) => {
+            const c = { strong: 'var(--up)', partial: 'var(--accent)', weak: 'var(--muted)', mixed: 'var(--muted)' }[l];
+            const t = { strong: 'Strong: trend, daily trend and morning/NIFTY agree', partial: 'Partial: some agree', weak: 'Weak: only today’s trend', mixed: 'No clear trend' }[l];
+            return `<span title="${t}" style="display:inline-block;padding:1px 8px;border-radius:999px;border:1px solid ${c};color:${c};font-size:11px;font-weight:600">${l}</span>`;
+          };
+          const h = d.history;
+          const lvl = h?.byLevel || {};
+          let html = `<div style="font-size:14px"><b>${d.live ? 'Live' : 'Last session'} · ${esc(d.date)} · candles to ${esc(d.lastBar)}</b> · NIFTY trending <b style="color:${d.nifty.trend === 'up' ? 'var(--up)' : d.nifty.trend === 'down' ? 'var(--down)' : 'var(--muted)'}">${esc(d.nifty.trend)}</b> ·
+            <span style="color:var(--up)">${d.counts.up} up</span> · <span style="color:var(--down)">${d.counts.down} down</span> · ${d.counts.mixed} mixed</div>`;
+          if (h) html += `<div style="margin:10px 0;padding:10px 12px;border-radius:10px;border:1px solid var(--warn);background:var(--soft);font-size:13px">
+            <b>Will they keep going?</b> Over the last ${h.sessions} trading days (${h.stocks} stocks), at about ${esc(h.checkTime)}:
+            strong trends kept going until 3:15 PM <b>${pc(lvl.strong?.continued)}</b> of the time (average further move ${sg(lvl.strong?.avgMovePct)}), partial ${pc(lvl.partial?.continued)}, weak ${pc(lvl.weak?.continued)}.
+            <b>That is close to a coin flip (50%)</b>, and the average move is smaller than trading costs (about 0.1% a round trip). So "trending up" describes now, not the rest of the day.</div>`;
+          const table = (rows, title, color) => !rows.length ? '' : `<div style="font-size:14px;margin-top:12px;color:${color}"><b>${title}</b> (${rows.length})</div>
+            <div style="overflow-x:auto"><table style="font-size:12px"><thead><tr><th style="text-align:left">Stock</th><th>Price</th><th>Today</th><th>Trend since</th><th>Alignment</th><th>Daily trend</th><th>Morning move</th><th>Past cases kept going*</th><th style="text-align:left">Strategy setup</th></tr></thead><tbody>${rows.map((x) =>
+              `<tr><td style="text-align:left"><b>${esc(x.symbol.replace('.NS', ''))}</b>${x.video ? ' <span class="note" style="display:inline">video stock</span>' : ''}</td><td>${x.price.toFixed(1)}</td><td style="color:${(x.changePct ?? 0) >= 0 ? 'var(--up)' : 'var(--down)'}">${sg(x.changePct)}</td><td>${esc(x.since)}</td><td>${chip(x.alignment)}</td><td>${esc(x.dailyTrend || '–')}</td><td>${sg(x.gapPct)}</td><td>${x.history ? pc(x.history.continued) : '–'}</td><td style="text-align:left">${x.setup ? `<b>${x.setup.side === 'long' ? 'Buy' : 'Short'} setup ${esc(x.setup.time)}</b>: entry ${x.setup.entry.toFixed(1)}, stop ${x.setup.stop.toFixed(1)}, target ${x.setup.target.toFixed(1)}` : x.trend === 'mixed' ? 'no trade (mixed)' : `wait for a pullback to the 20 MA (${x.trend === 'up' ? 'buys' : 'shorts'} only)`}</td></tr>`).join('')}</tbody></table></div>`;
+          const setups = d.stocks.filter((x) => x.setup);
+          if (setups.length) html += `<div style="margin-top:10px;font-size:13px"><b>Fresh strategy setups (last 15 minutes):</b> ${setups.map((x) => `${esc(x.symbol.replace('.NS', ''))} ${x.setup.side === 'long' ? 'buy' : 'short'} at ${x.setup.entry.toFixed(1)}`).join(' · ')}. Past signals like these ended in profit about 38% of the time.</div>`;
+          html += table(d.stocks.filter((x) => x.trend === 'up'), 'Trending up now: above its 20-candle average and VWAP', 'var(--up)');
+          html += table(d.stocks.filter((x) => x.trend === 'down'), 'Trending down now: below its 20-candle average and VWAP', 'var(--down)');
+          const mixed = d.stocks.filter((x) => x.trend === 'mixed');
+          if (mixed.length) html += `<div class="note" style="margin-top:10px"><b>No clear trend (${mixed.length}):</b> ${mixed.map((x) => esc(x.symbol.replace('.NS', ''))).join(', ')}</div>`;
+          html += `<div class="note">* Share of past cases (same time of day, same alignment) where the stock was further in that direction at 3:15 PM. ${esc(d.note)}</div>`;
+          $('scanOut').innerHTML = html;
+        } catch (e) {
+          $('scanOut').innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
+        } finally {
+          $('scanBtn').disabled = false;
+        }
+      }
+      $('scanBtn').addEventListener('click', scanRun);
+
       // --- My money / Research lab views ---
       const MONEY_CARDS = ['todayCard'];
       const MONEY_TITLES = /^(Today|My portfolio|What to expect|Market data|Option calculator|Live candles|Big-move odds|Call \/ Put payoff odds|Volatility check|Strategies|Settings)/;
@@ -2157,13 +2208,15 @@
               <div style="height:8px;background:var(--soft);border-radius:4px;overflow:hidden"><div style="height:100%;width:${Math.round(x.trust.progress * 100)}%;background:${col[x.trust.level]}"></div></div>
               <div class="note" style="color:${x.trust.level === 'early' ? 'var(--muted)' : col[x.trust.level]}">${esc(x.trust.verdict)}</div></div>`).join('');
         }
+        const unseen = Object.values(p.byVariant || {}).filter((x) => x.live?.notSeen);
+        if (unseen.length) html += `<div class="note" style="color:var(--warn)">Seen live check: ${unseen.map((x) => `${esc(x.label.split(':')[0])}: ${x.live.notSeen} of ${x.live.checked} recorded trades were not visible during the day (net ${rs(x.live.netNotSeen)})`).join(' · ')}. Yahoo corrected those candles after the close, so a live trader could not have taken them.</div>`;
         const yours = Object.values(p.byVariant || {}).filter((x) => x.yours?.trades);
         if (yours.length) html += `<div class="note" style="color:var(--ink)"><b>At your size</b> (${esc(sizeLabel())}): ${yours.map((x) => `${esc(x.label.split(':')[0])} ${x.yours.trades} trades, total <b style="color:${x.yours.totalNetRs >= 0 ? 'var(--up)' : 'var(--down)'}">${rs(x.yours.totalNetRs)}</b>`).join(' · ')}</div>`;
         const anyPaper = Object.values(p.byVariant || {}).some((x) => x.trades);
         if (anyPaper) {
           html += head + Object.values(p.byVariant).map((x) => row(x.label, x)).join('') + '</tbody></table>' +
             `<table style="font-size:12px"><thead><tr><th style="text-align:left">Date</th><th>Stock</th><th>Side</th><th>Entry</th><th>Exit</th><th>Why</th><th>Net</th></tr></thead><tbody>${p.trades.map((t) =>
-              `<tr><td style="text-align:left">${esc(t.date)} ${esc(t.time)} <span style="color:var(--muted);font-size:11px">${esc(t.variant || 'video')}</span></td><td>${esc(t.symbol.replace('.NS', ''))}</td><td>${esc(t.side)}</td><td>${t.entry.toFixed(2)}</td><td>${t.exit.toFixed(2)}</td><td>${esc(t.reason)}</td><td style="color:${t.net >= 0 ? 'var(--up)' : 'var(--down)'}">${rs(t.net)}</td></tr>`).join('')}</tbody></table>`;
+              `<tr><td style="text-align:left">${esc(t.date)} ${esc(t.time)} <span style="color:var(--muted);font-size:11px">${esc(t.variant || 'video')}</span></td><td>${esc(t.symbol.replace('.NS', ''))}</td><td>${esc(t.side)}</td><td>${t.entry.toFixed(2)}</td><td>${t.exit.toFixed(2)}</td><td>${esc(t.reason)}${t.seenLive === false ? ' <span style="color:var(--warn)" title="Not visible during the day: Yahoo corrected the candles after the close">· not seen live</span>' : ''}</td><td style="color:${t.net >= 0 ? 'var(--up)' : 'var(--down)'}">${rs(t.net)}</td></tr>`).join('')}</tbody></table>`;
         } else html += '<div class="note">No paper trades recorded yet.</div>';
         $('vpbOut').innerHTML = html;
       }

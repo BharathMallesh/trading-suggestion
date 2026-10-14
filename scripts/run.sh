@@ -55,7 +55,9 @@ case "${1:-}" in
     # NSE holiday list (exchange calendar for health checks, alerts and market-open status)
     node paper-bot/market-calendar.mjs --refresh >/dev/null
     # Factor lab: NSE momentum / quality / low-vol / value indices vs NIFTY (adds each new month-end)
-    node paper-bot/factor-lab.mjs >/dev/null ;;
+    node paper-bot/factor-lab.mjs >/dev/null
+    # "Analyse today": how often trends kept going, by time of day and alignment
+    node paper-bot/today-scan.mjs >/dev/null ;;
   backup)
     caffeinate -i -w $$ & # keep the Mac awake until this job finishes
     echo "$(date '+%F %T') backup"; node paper-bot/backup.mjs ;;

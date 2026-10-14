@@ -37,7 +37,7 @@ test('health: flags missing key, empty store, missing calibration; fails on mark
   assert.equal(by.calibration.level, 'warn');
   assert.equal(h.level, 'warn');
   assert.ok(!JSON.stringify(h).includes('sk-or'), 'never leaks a key');
-  const bad = await healthChecks({ quoteFn: async () => { throw new Error('Market data is rate-limiting requests'); }, newsProbe: async () => 0 });
+  const bad = await healthChecks({ quoteFn: async () => { throw new Error('Market data is rate-limiting requests'); }, newsProbe: async () => 0, newsRetryMs: 0 });
   assert.equal(bad.level, 'fail');
   assert.match(bad.checks[0].detail, /rate-limiting/);
 });

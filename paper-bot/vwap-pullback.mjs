@@ -397,15 +397,45 @@ export async function niftyContext(loadCandles, p1) {
 export async function dailyContext(loadCandles, sym) {
   try {
     const rows = (await loadCandles(sym, { range: '1y', interval: '1d' })).filter((r) => r.close > 0);
-    const m = new Map();
-    for (let i = 21; i < rows.length; i++) {
-      const prev = rows.slice(i - 20, i).map((r) => r.close);
-      m.set(rows[i].date, { aboveAvg20: rows[i - 1].close > prev.reduce((a, b) => a + b, 0) / 20 });
-    }
-    return m;
+    return dailyTrendLookup(rows);
   } catch {
     return new Map();
   }
+}
+
+/**
+ * Daily trend for any session date d: the last daily close BEFORE d vs the
+ * average of the 20 closes up to it. Works even when the data source is
+ * missing the daily bar for d itself (Yahoo sometimes drops a day).
+ */
+export function dailyTrendLookup(rows) {
+  const dates = rows.map((r) => r.date);
+  const cache = new Map();
+  return {
+    get(d) {
+      if (cache.has(d)) return cache.get(d);
+      let lo = 0;
+      let hi = dates.length - 1;
+      let last = -1;
+      while (lo <= hi) {
+        const mid = (lo + hi) >> 1;
+        if (dates[mid] < d) {
+          last = mid;
+          lo = mid + 1;
+        } else hi = mid - 1;
+      }
+      let out;
+      if (last >= 20) {
+        const prev = rows.slice(last - 19, last + 1).map((r) => r.close);
+        out = { aboveAvg20: rows[last].close > prev.reduce((a, b) => a + b, 0) / 20 };
+      }
+      cache.set(d, out);
+      return out;
+    },
+    has(d) {
+      return this.get(d) !== undefined;
+    },
+  };
 }
 
 /**
@@ -537,7 +567,7 @@ export async function paperUpdate({ loadCandles = candles, now = new Date() } = 
     for (const x of fresh) {
       const already = st.trades.filter((y) => (y.variant || 'video') === key && y.date === x.date).length;
       if (already < v.rules.maxPerDay) {
-        st.trades.push({ ...x, variant: key });
+        st.trades.push({ ...x, variant: key, seenLive: seenLiveFor({ ...x, variant: key }) });
         added++;
       }
     }
@@ -678,13 +708,56 @@ export async function todaySignals({ loadCandles = candles, now = new Date(), si
   };
 }
 
+// ---------------------------------------------- seen live vs recorded ---
+// Yahoo sometimes corrects intraday candles after the close, so a trade in the
+// after-close record may never have been visible to someone watching live.
+// During the session the server snapshots today's signals every 5 minutes;
+// each recorded trade is then marked seenLive true / false (null = no snapshots that day).
+const SEEN = () => process.env.VWAP_SEEN_PATH || join(dirname(fileURLToPath(import.meta.url)), 'data', 'vwap-live-seen.json');
+const seenKey = (date, variant, t) => `${date}|${variant}|${t.symbol}|${t.side}`;
+export function loadSeen() {
+  try {
+    return existsSync(SEEN()) ? JSON.parse(readFileSync(SEEN(), 'utf8')) : { days: {}, keys: {} };
+  } catch {
+    return { days: {}, keys: {} };
+  }
+}
+/** Record the trades visible in a live snapshot (from todaySignals). */
+export function noteLiveSeen(sig, now = new Date()) {
+  if (!sig?.live || !sig.date) return 0;
+  const st = loadSeen();
+  st.days[sig.date] = (st.days[sig.date] || 0) + 1;
+  let added = 0;
+  for (const [k, v] of Object.entries(sig.variants || {})) {
+    for (const t of v.trades || []) {
+      const key = seenKey(sig.date, k, t);
+      if (!st.keys[key]) {
+        st.keys[key] = { firstSeen: now.toISOString(), time: t.time };
+        added++;
+      }
+    }
+  }
+  const cutoff = new Date(now.getTime() - 120 * 86400000).toISOString().slice(0, 10);
+  for (const d of Object.keys(st.days)) if (d < cutoff) delete st.days[d];
+  for (const key of Object.keys(st.keys)) if (key.slice(0, 10) < cutoff) delete st.keys[key];
+  writeJsonAtomic(SEEN(), st);
+  return added;
+}
+/** true = visible live, false = only after the close, null = no live snapshots that day. */
+export function seenLiveFor(t, seen = loadSeen()) {
+  if (!seen.days?.[t.date]) return null;
+  return !!seen.keys?.[seenKey(t.date, t.variant || 'video', t)];
+}
+
 export function paperSummary(st = loadPaper(), sizing = null) {
   if (!st) return { startedAt: null, summary: { trades: 0 }, byVariant: {}, trades: [] };
   const byVariant = Object.fromEntries(Object.entries(PAPER_VARIANTS).map(([k, v]) => {
     const mine = st.trades.filter((x) => (x.variant || 'video') === k);
     const sum = summarise(mine);
     // the record is kept at the standard ₹1,000 risk; "yours" re-sizes it to your capital / risk %
-    return [k, { label: v.label, ...sum, trust: trustMeter(sum), ...(sizing ? { yours: summarise(resizeTrades(mine, sizing)) } : {}) }];
+    const checked = mine.filter((x) => x.seenLive != null);
+    const live = { checked: checked.length, notSeen: checked.filter((x) => x.seenLive === false).length, netNotSeen: checked.filter((x) => x.seenLive === false).reduce((a, x) => a + x.net, 0) };
+    return [k, { label: v.label, ...sum, trust: trustMeter(sum), live, ...(sizing ? { yours: summarise(resizeTrades(mine, sizing)) } : {}) }];
   }));
   return { startedAt: st.startedAt, updatedAt: st.updatedAt, summary: byVariant.video, byVariant, trades: st.trades.slice(-20).reverse() };
 }

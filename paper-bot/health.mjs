@@ -66,10 +66,16 @@ export async function healthChecks(opts = {}) {
 
   // 2. News feed
   try {
-    const n = await (opts.newsProbe || (async () => {
+    const probe = opts.newsProbe || (async () => {
       const res = await fetch('https://news.google.com/rss/search?q=NIFTY%20when:2d&hl=en-IN&gl=IN&ceid=IN:en', { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(15_000) });
       return res.ok ? (await res.text()).split('<item>').length - 1 : 0;
-    }))();
+    });
+    // one retry after a short pause: Google News occasionally returns an empty page for a moment
+    let n = await probe().catch(() => 0);
+    if (!(n > 0)) {
+      await new Promise((r) => setTimeout(r, opts.newsRetryMs ?? 3000));
+      n = await probe();
+    }
     out.push(check('news feed', n > 0 ? 'ok' : 'warn', n > 0 ? `${n} recent market headlines` : 'news feed returned nothing'));
   } catch (err) {
     out.push(check('news feed', 'warn', err.message.slice(0, 120)));

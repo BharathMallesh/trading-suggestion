@@ -293,7 +293,7 @@ export async function strategyAnswer(symbol = null, { loadSignals = todaySignals
 export function helpAnswer() {
   return {
     intent: 'help', title: 'What you can ask',
-    summary: ['Try: "Which is the best stock to invest today?", "Tell me about Reliance", "What will happen to TCS?", "NIFTY call put this week", "Options on INFY", "Which index fund?", "How did the strategy do today?", "Any signal on Trent?"'],
+    summary: ['Try: "Which is the best stock to invest today?", "Tell me about Reliance", "What will happen to TCS?", "NIFTY call put this week", "Options on INFY", "Which index fund?", "How did the strategy do today?", "Any signal on Trent?"', 'New to all this? Open "Help & guide" at the top of the page: it explains every card and word step by step.'],
     sections: [], caveat: NO_DIRECTION,
   };
 }
