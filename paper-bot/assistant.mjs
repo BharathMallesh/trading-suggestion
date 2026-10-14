@@ -144,7 +144,7 @@ export async function briefing({ symbols }) {
     hot.length ? `Unusually likely to swing a lot this week: ${hot.join(', ')} — higher risk either way, not an opportunity.` : 'No watchlist stock is unusually risky right now (none at 1.5× its usual chance of a big move).',
     opts.length && !opts[0].error ? `NIFTY weekly at-the-money Call: ${pct(opts[0].probProfit.forecastHistory ?? opts[0].probProfit.forecastNormal, 0)} chance of ending profitable; Put: ${pct(opts[1].probProfit.forecastHistory ?? opts[1].probProfit.forecastNormal, 0)}. Option buyers usually win about 1 time in 3.`
       : null,
-    'For long-term investing, the evidence favours a low-cost index fund held 10+ years — see "Index-fund picker" and "Goal planner".',
+    'For long-term investing, the evidence favours a low-cost index fund held 10+ years — see "Index-fund picker" and "Goal planner" in the Investing tab.',
   ].filter(Boolean);
   return {
     intent: 'briefing',
@@ -249,7 +249,7 @@ export async function fundsAnswer() {
     heading: `${c.label}: best 3 by what investors actually got (3 years)`, kind: 'table', columns: ['Fund', 'Type', '3y / yr', 'Gap to best', 'Tracking error'],
     rows: c.funds.slice(0, 3).map((f) => [f.name, f.type, pct(f.r3, 2), pct(f.gap3, 2), pct(f.te, 2)]),
   }));
-  return { intent: 'funds', title: 'Index funds', summary: ['Funds on the same index should return the same; the gap to the best is what costs and tracking took. The top few are within a few hundredths of a percent — any of them is fine. Full list in "Index-fund picker".'], sections, caveat: 'Not a recommendation of any fund; check the expense ratio and (for ETFs) trading liquidity.' };
+  return { intent: 'funds', title: 'Index funds', summary: ['Funds on the same index should return the same; the gap to the best is what costs and tracking took. The top few are within a few hundredths of a percent — any of them is fine. Full list in "Index-fund picker" (Investing tab).'], sections, caveat: 'Not a recommendation of any fund; check the expense ratio and (for ETFs) trading liquidity.' };
 }
 
 const rs = (v) => (v == null ? '–' : `${v < 0 ? '−' : '+'}₹${Math.abs(Math.round(v)).toLocaleString('en-IN')}`);
@@ -309,7 +309,7 @@ export async function ask(question, { symbols = [] } = {}) {
   if (intent === 'stock') return stockReport(symbol);
   if (intent === 'options') return optionsAnswer(symbol || '^NSEI');
   if (intent === 'funds') return fundsAnswer();
-  if (intent === 'goal') return { intent: 'goal', title: 'Goal planner', summary: ['Use the "Goal planner" card below: enter your target, years and planned SIP to see what worked in every past start month.'], sections: [], caveat: 'Past ranges, not a promise.' };
+  if (intent === 'goal') return { intent: 'goal', title: 'Goal planner', summary: ['Open the Investing tab → "Goal planner": enter your target, years and planned SIP to see what worked in every past start month.'], sections: [], caveat: 'Past ranges, not a promise.' };
   if (intent === 'briefing') return briefing({ symbols });
   return helpAnswer();
 }

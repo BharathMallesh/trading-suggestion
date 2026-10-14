@@ -147,7 +147,8 @@ details.faq p { margin-top: 8px; color: var(--muted); }
       <li><a href="#trust">The three trust levels</a></li>
       <li><a href="#words">Words you will see</a></li>
       <li class="label">Screens</li>
-      <li><a href="#money">My money view</a></li>
+      <li><a href="#money">Home, portfolio, investing, options tabs</a></li>
+      <li class="sub"><a href="#t-scan">Analyse today</a></li>
       <li class="sub"><a href="#t-ask">Ask the app</a></li>
       <li class="sub"><a href="#t-today">Today</a></li>
       <li class="sub"><a href="#t-portfolio">My portfolio</a></li>
@@ -158,7 +159,7 @@ details.faq p { margin-top: 8px; color: var(--muted); }
       <li class="sub"><a href="#t-predict">Call / Put prediction</a></li>
       <li class="sub"><a href="#t-callput">Call / Put payoff odds</a></li>
       <li class="sub"><a href="#t-bigmove">Big-move odds</a></li>
-      <li><a href="#lab">Research lab view</a></li>
+      <li><a href="#lab">Intraday strategy &amp; Research lab tabs</a></li>
       <li class="sub"><a href="#t-vwap">YouTube strategy: where it is</a></li>
       <li class="sub"><a href="#t-vwap-how">YouTube strategy: how it works</a></li>
       <li class="sub"><a href="#t-labothers">All other lab cards</a></li>
@@ -185,7 +186,7 @@ details.faq p { margin-top: 8px; color: var(--muted); }
       </div>
       <div class="callout">
         <h3>The one-paragraph summary</h3>
-        <p>Looking for the <b>YouTube intraday strategy</b>? It is in Research lab → “Same stocks every day”, explained <a href="#t-vwap">here</a>. Looking for the <b>Call / Put prediction</b>? It is in My money, explained <a href="#t-predict">here</a>.</p>
+        <p>Looking for the <b>YouTube intraday strategy</b>? It is in the <b>Intraday strategy</b> tab → “Same stocks every day”, explained <a href="#t-vwap">here</a>. Looking for the <b>Call / Put prediction</b>? It is in the <b>Options &amp; risk</b> tab, explained <a href="#t-predict">here</a>.</p>
         <p>The parts of this app you can rely on are about <b>risk, cost, tax and long-term investing</b>: how much a stock usually moves, the real chance an option pays off, what a monthly investment (SIP) in an index fund has done in good and bad periods, which index fund kept the most of its returns, and how to save tax. The parts about <b>short-term trading and up/down guesses</b> are kept in the Research lab as experiments, clearly labelled, so you can see what was tried and why it did not work.</p>
       </div>
     </section>
@@ -196,18 +197,16 @@ details.faq p { margin-top: 8px; color: var(--muted); }
       <ol class="steps">
         <li><div>The app runs on the owner’s Mac. It starts by itself when the Mac is switched on and someone logs in, so there is usually nothing to start.</div></li>
         <li><div>Open a web browser (Safari or Chrome) on that Mac and go to <code>http://127.0.0.1:3000</code>. Bookmark it.</div></li>
-        <li><div>At the top you will see two buttons: <span class="btn">My money</span> and <span class="btn">Research lab</span>. These switch between the two halves of the app. The app remembers which one you used last.</div></li>
+        <li><div>At the top you will see six tabs: <span class="btn">Home</span> <span class="btn">My portfolio</span> <span class="btn">Investing</span> <span class="btn">Options &amp; risk</span> <span class="btn">Intraday strategy</span> <span class="btn">Research lab</span>. Each tab shows a different group of cards. The app remembers the last tab you used, and a grey line under the tabs says what the current tab is for. On the far right, <span class="btn">? Help &amp; guide</span> opens this guide.</div></li>
         <li><div>Each box on the page is called a <b>card</b>. Every card has a title, a short grey explanation under it, and its own buttons. Results appear inside the card after you press a button. Some cards fill in by themselves when the page opens.</div></li>
       </ol>
       <div class="views">
-        <div class="view">
-          <h3>My money</h3>
-          <p>For everyday investors: your own shares, tax, what to expect from investing, choosing a fund, option odds and risk. Start here.</p>
-        </div>
-        <div class="view">
-          <h3>Research lab</h3>
-          <p>Every experiment the app has run, including the ones that found nothing useful: up/down prediction, AI models, the YouTube intraday strategy, option selling. Interesting, but not a basis for decisions.</p>
-        </div>
+        <div class="view"><h3>Home</h3><p>Start here every day: <b>Ask the app</b>, the <b>Analyse today</b> button and the <b>Today</b> alerts card.</p></div>
+        <div class="view"><h3>My portfolio</h3><p>The shares you own: tax if you sold today, tax harvesting, risk, and whether your trading beat NIFTY.</p></div>
+        <div class="view"><h3>Investing</h3><p>Long-term money: what SIPs have done, a goal planner, the index-fund picker, market tilts and two slow strategies.</p></div>
+        <div class="view"><h3>Options &amp; risk</h3><p>Call / Put payoff odds, the Call / Put prediction, big-move odds, volatility, an option calculator and option selling.</p></div>
+        <div class="view"><h3>Intraday strategy</h3><p>The YouTube VWAP + 20 MA strategy: today’s signals, your trade size and the paper record.</p></div>
+        <div class="view"><h3>Research lab</h3><p>Every other experiment, mostly ones that found no edge, plus market data and settings.</p></div>
       </div>
       <div class="callout warn">
         <h3>If the page does not load</h3>
@@ -280,11 +279,12 @@ details.faq p { margin-top: 8px; color: var(--muted); }
 
     <!-- MY MONEY -->
     <section class="part" id="money">
-      <h2>My money view</h2>
-      <div class="prose"><p>Press <span class="btn">My money</span> at the top. The main cards are explained below. The smaller cards that also sit in this view (Market data, Option calculator, Strategies, Volatility check, Settings) are described in <a href="#t-labothers">All other cards</a>.</p></div>
+      <h2>Home, My portfolio, Investing and Options &amp; risk tabs</h2>
+      <div class="prose"><p>These four tabs hold the tools for everyday investors. Each card below shows which tab it is in. The smaller cards (Market data, Option calculator, Volatility check, Selling volatility, Settings) are described in <a href="#t-labothers">All other cards</a>.</p></div>
       <div class="cards">
 
         <article class="tool" id="t-ask">
+          <div class="eyebrow">Tab: Home</div>
           <header><h3>Ask the app</h3><span class="badge b-good">Reliable facts</span></header>
           <p class="what">Type a question in plain English and the app answers using its tested tools. The easiest place to start.</p>
           <div class="cols">
@@ -294,7 +294,28 @@ details.faq p { margin-top: 8px; color: var(--muted); }
           <div class="example"><b>Good to know:</b> asking “what will happen” gives facts about risk (how much it usually moves, the chance of a big move, recent news), not a prediction of up or down. The app will say clearly that direction cannot be predicted.</div>
         </article>
 
+        <article class="tool" id="t-scan">
+          <div class="eyebrow">Tab: Home</div>
+          <header><h3>Analyse today</h3><span class="badge b-care">Describes now, not later</span></header>
+          <p class="what">One button that scans the NIFTY 50 stocks (plus the strategy’s four stocks) on today’s 5-minute candles and shows which are trending up, which are trending down, and which have no clear trend.</p>
+          <div class="cols">
+            <div><h4>Steps</h4><ol><li>Open the <b>Home</b> tab.</li><li>Press <span class="btn">Analyse today</span>. The scan takes 10–20 seconds.</li><li>Read the top line, the orange “Will they keep going?” box, then the two tables.</li></ol></div>
+            <div><h4>How to read it</h4><ul>
+              <li><b>Top line:</b> whether NIFTY is trending up, down or mixed, and how many stocks are up / down / unclear.</li>
+              <li><b>Trending up now</b> = the price is above both its 20-candle average and VWAP. <b>Trending down now</b> = below both.</li>
+              <li><b>Alignment:</b> <i>strong</i> = today’s trend, the daily trend and the morning move or NIFTY all agree; <i>partial</i> = some agree; <i>weak</i> = only today’s trend. Strongest are listed first.</li>
+              <li><b>Strategy setup:</b> a fresh YouTube-strategy signal with entry, stop and target, or “wait for a pullback”.</li>
+            </ul></div>
+            <div><h4>Will they keep going?</h4><ul>
+              <li>Each row shows how often stocks in the same situation, at the same time of day, were still moving that way at 3:15 PM over the last ~40 trading days.</li>
+              <li>Even <b>strong</b> trends kept going only about <b>54%</b> of the time, with an average further move smaller than trading costs. That is close to a coin flip.</li>
+              <li>So the list tells you what is happening <b>now</b>. It is not a list of stocks to buy or sell.</li>
+            </ul></div>
+          </div>
+        </article>
+
         <article class="tool" id="t-today">
+          <div class="eyebrow">Tab: Home</div>
           <header><h3>Today</h3><span class="badge b-good">Reliable</span></header>
           <p class="what">One screen with everything the app checked recently: alerts, whether its data is healthy, market volatility, results announcements, and the weekly scorecard.</p>
           <div class="cols">
@@ -304,6 +325,7 @@ details.faq p { margin-top: 8px; color: var(--muted); }
         </article>
 
         <article class="tool" id="t-portfolio">
+          <div class="eyebrow">Tab: My portfolio</div>
           <header><h3>My portfolio</h3><span class="badge b-good">Reliable</span></header>
           <p class="what">Enter the shares you actually own. The app works out the tax if you sold today, how to use the yearly ₹1.25 lakh tax-free gain, losses that could cancel taxable gains, how much your holdings typically swing, and what past crashes would do to them. Your data stays on this Mac.</p>
           <div class="cols">
@@ -315,6 +337,7 @@ details.faq p { margin-top: 8px; color: var(--muted); }
         </article>
 
         <article class="tool" id="t-expect">
+          <div class="eyebrow">Tab: Investing</div>
           <header><h3>What to expect</h3><span class="badge b-good">Reliable</span></header>
           <p class="what">What really happened to money left in an index for 3, 5, 10 or 15 years, for every possible starting month since 1997: the worst, typical and best results, and the deepest fall you would have had to sit through.</p>
           <div class="cols">
@@ -324,6 +347,7 @@ details.faq p { margin-top: 8px; color: var(--muted); }
         </article>
 
         <article class="tool" id="t-goal">
+          <div class="eyebrow">Tab: Investing</div>
           <header><h3>Goal planner</h3><span class="badge b-good">Reliable</span></header>
           <p class="what">How much to invest every month to reach a target, judged on every past starting month, including the bad ones.</p>
           <div class="cols">
@@ -333,6 +357,7 @@ details.faq p { margin-top: 8px; color: var(--muted); }
         </article>
 
         <article class="tool" id="t-tilts">
+          <div class="eyebrow">Tab: Investing</div>
           <header><h3>Market tilts</h3><span class="badge b-care">Use with care</span></header>
           <p class="what">Compares NSE’s special indices (momentum, quality, low volatility, value, alpha, midcap, smallcap) with NIFTY 50 since 2012, using only data NSE actually published. It shows how much extra each earned per year, and the price paid for it.</p>
           <div class="cols">
@@ -342,6 +367,7 @@ details.faq p { margin-top: 8px; color: var(--muted); }
         </article>
 
         <article class="tool" id="t-funds">
+          <div class="eyebrow">Tab: Investing</div>
           <header><h3>Index-fund picker</h3><span class="badge b-good">Reliable</span></header>
           <p class="what">Every fund that tracks the same index should earn the same. This card shows which ones kept the most, using official daily fund prices.</p>
           <div class="cols">
@@ -351,8 +377,9 @@ details.faq p { margin-top: 8px; color: var(--muted); }
         </article>
 
         <article class="tool" id="t-predict">
+          <div class="eyebrow">Tab: Options &amp; risk</div>
           <header><h3>Call / Put prediction (card name: “Live candles → Ling probability”)</h3><span class="badge b-exp">Experiment: not better than chance</span></header>
-          <p class="what">This is the card that answers “will it go up or down?”. You pick a stock, and it shows three percentages: <b>Call (up)</b>, <b>Put (down)</b> and <b>Sideways</b> for the next few minutes, hours or day. It uses recent price candles, an AI model (Ling) and, optionally, news. It is kept in My money because it is the most-asked question, but read “What the record shows” before you rely on it.</p>
+          <p class="what">This is the card that answers “will it go up or down?”. You pick a stock, and it shows three percentages: <b>Call (up)</b>, <b>Put (down)</b> and <b>Sideways</b> for the next few minutes, hours or day. It uses recent price candles, an AI model (Ling) and, optionally, news. It sits in the Options &amp; risk tab because it is the most-asked question, but read “What the record shows” before you rely on it.</p>
           <div class="cols">
             <div><h4>Steps</h4><ol>
               <li>Choose a mode at the top: <span class="btn">15‑min only</span> looks at one timeframe; <span class="btn">Multi‑horizon mix</span> blends 2 months, 1 month, today, the last hour and the last 15 minutes.</li>
@@ -393,6 +420,7 @@ details.faq p { margin-top: 8px; color: var(--muted); }
         </div>
 
         <article class="tool" id="t-callput">
+          <div class="eyebrow">Tab: Options &amp; risk</div>
           <header><h3>Call / Put payoff odds</h3><span class="badge b-care">Use with care</span></header>
           <p class="what">Before buying an option: what is the real chance it ends above its breakeven by expiry? Based on how much the stock is expected to move, not on guessing direction. When tested, its “80%” happened about 79% of the time.</p>
           <div class="cols">
@@ -402,6 +430,7 @@ details.faq p { margin-top: 8px; color: var(--muted); }
         </article>
 
         <article class="tool" id="t-bigmove">
+          <div class="eyebrow">Tab: Options &amp; risk</div>
           <header><h3>Big-move odds</h3><span class="badge b-good">Reliable</span></header>
           <p class="what">The chance that the next day or week moves more than ±1%, ±2% and so on, up <i>or</i> down. The size of moves is predictable (busy periods cluster, results days are known); the direction is not.</p>
           <div class="cols">
@@ -414,19 +443,20 @@ details.faq p { margin-top: 8px; color: var(--muted); }
 
     <!-- LAB -->
     <section class="part" id="lab">
-      <h2>Research lab view</h2>
-      <div class="prose"><p>Press <span class="btn">Research lab</span> at the top. These cards are experiments. Most found that the idea does <b>not</b> work after costs, and the app says so. Cards with a grey “Tested: no reliable edge” note are moved to the bottom.</p></div>
+      <h2>Intraday strategy and Research lab tabs</h2>
+      <div class="prose"><p>The <b>Intraday strategy</b> tab holds the YouTube strategy. The <b>Research lab</b> tab holds every other experiment. Most found that the idea does <b>not</b> work after costs, and the app says so; cards with a grey “Tested: no reliable edge” note are listed last.</p></div>
       <div class="cards">
         <article class="tool" id="t-vwap">
+          <div class="eyebrow">Tab: Intraday strategy</div>
           <header><h3>Same stocks every day (the YouTube strategy)</h3><span class="badge b-exp">Experiment: paper only</span></header>
           <p class="what">An intraday trading strategy from the Dhan YouTube video “The Power of Trading the Same Stocks Every Day”, coded into the app exactly as the video describes. The app tests it honestly and follows it every day with pretend money.</p>
 
           <div class="callout">
             <h3>Where to find it</h3>
             <ol class="steps">
-              <li><div>Open the app and press <span class="btn">Research lab</span> at the top.</div></li>
-              <li><div>Scroll down to the card called <b>Same stocks every day</b> (subtitle “VWAP + 20 MA pullback · intraday · backtest + live paper”). It sits near the bottom, among the cards marked “Tested”.</div></li>
-              <li><div>Or ask in <b>Ask the app</b> (My money): “How did the strategy do today?” or “Any signal on Trent?”.</div></li>
+              <li><div>Open the app and press the <span class="btn">Intraday strategy</span> tab at the top.</div></li>
+              <li><div>The card called <b>Same stocks every day</b> (subtitle “VWAP + 20 MA pullback · intraday · backtest + live paper”) is the only card in that tab.</div></li>
+              <li><div>Or ask in <b>Ask the app</b> (Home tab): “How did the strategy do today?” or “Any signal on Trent?”.</div></li>
             </ol>
           </div>
 
@@ -485,7 +515,7 @@ details.faq p { margin-top: 8px; color: var(--muted); }
             <table>
               <thead><tr><th>Card</th><th>What it does</th><th>Trust</th></tr></thead>
               <tbody>
-                <tr><td class="term">Live candles → Ling probability</td><td>The Call / Put prediction card. Full explanation in <a href="#t-predict">My money → Call / Put prediction</a>.</td><td><span class="badge b-exp">Experiment</span></td></tr>
+                <tr><td class="term">Live candles → Ling probability</td><td>The Call / Put prediction card. Full explanation in <a href="#t-predict">Options &amp; risk → Call / Put prediction</a>.</td><td><span class="badge b-exp">Experiment</span></td></tr>
                 <tr><td class="term">Market data</td><td>Look up a price chart, quotes and news for any symbol. Press <span class="btn">Fetch</span>.</td><td><span class="badge b-good">Data</span></td></tr>
                 <tr><td class="term">Option calculator</td><td>Maths only: enter spot, strike, days, IV and see the option’s theoretical price, risk numbers (greeks) and payoff. No data fetched.</td><td><span class="badge b-good">Maths</span></td></tr>
                 <tr><td class="term">Strategies</td><td>Two slow, rule-based strategies run with pretend money against simply holding NIFTY: a trend filter (hold NIFTY above its 200-day average, otherwise a liquid fund) and a momentum top-20. Includes 10-year and 25-year tests.</td><td><span class="badge b-care">Use with care</span></td></tr>
@@ -517,16 +547,16 @@ details.faq p { margin-top: 8px; color: var(--muted); }
         <div class="task">
           <h3>“I want to start investing every month”</h3>
           <ol>
-            <li>My money → <b>Goal planner</b>: enter your target and years, press <span class="btn">Plan</span>. Note the “90% of cases” SIP.</li>
-            <li><b>What to expect</b>: enter that SIP and look at the worst case and deepest fall for your years, so nothing surprises you.</li>
-            <li><b>Index-fund picker</b>: choose NIFTY 50 and pick one of the top few funds (direct plan, growth).</li>
+            <li><b>Investing</b> tab → <b>Goal planner</b>: enter your target and years, press <span class="btn">Plan</span>. Note the “90% of cases” SIP.</li>
+            <li><b>What to expect</b> (same tab): enter that SIP and look at the worst case and deepest fall for your years, so nothing surprises you.</li>
+            <li><b>Index-fund picker</b> (same tab): choose NIFTY 50 and pick one of the top few funds (direct plan, growth).</li>
             <li>Start the SIP in your own broker or fund app. This app does not invest for you.</li>
           </ol>
         </div>
         <div class="task">
           <h3>“I own shares. What tax would I pay?”</h3>
           <ol>
-            <li>My money → <b>My portfolio</b>: import your tradebook or add each purchase.</li>
+            <li><b>My portfolio</b> tab: import your tradebook or add each purchase.</li>
             <li>Press <span class="btn">Refresh analysis</span>.</li>
             <li>Read “tax if sold today”, the unused part of the ₹1.25 lakh exemption, and the harvesting plan.</li>
             <li>Before March 31 each year, check the harvesting suggestions with a tax professional.</li>
@@ -544,7 +574,7 @@ details.faq p { margin-top: 8px; color: var(--muted); }
         <div class="task">
           <h3>“Will NIFTY or my stock go up or down today?”</h3>
           <ol>
-            <li>My money → <b>Call / Put prediction</b>: enter the symbol and press <span class="btn">Fetch + get probabilities</span>.</li>
+            <li><b>Options &amp; risk</b> tab → <b>Call / Put prediction</b>: enter the symbol and press <span class="btn">Fetch + get probabilities</span>.</li>
             <li>Read the Call / Put / Sideways percentages, then scroll to the <b>Live scorecard</b> to see how often this card has been right.</li>
             <li>Treat the answer as “nobody knows”: the record is not better than chance.</li>
             <li>To plan for risk instead, check <b>Big-move odds</b> (is a big move likely?) and, before buying an option, <b>Call / Put payoff odds</b>.</li>
@@ -553,7 +583,7 @@ details.faq p { margin-top: 8px; color: var(--muted); }
         <div class="task">
           <h3>“I want to follow the YouTube strategy”</h3>
           <ol>
-            <li>Research lab → <b>Same stocks every day</b>. Set <b>Your size</b>.</li>
+            <li><b>Intraday strategy</b> tab → <b>Same stocks every day</b>. Set <b>Your size</b>.</li>
             <li>Watch <b>Today’s signals</b> during market hours, or ask “How did the strategy do today?”.</li>
             <li>Check the <b>When can we trust it?</b> meter each week.</li>
             <li>Do not use real money until it says it passed.</li>
@@ -563,14 +593,15 @@ details.faq p { margin-top: 8px; color: var(--muted); }
           <h3>“Is my own trading any good?”</h3>
           <ol>
             <li>Download your full tradebook from your broker.</li>
-            <li>My portfolio → <b>Import</b>, then <b>Did my trading beat NIFTY?</b> → <span class="btn">Check</span>.</li>
+            <li><b>My portfolio</b> tab → <b>Import</b>, then <b>Did my trading beat NIFTY?</b> → <span class="btn">Check</span>.</li>
             <li>If the index would have done better, consider putting more into an index fund and less into picking stocks.</li>
           </ol>
         </div>
         <div class="task">
           <h3>“What is happening in the market today?”</h3>
           <ol>
-            <li>My money → <b>Today</b> → <span class="btn">Refresh</span> for alerts and volatility.</li>
+            <li><b>Home</b> tab → press <span class="btn">Analyse today</span> to see which stocks are trending up or down right now.</li>
+            <li>Then <b>Today</b> → <span class="btn">Refresh</span> for alerts and volatility.</li>
             <li>Or Ask the app: “Which is the best stock to invest today?”. You will get a market briefing with facts, not tips.</li>
           </ol>
         </div>
