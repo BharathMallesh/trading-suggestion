@@ -78,6 +78,7 @@
       <div class="sub">Research &amp; education only — no price predictions, no buy/sell/hold, no broker. Decision-support, never decision-making.</div>
       <div class="tabs" id="viewTabs" style="margin-top:10px">
         <button type="button" class="active" data-view="home" title="Ask a question, analyse today, alerts">Home</button>
+        <button type="button" data-view="trades" title="Plan a trade, keep a journal, daily loss limit, price alerts">My trades</button>
         <button type="button" data-view="portfolio" title="Your shares, tax and whether your trading beat NIFTY">My portfolio</button>
         <button type="button" data-view="invest" title="SIP, goals, index funds, market tilts">Investing</button>
         <button type="button" data-view="options" title="Call / Put odds and prediction, big moves, volatility">Options &amp; risk</button>
@@ -115,6 +116,58 @@
           kept going that way until 3:15 PM over the last ~40 trading days.</p>
         <button id="scanBtn" type="button">Analyse today</button>
         <div id="scanOut" style="margin-top:12px"></div>
+      </section>
+
+      <!-- My trades: plan, journal, daily limit, alerts -->
+      <section class="card span2" id="planCard">
+        <h2>Plan a trade <span style="font-size:12px;color:var(--warn);font-weight:500">SIZE · CHARGES · RULES CHECK · BEFORE YOU PLACE IT</span></h2>
+        <p class="hint">Fill this in before every trade. It works out how many shares to buy so a stop-out costs only your chosen % of capital, what you really lose or gain after charges,
+          the chance today moves as far as your stop, and whether the trade keeps your rules. Then save it to your journal. You place the order in your own broker app.</p>
+        <div class="row">
+          <div><label>Stock</label><input id="plSym" placeholder="TCS or RELIANCE" /></div>
+          <div><label>Buy or short</label><select id="plSide"><option value="long">Buy (long)</option><option value="short">Short (sell first, intraday)</option></select></div>
+          <div><label>Type</label><select id="plProduct"><option value="intraday">Intraday</option><option value="delivery">Delivery (hold overnight+)</option></select></div>
+          <div><label>Setup</label><select id="plSetup"></select></div>
+        </div>
+        <div class="row">
+          <div><label>Entry price (₹)</label><input id="plEntry" type="number" step="0.05" /></div>
+          <div><label>Stop-loss (₹)</label><input id="plStop" type="number" step="0.05" /></div>
+          <div><label>Target (₹, blank = 2× risk)</label><input id="plTarget" type="number" step="0.05" /></div>
+        </div>
+        <button id="plBtn" type="button">Check the plan</button>
+        <div id="plOut" style="margin-top:12px"></div>
+      </section>
+
+      <section class="card span2" id="journalCard">
+        <h2>Trade journal <span style="font-size:12px;color:var(--warn);font-weight:500">YOUR SCORECARD · DAILY LOSS LIMIT · STORED ONLY ON THIS MAC</span></h2>
+        <p class="hint">Every saved trade. Close it with the price you actually exited at: the app records the result after charges and builds your personal scorecard (win rate, average win vs loss,
+          which setups work for you, and what happened when you broke your rules). The daily loss limit warns you, and sends a Mac notification, when today's losses reach it.</p>
+        <div id="jnToday"></div>
+        <div id="jnOut" style="margin-top:10px">Loading…</div>
+        <details style="margin-top:10px"><summary style="cursor:pointer;font-size:13px"><b>My rules</b> (capital, risk per trade, daily loss limit, trades a day)</summary>
+          <div class="row" style="margin-top:6px">
+            <div><label>Capital (₹)</label><input id="jsCap" type="number" min="1000" step="10000" /></div>
+            <div><label>Risk per trade (%)</label><input id="jsRisk" type="number" min="0.1" max="5" step="0.1" /></div>
+            <div><label>Daily loss limit (%)</label><input id="jsLimit" type="number" min="0.5" max="10" step="0.5" /></div>
+            <div><label>Max trades a day</label><input id="jsMax" type="number" min="1" max="20" step="1" /></div>
+          </div>
+          <button id="jsSave" type="button" style="background:var(--soft);color:var(--ink);border:1px solid var(--line)">Save my rules</button>
+          <span id="jsNote" class="note" style="display:inline"></span>
+        </details>
+      </section>
+
+      <section class="card span2" id="alertCard">
+        <h2>Price alerts <span style="font-size:12px;color:var(--warn);font-weight:500">MAC NOTIFICATION WHEN A PRICE IS CROSSED · CHECKED EVERY 5 MIN IN MARKET HOURS</span></h2>
+        <p class="hint">Set a price on any stock: your stop, your target, or a level you are watching. While the market is open the app checks every 5 minutes (including quick spikes between checks)
+          and sends a Mac notification when it is crossed. Saving a trade can add its stop and target alerts automatically. The Mac must be on and awake.</p>
+        <div class="row">
+          <div><label>Stock</label><input id="alSym" placeholder="INFY" /></div>
+          <div><label>When the price</label><select id="alOp"><option value="above">rises above</option><option value="below">falls below</option></select></div>
+          <div><label>Price (₹)</label><input id="alPrice" type="number" step="0.05" /></div>
+          <div style="flex:2"><label>Note (optional)</label><input id="alNote" placeholder="e.g. breakout level" /></div>
+        </div>
+        <button id="alBtn" type="button">Add alert</button>
+        <div id="alOut" style="margin-top:10px"></div>
       </section>
 
       <!-- Today: everything an investor checks, on one screen -->
@@ -1749,6 +1802,149 @@
       });
       for (const chip of document.querySelectorAll('.aaChip')) chip.addEventListener('click', () => aaAsk(chip.textContent));
 
+      // --- My trades: plan, journal, alerts ---
+      const rsj = (v) => (v == null ? '–' : (v < 0 ? '−₹' : '₹') + Math.abs(Math.round(v)).toLocaleString('en-IN'));
+      const post = (path, body) => api(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      let lastPlan = null;
+      function planInput() {
+        return { symbol: $('plSym').value, side: $('plSide').value, product: $('plProduct').value, setup: $('plSetup').value, entry: $('plEntry').value, stop: $('plStop').value, target: $('plTarget').value };
+      }
+      $('plBtn').addEventListener('click', async () => {
+        $('plOut').innerHTML = '<div class="note">Checking…</div>';
+        try {
+          const p = await post('/api/journal/plan', planInput());
+          lastPlan = p;
+          const pc = (x) => (x == null ? '–' : Math.round(x * 100) + '%');
+          $('plOut').innerHTML = `<div style="font-size:15px"><b>${p.side === 'long' ? 'Buy' : 'Short'} ${p.qty} shares of ${esc(p.symbol.replace('.NS', ''))}</b> at ₹${p.entry} · stop ₹${p.stop} · target ₹${(+p.target).toFixed(2)}</div>
+            <table style="font-size:13px"><tbody>
+              <tr><td>Position size</td><td>${rsj(p.positionValue)}${p.product === 'intraday' ? ` · margin at 5× ≈ ${rsj(p.marginNeeded)}` : ''}${p.cappedByCash ? ' · <span style="color:var(--warn)">limited by your capital</span>' : ''}</td></tr>
+              <tr><td>If the stop hits</td><td style="color:var(--down)"><b>−${rsj(p.lossAtStop)}</b> after charges (${p.stopPct.toFixed(2)}% away)</td></tr>
+              <tr><td>If the target hits</td><td style="color:var(--up)"><b>+${rsj(p.gainAtTarget)}</b> after charges · ${p.rrAfterCosts != null ? p.rrAfterCosts.toFixed(2) + '× the risk' : '–'}</td></tr>
+              <tr><td>Today's risk</td><td>${p.risk ? `a normal day moves about ±${(p.risk.dailyMovePct ?? 0).toFixed(1)}% · chance today moves ${p.stopPct.toFixed(2)}% against you: <b>${pc(p.risk.chanceStopDistanceToday)}</b>` : 'odds unavailable'}</td></tr>
+            </tbody></table>
+            <div style="margin-top:6px;font-size:13px"><b>Rules check</b></div>
+            <ul style="margin:4px 0 0 18px;font-size:13px">${p.checks.map((c) => `<li style="color:${c.ok ? 'var(--up)' : 'var(--down)'}">${c.ok ? '✓' : '✗'} ${esc(c.rule)} <span class="note" style="display:inline">${esc(c.detail)}</span></li>`).join('')}</ul>
+            <div style="margin:8px 0;padding:8px 10px;border-radius:8px;background:var(--soft);font-size:13px">${p.allOk ? '<b style="color:var(--up)">All rules kept.</b>' : `<b style="color:var(--down)">${p.checks.filter((c) => !c.ok).length} rule(s) broken.</b> You can still record it, but it will count as a rule-break in your scorecard.`} This checks discipline, not whether the trade will work.</div>
+            <div class="row" style="gap:8px;align-items:flex-end">
+              <div><label>Shares actually bought (blank = ${p.qty})</label><input id="plQty" type="number" min="1" step="1" /></div>
+              <div style="flex:2"><label>Why this trade? (optional)</label><input id="plNote" placeholder="e.g. pullback to 20 MA in an uptrend" /></div>
+            </div>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;margin-top:6px"><input type="checkbox" id="plAlerts" checked style="width:auto" /> Add price alerts at the stop and the target</label>
+            <button id="plSave" type="button">I placed this trade: save to journal</button> <span id="plSaved" class="note" style="display:inline"></span>`;
+          $('plSave').addEventListener('click', async () => {
+            try {
+              await post('/api/journal/add', { ...planInput(), qty: $('plQty').value, note: $('plNote').value, withAlerts: $('plAlerts').checked });
+              $('plSaved').textContent = 'Saved. It is in your journal below; close it there when you exit.';
+              jnLoad();
+            } catch (e) {
+              $('plSaved').innerHTML = `<span class="err">${esc(e.message)}</span>`;
+            }
+          });
+        } catch (e) {
+          $('plOut').innerHTML = `<div class="err">${esc(e.message)}</div>`;
+        }
+      });
+      async function jnLoad() {
+        try {
+          const d = await api('/api/journal');
+          if (!$('plSetup').options.length) $('plSetup').innerHTML = d.setups.map((x) => `<option>${esc(x)}</option>`).join('');
+          const s = d.settings;
+          if (!$('jsCap').value) { $('jsCap').value = s.capital; $('jsRisk').value = s.riskPct; $('jsLimit').value = s.dailyLossPct; $('jsMax').value = s.maxTradesPerDay; }
+          const t = d.today;
+          const pct = Math.min(100, Math.max(0, (-t.realisedRs / t.limitRs) * 100));
+          $('jnToday').innerHTML = `<div style="padding:10px 12px;border-radius:10px;border:1px solid ${t.limitHit ? 'var(--down)' : 'var(--line)'};background:var(--soft)">
+            <div style="display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;font-size:14px"><b>Today ${esc(t.date)}</b>
+              <span>Result <b style="color:${t.realisedRs >= 0 ? 'var(--up)' : 'var(--down)'}">${rsj(t.realisedRs)}</b> · trades ${t.trades}/${t.maxTrades}${t.open ? ` · ${t.open} open` : ''}</span></div>
+            <div style="height:8px;background:var(--panel);border-radius:4px;overflow:hidden;margin-top:6px"><div style="height:100%;width:${pct}%;background:${t.limitHit ? 'var(--down)' : 'var(--warn)'}"></div></div>
+            <div class="note" style="color:${t.limitHit ? 'var(--down)' : 'var(--muted)'}">${t.limitHit ? `<b>Daily loss limit reached (−${rsj(t.limitRs)}). Stop trading for today.</b>` : `Daily loss limit −${rsj(t.limitRs)} · room left ${rsj(t.roomLeftRs)}${t.open ? ` · worst case if open trades hit their stops: ${rsj(t.worstCaseRs)}` : ''}`}</div></div>`;
+          const st = d.stats;
+          const pc = (x) => (x == null ? '–' : Math.round(x * 100) + '%');
+          let html = '';
+          const open = d.trades.filter((x) => x.status === 'open');
+          if (open.length) html += `<div style="font-size:14px"><b>Open trades</b></div><table style="font-size:12px"><thead><tr><th style="text-align:left">Stock</th><th>Side</th><th>Qty</th><th>Entry</th><th>Stop</th><th>Target</th><th>Risk</th><th>Exit price</th><th></th></tr></thead><tbody>${open.map((x) =>
+            `<tr><td style="text-align:left">${esc(x.symbol.replace('.NS', ''))} <span class="note" style="display:inline">${esc(x.date)} ${esc(x.time)}</span></td><td>${x.side === 'long' ? 'buy' : 'short'}</td><td>${x.qty}</td><td>${x.entry}</td><td>${x.stop}</td><td>${(+x.target).toFixed(2)}</td><td>${rsj(x.lossAtStop)}</td>
+              <td><input type="number" step="0.05" data-exit="${esc(x.id)}" style="width:90px" /></td><td><button type="button" data-close="${esc(x.id)}" style="margin:0;padding:3px 10px">Close</button> <button type="button" data-del="${esc(x.id)}" title="Delete (entered by mistake)" style="margin:0;padding:3px 8px;background:var(--soft);color:var(--ink);border:1px solid var(--line)">✕</button></td></tr>`).join('')}</tbody></table>`;
+          if (st.all.trades) {
+            const a = st.all;
+            html += `<div style="font-size:14px;margin-top:10px"><b>Your scorecard</b> · ${a.trades} closed trades</div>
+              <table style="font-size:13px"><tbody>
+                <tr><td>Total after charges</td><td style="color:${a.totalRs >= 0 ? 'var(--up)' : 'var(--down)'}"><b>${rsj(a.totalRs)}</b> (charges paid ${rsj(a.chargesRs)})</td></tr>
+                <tr><td>Win rate</td><td>${pc(a.winRate)} · average win ${rsj(a.avgWinRs)} · average loss ${rsj(a.avgLossRs)}</td></tr>
+                <tr><td>Per trade (expectancy)</td><td><b>${rsj(a.expectancyRs)}</b>${a.avgR != null ? ` · ${a.avgR.toFixed(2)} R` : ''}${a.profitFactor != null ? ` · profit factor ${a.profitFactor.toFixed(2)}` : ''}</td></tr>
+                <tr><td>Worst drawdown</td><td>${rsj(-st.maxDrawdownRs)}</td></tr>
+                <tr><td>Rules kept vs broken</td><td>kept: ${st.rulesKept.trades || 0} trades, ${rsj(st.rulesKept.totalRs ?? 0)} · broken: ${st.rulesBroken.trades || 0} trades, ${rsj(st.rulesBroken.totalRs ?? 0)}</td></tr>
+              </tbody></table>
+              <table style="font-size:12px"><thead><tr><th style="text-align:left">Setup</th><th>Trades</th><th>Win rate</th><th>Per trade</th><th>Total</th></tr></thead><tbody>${Object.entries(st.bySetup).map(([k, v]) =>
+                `<tr><td style="text-align:left">${esc(k)}</td><td>${v.trades}</td><td>${pc(v.winRate)}</td><td>${rsj(v.expectancyRs)}</td><td style="color:${v.totalRs >= 0 ? 'var(--up)' : 'var(--down)'}">${rsj(v.totalRs)}</td></tr>`).join('')}</tbody></table>
+              <div class="note">Judge yourself after 30+ trades: a positive "per trade" after charges over many trades is the only real proof. Compare with "Did my trading beat NIFTY?" in My portfolio.</div>`;
+          } else html += `<div class="note">No closed trades yet. Plan a trade above, save it, and close it here when you exit.</div>`;
+          const closed = d.trades.filter((x) => x.status === 'closed').slice(0, 30);
+          if (closed.length) html += `<details style="margin-top:8px"><summary style="cursor:pointer;font-size:13px">Closed trades (latest ${closed.length})</summary><table style="font-size:12px"><thead><tr><th style="text-align:left">Date</th><th>Stock</th><th>Side</th><th>Entry → exit</th><th>Net</th><th>R</th><th>Rules</th><th></th></tr></thead><tbody>${closed.map((x) =>
+            `<tr><td style="text-align:left">${esc(x.date)}</td><td>${esc(x.symbol.replace('.NS', ''))}</td><td>${x.side === 'long' ? 'buy' : 'short'}</td><td>${x.entry} → ${x.exit}</td><td style="color:${x.net >= 0 ? 'var(--up)' : 'var(--down)'}">${rsj(x.net)}</td><td>${x.r != null ? x.r.toFixed(2) : '–'}</td><td title="${esc((x.brokenRules || []).join(' · '))}">${x.rulesOk ? '✓' : '✗'}</td><td><button type="button" data-del="${esc(x.id)}" style="margin:0;padding:2px 8px;background:var(--soft);color:var(--ink);border:1px solid var(--line)">✕</button></td></tr>`).join('')}</tbody></table></details>`;
+          $('jnOut').innerHTML = html;
+          alRender(d.alerts);
+        } catch (e) {
+          $('jnOut').innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
+        }
+      }
+      $('jnOut').addEventListener('click', async (e) => {
+        const c = e.target?.dataset?.close;
+        const del = e.target?.dataset?.del;
+        try {
+          if (c) {
+            const inp = $('jnOut').querySelector(`input[data-exit="${CSS.escape(c)}"]`);
+            if (!inp.value) return (inp.style.outline = '2px solid var(--down)');
+            const r = await post('/api/journal/close', { id: c, exit: inp.value });
+            if (r.limitJustHit) $('jnToday').scrollIntoView({ behavior: 'smooth' });
+            jnLoad();
+          } else if (del) {
+            e.target.textContent = 'Sure?';
+            if (e.target.dataset.confirm !== '1') return (e.target.dataset.confirm = '1');
+            await post('/api/journal/delete', { id: del });
+            jnLoad();
+          }
+        } catch (err) {
+          $('jnOut').insertAdjacentHTML('afterbegin', `<div class="err">${esc(err.message)}</div>`);
+        }
+      });
+      $('jsSave').addEventListener('click', async () => {
+        try {
+          await post('/api/journal/settings', { capital: $('jsCap').value, riskPct: $('jsRisk').value, dailyLossPct: $('jsLimit').value, maxTradesPerDay: $('jsMax').value });
+          $('jsNote').textContent = 'Saved.';
+          jnLoad();
+        } catch (e) {
+          $('jsNote').innerHTML = `<span class="err">${esc(e.message)}</span>`;
+        }
+      });
+      function alRender(alerts) {
+        const act = alerts.filter((a) => !a.triggeredAt);
+        const done = alerts.filter((a) => a.triggeredAt && a.triggeredAt !== 'closed').slice(0, 15);
+        $('alOut').innerHTML = (act.length ? `<div style="font-size:14px"><b>Active (${act.length})</b></div><table style="font-size:12px"><tbody>${act.map((a) =>
+          `<tr><td style="text-align:left"><b>${esc(a.symbol.replace('.NS', ''))}</b> ${a.op === 'above' ? 'rises above' : 'falls below'} ₹${a.price}</td><td class="note" style="text-align:left">${esc(a.note || '')}</td><td><button type="button" data-al="${esc(a.id)}" style="margin:0;padding:2px 8px;background:var(--soft);color:var(--ink);border:1px solid var(--line)">Remove</button></td></tr>`).join('')}</tbody></table>` : '<div class="note">No active alerts.</div>') +
+          (done.length ? `<details style="margin-top:6px"><summary style="cursor:pointer;font-size:13px">Triggered (${done.length})</summary><ul style="margin:4px 0 0 18px;font-size:12px">${done.map((a) => `<li>${esc(a.symbol.replace('.NS', ''))} ${a.op === 'above' ? 'rose above' : 'fell below'} ₹${a.price} at ${esc(new Date(new Date(a.triggeredAt).getTime() + 19800000).toISOString().slice(0, 16).replace('T', ' '))} IST${a.note ? ` — ${esc(a.note)}` : ''}</li>`).join('')}</ul></details>` : '');
+      }
+      $('alOut').addEventListener('click', async (e) => {
+        const a = e.target?.dataset?.al;
+        if (!a) return;
+        try {
+          await post('/api/alerts/delete', { id: a });
+          jnLoad();
+        } catch (err) {
+          $('alOut').insertAdjacentHTML('afterbegin', `<div class="err">${esc(err.message)}</div>`);
+        }
+      });
+      $('alBtn').addEventListener('click', async () => {
+        try {
+          await post('/api/alerts/add', { symbol: $('alSym').value, op: $('alOp').value, price: $('alPrice').value, note: $('alNote').value });
+          $('alPrice').value = '';
+          $('alNote').value = '';
+          jnLoad();
+        } catch (e) {
+          $('alOut').insertAdjacentHTML('afterbegin', `<div class="err">${esc(e.message)}</div>`);
+        }
+      });
+      jnLoad();
+
       // --- Analyse today ---
       async function scanRun() {
         $('scanBtn').disabled = true;
@@ -1792,6 +1988,7 @@
       // --- Views (tabs): each card goes to the first tab whose pattern matches its title ---
       const VIEWS = [
         { key: 'home', match: /^(Ask the app|Analyse today|Today)/, note: 'Home: ask a question in plain English, analyse today’s market, and see alerts and data health.' },
+        { key: 'trades', match: /^(Plan a trade|Trade journal|Price alerts)/, note: 'My trades: plan every trade before you place it (size, charges, rules), record it in your journal, get alerts at your stop and target, and stop for the day at your loss limit. The app never places orders.' },
         { key: 'portfolio', match: /^My portfolio/, note: 'My portfolio: the shares you own, tax if you sold today, tax harvesting, risk, and whether your trading beat NIFTY. Stored only on this Mac.' },
         { key: 'invest', match: /^(What to expect|Goal planner|Market tilts|Index-fund picker|Strategies)/, note: 'Investing: long-term money — what SIPs and lump sums have done, what to invest for a goal, which index fund kept the most, and market tilts.' },
         { key: 'options', match: /^(Call \/ Put payoff odds|Live candles|Big-move odds|Volatility check|Option calculator|Selling volatility)/, note: 'Options & risk: the real chance an option pays off, how big a move is likely, volatility, and the Call / Put prediction (labelled: not better than chance).' },
@@ -1800,7 +1997,7 @@
       ];
       const OLD_VIEW = { money: 'home' }; // tab names before the split
       // order inside a tab (cards not listed keep page order, after these; "no edge" cards go last)
-      const ORDER = ['Ask the app', 'Analyse today', 'Today', 'Call / Put payoff odds', 'Live candles', 'Big-move odds', 'Volatility check', 'Option calculator', 'Selling volatility',
+      const ORDER = ['Ask the app', 'Analyse today', 'Today', 'Plan a trade', 'Trade journal', 'Price alerts', 'Call / Put payoff odds', 'Live candles', 'Big-move odds', 'Volatility check', 'Option calculator', 'Selling volatility',
         'What to expect', 'Goal planner', 'Index-fund picker', 'Market tilts', 'Strategies', 'Market data', 'Ask (research', 'Prediction hit-rate', 'Stock ranking', 'Earnings', 'Paper portfolio', 'Model evaluation', 'Settings'];
       // Tools whose direction calls were tested and found no edge: labelled, and (except the Call/Put card) moved to the end of their view.
       const NO_EDGE = /^(Paper-Bot|Candle AI read|Live candles|Foundation models|Direction over months|Options positioning|Same stocks every day)/;

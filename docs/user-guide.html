@@ -151,6 +151,7 @@ details.faq p { margin-top: 8px; color: var(--muted); }
       <li class="sub"><a href="#t-scan">Analyse today</a></li>
       <li class="sub"><a href="#t-ask">Ask the app</a></li>
       <li class="sub"><a href="#t-today">Today</a></li>
+      <li class="sub"><a href="#t-plan">My trades: plan, journal, alerts</a></li>
       <li class="sub"><a href="#t-portfolio">My portfolio</a></li>
       <li class="sub"><a href="#t-expect">What to expect</a></li>
       <li class="sub"><a href="#t-goal">Goal planner</a></li>
@@ -197,11 +198,12 @@ details.faq p { margin-top: 8px; color: var(--muted); }
       <ol class="steps">
         <li><div>The app runs on the owner’s Mac. It starts by itself when the Mac is switched on and someone logs in, so there is usually nothing to start.</div></li>
         <li><div>Open a web browser (Safari or Chrome) on that Mac and go to <code>http://127.0.0.1:3000</code>. Bookmark it.</div></li>
-        <li><div>At the top you will see six tabs: <span class="btn">Home</span> <span class="btn">My portfolio</span> <span class="btn">Investing</span> <span class="btn">Options &amp; risk</span> <span class="btn">Intraday strategy</span> <span class="btn">Research lab</span>. Each tab shows a different group of cards. The app remembers the last tab you used, and a grey line under the tabs says what the current tab is for. On the far right, <span class="btn">? Help &amp; guide</span> opens this guide.</div></li>
+        <li><div>At the top you will see seven tabs: <span class="btn">Home</span> <span class="btn">My trades</span> <span class="btn">My portfolio</span> <span class="btn">Investing</span> <span class="btn">Options &amp; risk</span> <span class="btn">Intraday strategy</span> <span class="btn">Research lab</span>. Each tab shows a different group of cards. The app remembers the last tab you used, and a grey line under the tabs says what the current tab is for. On the far right, <span class="btn">? Help &amp; guide</span> opens this guide.</div></li>
         <li><div>Each box on the page is called a <b>card</b>. Every card has a title, a short grey explanation under it, and its own buttons. Results appear inside the card after you press a button. Some cards fill in by themselves when the page opens.</div></li>
       </ol>
       <div class="views">
         <div class="view"><h3>Home</h3><p>Start here every day: <b>Ask the app</b>, the <b>Analyse today</b> button and the <b>Today</b> alerts card.</p></div>
+        <div class="view"><h3>My trades</h3><p>Plan each trade before you place it, keep a journal with your own scorecard, a daily loss limit, and price alerts.</p></div>
         <div class="view"><h3>My portfolio</h3><p>The shares you own: tax if you sold today, tax harvesting, risk, and whether your trading beat NIFTY.</p></div>
         <div class="view"><h3>Investing</h3><p>Long-term money: what SIPs have done, a goal planner, the index-fund picker, market tilts and two slow strategies.</p></div>
         <div class="view"><h3>Options &amp; risk</h3><p>Call / Put payoff odds, the Call / Put prediction, big-move odds, volatility, an option calculator and option selling.</p></div>
@@ -279,8 +281,8 @@ details.faq p { margin-top: 8px; color: var(--muted); }
 
     <!-- MY MONEY -->
     <section class="part" id="money">
-      <h2>Home, My portfolio, Investing and Options &amp; risk tabs</h2>
-      <div class="prose"><p>These four tabs hold the tools for everyday investors. Each card below shows which tab it is in. The smaller cards (Market data, Option calculator, Volatility check, Selling volatility, Settings) are described in <a href="#t-labothers">All other cards</a>.</p></div>
+      <h2>Home, My trades, My portfolio, Investing and Options &amp; risk tabs</h2>
+      <div class="prose"><p>These five tabs hold the tools for everyday investors and traders. Each card below shows which tab it is in. The smaller cards (Market data, Option calculator, Volatility check, Selling volatility, Settings) are described in <a href="#t-labothers">All other cards</a>.</p></div>
       <div class="cards">
 
         <article class="tool" id="t-ask">
@@ -322,6 +324,34 @@ details.faq p { margin-top: 8px; color: var(--muted); }
             <div><h4>Steps</h4><ol><li>It fills in by itself. Press <span class="btn">Refresh</span> to load the latest saved check.</li><li>Press <span class="btn">Run now</span> to check everything again (takes 1–2 minutes).</li></ol></div>
             <div><h4>How to read it</h4><ul><li><b>Alerts</b> in an orange box need your attention (for example, a stock you own has an announcement, or the market dropped below its long-term average).</li><li><b>Health</b> warnings are about the app’s own data (a missed download, no AI credits).</li><li><b>Weekly scorecard</b> appears on Fridays after 3 PM.</li><li>On exchange holidays it says “closed (NSE holiday: …)”.</li></ul></div>
           </div>
+        </article>
+
+        <article class="tool" id="t-plan">
+          <div class="eyebrow">Tab: My trades</div>
+          <header><h3>Plan a trade, Trade journal, Price alerts</h3><span class="badge b-good">Reliable: arithmetic and discipline</span></header>
+          <p class="what">Three cards that make trading disciplined and measurable. They do not predict anything. The app never places orders: you trade in your own broker app and record it here.</p>
+          <div class="cols">
+            <div><h4>1 · Plan a trade</h4><ol>
+              <li>Enter the stock, <b>Buy</b> or <b>Short</b>, Intraday or Delivery, the setup, your <b>entry</b> and <b>stop-loss</b> (target optional: blank = twice the risk).</li>
+              <li>Press <span class="btn">Check the plan</span>.</li>
+              <li>Read: how many shares to buy, the loss if the stop hits and the gain at the target <b>after charges</b>, and the chance today moves as far as your stop.</li>
+              <li>The <b>rules check</b> shows ✓ or ✗ for: stop on the right side, risk within your %, reward at least 1.5× risk, trades today, daily loss limit, stop not inside normal noise.</li>
+              <li>After you place the order in your broker, press <span class="btn">I placed this trade: save to journal</span>. Tick “Add price alerts” to be notified at the stop and target.</li>
+            </ol></div>
+            <div><h4>2 · Trade journal</h4><ul>
+              <li><b>Today box:</b> today’s result, trades taken, and a bar towards your daily loss limit. When the limit is reached it turns red, a Mac notification says “Stop trading for today”, and new plans fail the rules check.</li>
+              <li><b>Open trades:</b> type the price you exited at and press <span class="btn">Close</span>. ✕ deletes a trade entered by mistake (press twice).</li>
+              <li><b>Your scorecard:</b> total after charges, win rate, average win vs loss, profit per trade, worst drawdown, results when you kept vs broke your rules, and results by setup.</li>
+              <li><b>My rules:</b> set your capital, risk per trade (1% is common), daily loss limit (2% is common) and maximum trades a day.</li>
+            </ul></div>
+            <div><h4>3 · Price alerts</h4><ul>
+              <li>Enter a stock, “rises above” or “falls below”, and a price. Press <span class="btn">Add alert</span>.</li>
+              <li>While the market is open the app checks every 5 minutes, including quick spikes between checks, and sends a Mac notification when the price is crossed.</li>
+              <li>Each alert fires once. Closing a trade removes its stop and target alerts.</li>
+              <li>The Mac must be on and awake for alerts to work.</li>
+            </ul></div>
+          </div>
+          <div class="example"><b>Example:</b> TCS, buy at ₹2,310, stop ₹2,295, capital ₹1 lakh, 1% risk. The plan says buy 66 shares. If the stop hits you lose about ₹1,091 after charges; at the ₹2,340 target you gain about ₹1,878. All six rules are kept. After 30 or more closed trades, your scorecard shows whether your trading actually makes money after charges.</div>
         </article>
 
         <article class="tool" id="t-portfolio">
@@ -578,6 +608,16 @@ details.faq p { margin-top: 8px; color: var(--muted); }
             <li>Read the Call / Put / Sideways percentages, then scroll to the <b>Live scorecard</b> to see how often this card has been right.</li>
             <li>Treat the answer as “nobody knows”: the record is not better than chance.</li>
             <li>To plan for risk instead, check <b>Big-move odds</b> (is a big move likely?) and, before buying an option, <b>Call / Put payoff odds</b>.</li>
+          </ol>
+        </div>
+        <div class="task">
+          <h3>“I want to place a trade safely”</h3>
+          <ol>
+            <li><b>My trades</b> tab → <b>Plan a trade</b>: enter entry and stop, press <span class="btn">Check the plan</span>.</li>
+            <li>Only go ahead if the rules check is all ✓ and you accept the loss at the stop.</li>
+            <li>Place the order in your broker with that number of shares and a stop-loss order.</li>
+            <li>Press <span class="btn">I placed this trade: save to journal</span> with alerts ticked.</li>
+            <li>When you exit, close it in the journal. If the daily loss limit is reached, stop for the day.</li>
           </ol>
         </div>
         <div class="task">

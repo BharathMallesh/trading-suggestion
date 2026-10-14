@@ -37,7 +37,7 @@ import { evaluateRanking, liveRanking } from './paper-bot/ranking.mjs';
 import { volCheck, evaluateVolForecasts } from './paper-bot/volatility.mjs';
 import { healthChecks } from './paper-bot/health.mjs';
 import { scanEvents, updateEventReturns, eventStats, loadEvents } from './paper-bot/events.mjs';
-import { runMonitor, latestReport } from './paper-bot/monitor.mjs';
+import { runMonitor, latestReport, notify } from './paper-bot/monitor.mjs';
 import { latestWeekly } from './paper-bot/weekly.mjs';
 import { loadIndexList } from './paper-bot/ranking.mjs';
 import { runStrategyTests } from './paper-bot/strategies.mjs';
@@ -55,6 +55,7 @@ import { loadOdds, oddsFor } from './paper-bot/vwap-odds.mjs';
 import { tradesVsIndex } from './paper-bot/vs-index.mjs';
 import { loadFactorLab } from './paper-bot/factor-lab.mjs';
 import { todayScan } from './paper-bot/today-scan.mjs';
+import { loadJournal, saveSettings as saveJournalSettings, planTrade, addTrade, closeTrade, deleteTrade, journalStats, todayStatus, addAlert, deleteAlert, checkAlerts, SETUPS } from './paper-bot/journal.mjs';
 import { vwapPullbackTest, saveVwapPullback, loadVwapPullback, paperSummary, paperUpdate, loadImprove, todaySignals, parseSizing, sizeTrade, noteLiveSeen } from './paper-bot/vwap-pullback.mjs';
 import { nseOpenNow } from './paper-bot/market-calendar.mjs';
 import { bigMove, evaluateBigMove, saveBigMoveEval, loadBigMoveEval } from './paper-bot/big-move.mjs';
@@ -548,6 +549,21 @@ const server = http.createServer(async (req, res) => {
       const sizing = parseSizing(url.searchParams.get('capital') ?? undefined, url.searchParams.get('riskPct') ?? undefined);
       return json(res, 200, { backtest: loadVwapPullback(), paper: paperSummary(undefined, sizing), improve: loadImprove(), odds: loadOdds() });
     }
+    // --- trade planner, journal, daily loss limit, price alerts ---
+    if (req.method === 'GET' && url.pathname === '/api/journal') {
+      const st = loadJournal();
+      return json(res, 200, { settings: st.settings, setups: SETUPS, today: todayStatus(st), stats: journalStats(st), trades: st.trades.slice(-200).reverse(), alerts: st.alerts.slice(-100).reverse() });
+    }
+    if (req.method === 'POST' && url.pathname === '/api/journal/settings') return json(res, 200, await saveJournalSettings(await readJson(req)));
+    if (req.method === 'POST' && url.pathname === '/api/journal/plan') return json(res, 200, await planTrade(await readJson(req)));
+    if (req.method === 'POST' && url.pathname === '/api/journal/add') {
+      const body = await readJson(req);
+      return json(res, 200, await addTrade(body, { withAlerts: !!body.withAlerts }));
+    }
+    if (req.method === 'POST' && url.pathname === '/api/journal/close') return json(res, 200, await closeTrade(await readJson(req), { notifyFn: notify }));
+    if (req.method === 'POST' && url.pathname === '/api/journal/delete') return json(res, 200, await deleteTrade((await readJson(req)).id));
+    if (req.method === 'POST' && url.pathname === '/api/alerts/add') return json(res, 200, await addAlert(await readJson(req)));
+    if (req.method === 'POST' && url.pathname === '/api/alerts/delete') return json(res, 200, await deleteAlert((await readJson(req)).id));
     if (req.method === 'GET' && url.pathname === '/api/today-scan') {
       // "Analyse today": NIFTY 50 trend scan; at most one fresh scan every 2 minutes
       if (!todayScanCache || Date.now() - todayScanCache.at > 120_000) todayScanCache = { at: Date.now(), data: await todayScan({}) };
@@ -885,6 +901,11 @@ server.listen(PORT, HOST, () => {
         noteLiveSeen(await todaySignals({}));
       } catch {
         /* data source busy: next snapshot */
+      }
+      try {
+        await checkAlerts({ notifyFn: notify }); // your price alerts (My trades tab)
+      } catch {
+        /* next check */
       }
     };
     setTimeout(snap, 20_000).unref();
