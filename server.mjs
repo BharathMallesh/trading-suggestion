@@ -57,6 +57,7 @@ import { loadFactorLab } from './paper-bot/factor-lab.mjs';
 import { todayScan } from './paper-bot/today-scan.mjs';
 import { loadJournal, saveSettings as saveJournalSettings, planTrade, addTrade, closeTrade, deleteTrade, journalStats, todayStatus, addAlert, deleteAlert, checkAlerts, SETUPS } from './paper-bot/journal.mjs';
 import { loadAthSwing, athSwingScan, loadAthPaper, summarise as athSummarise } from './paper-bot/ath-swing.mjs';
+import { loadBreakfast, breakfastTest, saveBreakfast, breakfastToday, loadBreakfastPaper, summarise as bfSummarise } from './paper-bot/breakfast.mjs';
 import { vwapPullbackTest, saveVwapPullback, loadVwapPullback, paperSummary, paperUpdate, loadImprove, todaySignals, parseSizing, sizeTrade, noteLiveSeen } from './paper-bot/vwap-pullback.mjs';
 import { nseOpenNow } from './paper-bot/market-calendar.mjs';
 import { bigMove, evaluateBigMove, saveBigMoveEval, loadBigMoveEval } from './paper-bot/big-move.mjs';
@@ -73,6 +74,7 @@ let fundsCache = null; // /api/index-funds (daily)
 let vwapTodayCache = null; // /api/vwap-today (1 minute)
 let todayScanCache = null; // /api/today-scan (2 minutes)
 let athScanCache = null; // /api/ath-swing/scan (10 minutes)
+let bfTodayCache = null; // /api/breakfast/today (1 minute)
 const monthlyCache = {}; // goal planner: index → { at, data }
 // Bind to loopback only — this is a local tool holding a server-side API key,
 // not something to expose on the network.
@@ -566,6 +568,20 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && url.pathname === '/api/journal/delete') return json(res, 200, await deleteTrade((await readJson(req)).id));
     if (req.method === 'POST' && url.pathname === '/api/alerts/add') return json(res, 200, await addAlert(await readJson(req)));
     if (req.method === 'POST' && url.pathname === '/api/alerts/delete') return json(res, 200, await deleteAlert((await readJson(req)).id));
+    if (req.method === 'GET' && url.pathname === '/api/breakfast') {
+      const paper = loadBreakfastPaper();
+      return json(res, 200, { backtest: loadBreakfast(), paper: paper ? { startedAt: paper.startedAt, updatedAt: paper.updatedAt, summary: bfSummarise(paper.trades), trades: paper.trades.slice(-20).reverse() } : null });
+    }
+    if (req.method === 'POST' && url.pathname === '/api/breakfast') {
+      await readJson(req);
+      const r = await breakfastTest({});
+      saveBreakfast(r);
+      return json(res, 200, { backtest: r });
+    }
+    if (req.method === 'GET' && url.pathname === '/api/breakfast/today') {
+      if (!bfTodayCache || Date.now() - bfTodayCache.at > 60_000) bfTodayCache = { at: Date.now(), data: await breakfastToday({}) };
+      return json(res, 200, bfTodayCache.data);
+    }
     if (req.method === 'GET' && url.pathname === '/api/ath-swing') {
       const paper = loadAthPaper();
       return json(res, 200, { backtest: loadAthSwing(), paper: paper ? { startedAt: paper.startedAt, updatedAt: paper.updatedAt, summary: athSummarise(paper.trades), open: paper.trades.filter((t) => t.open), recent: paper.trades.filter((t) => !t.open).slice(-15).reverse() } : null });

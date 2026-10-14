@@ -162,6 +162,7 @@ details.faq p { margin-top: 8px; color: var(--muted); }
       <li class="sub"><a href="#t-bigmove">Big-move odds</a></li>
       <li><a href="#lab">Trading strategies &amp; Research lab tabs</a></li>
       <li class="sub"><a href="#t-ath">Strong-stock swing strategy</a></li>
+      <li class="sub"><a href="#t-bf">Breakfast strategy</a></li>
       <li class="sub"><a href="#t-vwap">YouTube strategy: where it is</a></li>
       <li class="sub"><a href="#t-vwap-how">YouTube strategy: how it works</a></li>
       <li class="sub"><a href="#t-labothers">All other lab cards</a></li>
@@ -208,7 +209,7 @@ details.faq p { margin-top: 8px; color: var(--muted); }
         <div class="view"><h3>My portfolio</h3><p>The shares you own: tax if you sold today, tax harvesting, risk, and whether your trading beat NIFTY.</p></div>
         <div class="view"><h3>Investing</h3><p>Long-term money: what SIPs have done, a goal planner, the index-fund picker, market tilts and two slow strategies.</p></div>
         <div class="view"><h3>Options &amp; risk</h3><p>Call / Put payoff odds, the Call / Put prediction, big-move odds, volatility, an option calculator and option selling.</p></div>
-        <div class="view"><h3>Trading strategies</h3><p>Two rule-based strategies with live signals, backtests and paper records: the strong-stock swing strategy and the YouTube intraday strategy.</p></div>
+        <div class="view"><h3>Trading strategies</h3><p>Three rule-based strategies, each on its own sub-tab with live signals, a backtest and a paper record: Strong-stock swing, YouTube intraday (VWAP) and the Breakfast strategy.</p></div>
         <div class="view"><h3>Research lab</h3><p>Every other experiment, mostly ones that found no edge, plus market data and settings.</p></div>
       </div>
       <div class="callout warn">
@@ -475,7 +476,7 @@ details.faq p { margin-top: 8px; color: var(--muted); }
     <!-- LAB -->
     <section class="part" id="lab">
       <h2>Trading strategies and Research lab tabs</h2>
-      <div class="prose"><p>The <b>Trading strategies</b> tab holds the strong-stock swing strategy and the YouTube intraday strategy. The <b>Research lab</b> tab holds every other experiment. Most found that the idea does <b>not</b> work after costs, and the app says so; cards with a grey “Tested: no reliable edge” note are listed last.</p></div>
+      <div class="prose"><p>The <b>Trading strategies</b> tab holds three strategies. A row of sub-tabs under the main tabs (<span class="btn">Strong-stock swing</span> <span class="btn">YouTube intraday (VWAP)</span> <span class="btn">Breakfast strategy</span>) shows one strategy at a time; the app remembers your choice. The <b>Research lab</b> tab holds every other experiment. Most found that the idea does <b>not</b> work after costs, and the app says so; cards with a grey “Tested: no reliable edge” note are listed last.</p></div>
       <div class="cards">
         <article class="tool" id="t-ath">
           <div class="eyebrow">Tab: Trading strategies</div>
@@ -492,7 +493,7 @@ details.faq p { margin-top: 8px; color: var(--muted); }
             <li><div><b>Size</b> each trade to risk 1% of capital, with at most 10 positions open.</div></li>
           </ol>
           <div class="cols">
-            <div><h4>Using the card</h4><ol><li>Open the <b>Trading strategies</b> tab.</li><li>Press <span class="btn">Scan today's signals</span> (about 20 seconds). It uses completed daily candles only.</li><li><b>Signals</b> list stocks that broke out at the latest close, with the stop and risk. <span class="btn">Plan this trade</span> opens My trades with everything filled in.</li><li><b>Watch</b> lists oversold strong stocks still building a base.</li></ol></div>
+            <div><h4>Using the card</h4><ol><li>Open the <b>Trading strategies</b> tab → <span class="btn">Strong-stock swing</span> sub-tab.</li><li>Press <span class="btn">Scan today's signals</span> (about 20 seconds). It uses completed daily candles only.</li><li><b>Signals</b> list stocks that broke out at the latest close, with the stop and risk. <span class="btn">Plan this trade</span> opens My trades with everything filled in.</li><li><b>Watch</b> lists oversold strong stocks still building a base.</li></ol></div>
             <div><h4>What the backtest found (NIFTY 200, 2010–2026, after charges)</h4><ul>
               <li>788 trades, 37% won, <b>+0.06 R per trade</b>: slightly positive but not statistically reliable.</li>
               <li><b>Flag breakouts</b> did best (+0.13 R); oversold-base breakouts about broke even.</li>
@@ -504,6 +505,33 @@ details.faq p { margin-top: 8px; color: var(--muted); }
           <div class="example"><b>Should I trade it with real money?</b> Not yet. It is tracked on paper from 14 October 2026; judge it after many months of results.</div>
         </article>
 
+        <article class="tool" id="t-bf">
+          <div class="eyebrow">Tab: Trading strategies → Breakfast strategy</div>
+          <header><h3>Breakfast strategy</h3><span class="badge b-exp">Experiment: paper only</span></header>
+          <p class="what">An intraday strategy from a trader interview: choose the day’s stock from sector strength in the first five minutes, enter at about 9:21, and be out by 9:45, before breakfast.</p>
+          <h3 style="font-size:1.05rem">How it works, step by step</h3>
+          <ol class="steps">
+            <li><div><b>9:15 to 9:20:</b> the app measures every NIFTY 200 stock’s move from yesterday’s close, and averages them by sector (a sector “heat map”).</div></li>
+            <li><div><b>Long:</b> the strongest sector’s strongest stock. <b>Short:</b> the weakest sector’s weakest stock.</div></li>
+            <li><div><b>Don’t chase:</b> skip a stock already up (or down) 5% or more in those five minutes and take the next one.</div></li>
+            <li><div><b>Enter</b> at about 9:21 (the opening price of the 9:20 candle). No indicators and no news.</div></li>
+            <li><div><b>Stop-loss 1%, target 1%.</b> If NIFTY’s first five minutes went against the trade, the target is only 0.5%.</div></li>
+            <li><div><b>Out by 9:45</b> whatever happens: at the target, at the stop, or at the 9:45 price.</div></li>
+            <li><div>If there is no clear setup (no sector up, or leaders already up 5%+), <b>skip the day</b>.</div></li>
+          </ol>
+          <div class="cols">
+            <div><h4>Using the card</h4><ol><li>Open <b>Trading strategies</b> → <span class="btn">Breakfast strategy</span>.</li><li>After 9:20, press <span class="btn">Show today's picks</span>. You see the long and short picks with entry, stop, target and progress, and the sector heat map (green = up, red = down).</li><li><span class="btn">Re-run backtest</span> re-tests on all saved 5-minute data.</li></ol></div>
+            <div><h4>What the test found (200 stocks, 40 sessions, after charges)</h4><ul>
+              <li>Before charges it about broke even (+₹7 a trade).</li>
+              <li>Intraday charges of about ₹223 a trade (on a ₹5 lakh position, ₹1 lakh at 5× leverage) turn it into a loss: <b>−₹216 a trade</b>.</li>
+              <li>Long-only won 56% of trades but still lost after charges; a stop-out costs about ₹5,300.</li>
+              <li>The first half of the period made money, the second lost. Only 40 sessions so far; the history grows daily.</li>
+              <li>The interview also trades at-the-money options on the same signals; that can’t be tested without intraday option prices.</li>
+            </ul></div>
+          </div>
+          <div class="example"><b>Example, 14 October 2026:</b> IT was the strongest sector at 9:20, so the long pick was TCS (up 2.7% in five minutes). NIFTY was slightly down, so the target was only 0.5%. TCS fell and hit its 1% stop. The short pick, Meesho from the weakest sector, was closed at 9:45 for a small loss.</div>
+        </article>
+
         <article class="tool" id="t-vwap">
           <div class="eyebrow">Tab: Trading strategies</div>
           <header><h3>Same stocks every day (the YouTube strategy)</h3><span class="badge b-exp">Experiment: paper only</span></header>
@@ -513,7 +541,7 @@ details.faq p { margin-top: 8px; color: var(--muted); }
             <h3>Where to find it</h3>
             <ol class="steps">
               <li><div>Open the app and press the <span class="btn">Trading strategies</span> tab at the top.</div></li>
-              <li><div>The card called <b>Same stocks every day</b> (subtitle “VWAP + 20 MA pullback · intraday · backtest + live paper”) is the second card in that tab.</div></li>
+              <li><div>Press the <span class="btn">YouTube intraday (VWAP)</span> sub-tab. The card is called <b>Same stocks every day</b>.</div></li>
               <li><div>Or ask in <b>Ask the app</b> (Home tab): “How did the strategy do today?” or “Any signal on Trent?”.</div></li>
             </ol>
           </div>

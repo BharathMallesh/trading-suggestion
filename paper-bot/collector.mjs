@@ -59,8 +59,18 @@ const completed = (rows, interval, now = Date.now()) => rows.filter((b) => (b.ts
  * Fetch recent bars and merge them into the store.
  * @returns {Promise<{symbol, interval, before, after, added}[]>}
  */
-export async function collect({ symbols, intervals = STORED_INTERVALS, loadCandles = candles, now = Date.now() } = {}) {
+export async function collect({ symbols, intervals = STORED_INTERVALS, loadCandles = candles, now = Date.now(), retryDelayMs = 5000 } = {}) {
   const jobs = symbols.flatMap((s) => intervals.map((i) => [s, i]));
+  const first = await collectJobs(jobs, loadCandles, now);
+  // one retry for failures (timeouts happen when Yahoo is busy right after the close)
+  const failed = first.filter((r) => r.error);
+  if (!failed.length) return first;
+  await new Promise((r) => setTimeout(r, retryDelayMs));
+  const again = new Map((await collectJobs(failed.map((r) => [r.symbol, r.interval]), loadCandles, now)).map((r) => [`${r.symbol}|${r.interval}`, r]));
+  return first.map((r) => (r.error ? again.get(`${r.symbol}|${r.interval}`) || r : r));
+}
+
+function collectJobs(jobs, loadCandles, now) {
   return mapLimit(jobs, 3, async ([symbol, interval]) => {
     const before = readStore(symbol, interval);
     try {
@@ -177,12 +187,15 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const args = process.argv.slice(2);
   await import('./settings.mjs');
   const { PAPER, EVAL_UNIVERSE, VIDEO_STOCKS } = await import('./config.mjs');
+  // NIFTY 200 (breakfast strategy's sector scan; includes the NIFTY 50) — 5-minute history grows daily
   let nifty50 = [];
-  try {
-    const idx = JSON.parse(readFileSync(join(__dir, 'data', 'index-nifty50.json'), 'utf8'));
-    nifty50 = (idx.symbols || []).map((s) => (/\.(NS|BO)$/.test(s) ? s : `${s}.NS`));
-  } catch {
-    /* list not downloaded yet */
+  for (const f of ['index-nifty200.json', 'index-nifty50.json']) {
+    try {
+      const idx = JSON.parse(readFileSync(join(__dir, 'data', f), 'utf8'));
+      nifty50 = [...nifty50, ...(idx.symbols || []).map((s) => (/\.(NS|BO)$/.test(s) ? s : `${s}.NS`))];
+    } catch {
+      /* list not downloaded yet */
+    }
   }
   const symbols = [...new Set([...EVAL_UNIVERSE, ...PAPER.symbols, ...VIDEO_STOCKS, ...nifty50, '^NSEI', '^INDIAVIX'])];
   try {
@@ -203,11 +216,14 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       const st = storeStatus();
       const days = Math.max(0, ...st.map((s) => s.days));
       console.log(`Store: ${st.length} series, up to ${days} trading days of intraday history.`);
-      const { lastSessionDate } = await import('./health.mjs');
+      // (market-calendar, not health.mjs: health imports this file, and a cycle with the running script deadlocks)
+      const { lastSessionDate } = await import('./market-calendar.mjs');
       const gaps = storeGaps(lastSessionDate());
       for (const g of gaps) console.log(`  GAP: ${g}`);
       if ((gaps.length || failed.length) && args.includes('--notify')) {
-        const { notify } = await import('./monitor.mjs');
+        // macOS notification directly (monitor.mjs also imports this file through health.mjs)
+        const { execFile } = await import('child_process');
+        const notify = (title, message) => execFile('osascript', ['-e', 'on run argv', '-e', 'display notification (item 2 of argv) with title (item 1 of argv)', '-e', 'end run', title, message.slice(0, 220)], () => {});
         notify('Trading research · 5-minute history has gaps', [...(failed.length ? [`${failed.length} series failed to download`] : []), ...gaps].join(' · '));
       }
     }

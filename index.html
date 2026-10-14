@@ -87,6 +87,11 @@
         <a href="/guide" target="_blank" rel="noopener" style="margin-left:auto;align-self:center;font-weight:600;color:var(--accent);text-decoration:none;font-size:14px" title="Step-by-step guide to every card, for beginners">? Help &amp; guide</a>
       </div>
       <div class="note" id="viewNote" style="margin-top:6px"></div>
+      <div class="tabs" id="subTabs" hidden style="margin-top:8px;padding:6px;border:1px solid var(--line);border-radius:12px;background:var(--panel)">
+        <button type="button" data-sub="ath" title="Swing trades in strong stocks: base and flag breakouts, ATR trailing stop">Strong-stock swing</button>
+        <button type="button" data-sub="vwap" title="YouTube intraday strategy: VWAP + 20 MA pullback in 4 stocks">YouTube intraday (VWAP)</button>
+        <button type="button" data-sub="breakfast" title="Strongest sector's strongest stock at 9:20, out by 9:45">Breakfast strategy</button>
+      </div>
     </header>
 
     <main>
@@ -606,6 +611,21 @@
         </p>
         <div id="dlOut"></div>
         <div id="itOut" style="margin-top:12px"></div>
+      </section>
+
+      <!-- Breakfast strategy (trader interview): sector strength at 9:20 -->
+      <section class="card span2" id="bfCard">
+        <h2>Breakfast strategy <span style="font-size:12px;color:var(--warn);font-weight:500">SECTOR STRENGTH AT 9:20 · 1% TARGET · 1% STOP · OUT BY 9:45 · INTRADAY</span></h2>
+        <p class="hint">The intraday logic from a trader interview, coded as rules: in the first five minutes (9:15–9:20) find the <b>strongest sector</b> and its
+          <b>strongest stock</b> (for a short: the weakest sector's weakest stock), skip any stock already up or down 5%+ ("don't chase"), enter at about <b>9:21</b>,
+          stop <b>1%</b> away, target <b>1%</b> (only <b>0.5%</b> when NIFTY's first five minutes are against the trade), and be <b>out by 9:45</b> whatever happens.
+          No indicators, no news. Tested on the NIFTY 200 stocks after intraday charges. Paper only — not investment advice.</p>
+        <div class="row" style="gap:8px">
+          <button id="bfTodayBtn" type="button">Show today's picks</button>
+          <button id="bfRunBtn" type="button" style="background:var(--soft);color:var(--ink);border:1px solid var(--line)">Re-run backtest (~20 s)</button>
+        </div>
+        <div id="bfToday" style="margin-top:10px"></div>
+        <div id="bfOut" style="margin-top:12px">Loading…</div>
       </section>
 
       <!-- Strong-stock swing strategy (trader interview) -->
@@ -1958,6 +1978,67 @@
       });
       jnLoad();
 
+      // --- Breakfast strategy ---
+      function bfRender(d) {
+        const b = d.backtest;
+        const rs = (v) => (v == null ? '–' : (v < 0 ? '−₹' : '₹') + Math.abs(Math.round(v)).toLocaleString('en-IN'));
+        const pc = (x) => (x == null ? '–' : Math.round(x * 100) + '%');
+        let html = '';
+        if (b) {
+          const row = (n, x) => !x?.trades ? '' : `<tr><td style="text-align:left">${esc(n)}</td><td>${x.trades}</td><td>${pc(x.winRate)}</td><td>${rs(x.avgGrossRs)}</td><td>${rs(x.avgChargesRs)}</td><td style="color:${x.avgNetRs >= 0 ? 'var(--up)' : 'var(--down)'}"><b>${rs(x.avgNetRs)}</b></td><td style="color:${x.totalNetRs >= 0 ? 'var(--up)' : 'var(--down)'}">${rs(x.totalNetRs)}</td><td>${x.exits.target}/${x.exits.stop}/${x.exits['9:45']}</td><td>${x.tStat?.toFixed(1) ?? '–'}</td></tr>`;
+          html += `<div style="font-size:14px"><b>Backtest: ${b.stocks} stocks, ${b.sessions} sessions (${esc(b.from)} → ${esc(b.to)})</b> · ₹1 lakh at 5× = ₹5 lakh per trade</div>
+            <div style="overflow-x:auto"><table style="font-size:12px"><thead><tr><th style="text-align:left">Version</th><th>Trades</th><th>Won</th><th>Avg before costs</th><th>Avg charges</th><th>Avg after costs</th><th>Total</th><th>Target / stop / 9:45</th><th>t</th></tr></thead><tbody>
+              ${row('Long only (strongest sector)', b.longOnly)}${row('Short only (weakest sector)', b.shortOnly)}${row('Both', b.both)}${row(`…before ${b.splitDate}`, b.halves.first)}${row(`…from ${b.splitDate}`, b.halves.second)}</tbody></table></div>
+            <div style="margin:8px 0;padding:8px 10px;border-radius:8px;background:var(--soft);font-size:13px"><b>Verdict:</b> before charges it ${Math.abs(b.beforeCosts.avgNetRs) < 150 ? 'about broke even' : b.beforeCosts.avgNetRs > 0 ? 'made money' : 'lost money'} (${rs(b.beforeCosts.avgNetRs)} a trade); intraday charges of about ${rs(b.both.avgChargesRs)} a trade ${b.both.avgNetRs < 0 ? 'turn it into a loss' : 'leave it ahead'} (${rs(b.both.avgNetRs)}). With 5× leverage a stop-out costs about ${rs(-b.rules.capital * b.rules.leverage * b.rules.stopPct / 100)} on ₹1 lakh. Only ${b.sessions} sessions so far: the history grows every day, so this is an early read.</div>
+            <details><summary style="cursor:pointer;font-size:13px">Recent sessions</summary><div style="overflow-x:auto"><table style="font-size:12px"><thead><tr><th style="text-align:left">Date</th><th>NIFTY 9:15–9:20</th><th>Strongest sector</th><th>Long pick</th><th>Result</th><th>Weakest sector</th><th>Short pick</th><th>Result</th></tr></thead><tbody>${b.recent.map((x) =>
+              `<tr><td style="text-align:left">${esc(x.date)}</td><td>${x.niftyMovePct != null ? (x.niftyMovePct >= 0 ? '+' : '') + x.niftyMovePct.toFixed(2) + '%' : '–'}</td><td>${esc(x.topSector || '–')}</td><td>${x.long ? esc(x.long.symbol.replace('.NS', '')) : '–'}</td><td style="color:${(x.long?.net ?? 0) >= 0 ? 'var(--up)' : 'var(--down)'}">${x.long ? `${esc(x.long.reason)} ${rs(x.long.net)}` : '–'}</td><td>${esc(x.bottomSector || '–')}</td><td>${x.short ? esc(x.short.symbol.replace('.NS', '')) : '–'}</td><td style="color:${(x.short?.net ?? 0) >= 0 ? 'var(--up)' : 'var(--down)'}">${x.short ? `${esc(x.short.reason)} ${rs(x.short.net)}` : '–'}</td></tr>`).join('')}</tbody></table></div></details>
+            <div class="note">${esc(b.note)}</div>`;
+        } else html += '<div class="note">Backtest not run yet.</div>';
+        const p = d.paper;
+        if (p) html += `<div style="font-size:14px;margin-top:8px"><b>Paper record</b> since ${esc(p.startedAt)}: ${p.summary.trades ? `${p.summary.trades} trades · won ${pc(p.summary.winRate)} · total ${rs(p.summary.totalNetRs)}` : 'no trades yet (recorded after each close)'}</div>`;
+        $('bfOut').innerHTML = html;
+      }
+      (async () => {
+        try { bfRender(await api('/api/breakfast')); } catch (e) { $('bfOut').innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`; }
+      })();
+      $('bfRunBtn').addEventListener('click', async () => {
+        $('bfOut').innerHTML = '<div class="note">Re-running on all saved 5-minute history…</div>';
+        try {
+          const r = await api('/api/breakfast', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+          bfRender({ ...(await api('/api/breakfast')), backtest: r.backtest });
+        } catch (e) { $('bfOut').innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`; }
+      });
+      $('bfTodayBtn').addEventListener('click', async () => {
+        $('bfTodayBtn').disabled = true;
+        $('bfToday').innerHTML = '<div class="note">Reading the first five minutes for 200 stocks (10–20 seconds)…</div>';
+        try {
+          const d = await api('/api/breakfast/today');
+          const sg = (x) => (x == null ? '–' : (x >= 0 ? '+' : '') + x.toFixed(2) + '%');
+          const rs = (v) => (v == null ? '–' : (v < 0 ? '−₹' : '+₹') + Math.abs(Math.round(v)).toLocaleString('en-IN'));
+          const pick = (p, side) => {
+            if (!p) return `<div class="note">No ${side === 'long' ? 'long' : 'short'} today: ${side === 'long' ? 'no sector was up, or its leaders were up 5%+' : 'no sector was down, or its laggards were down 5%+'}. Skipping is part of the strategy.</div>`;
+            const t = p.trade;
+            return `<div style="padding:8px 10px;border:1px solid ${side === 'long' ? 'var(--up)' : 'var(--down)'};border-radius:10px;font-size:13px">
+              <b style="color:${side === 'long' ? 'var(--up)' : 'var(--down)'}">${side === 'long' ? 'Long' : 'Short'}: ${esc(p.symbol.replace('.NS', ''))}</b> (${esc(p.sector)} ${sg(p.sectorAvg)}; stock ${sg(p.move)} in the first 5 min)
+              ${t ? `<br>Entry ₹${t.entry.toFixed(2)} at ~9:21 · stop ₹${t.stop.toFixed(2)} · target ₹${t.target.toFixed(2)} (${t.targetPct}%${t.targetPct < 1 ? ', NIFTY against' : ''}) · <b>${t.open ? 'open' : esc(t.reason)}</b> ${rs(t.net)} after charges on ₹5 lakh` : '<br>Waiting for the 9:20 candle.'}</div>`;
+          };
+          $('bfToday').innerHTML = `<div style="font-size:14px"><b>${d.live ? 'Live' : 'Latest session'} · ${esc(d.date)}</b> · NIFTY first 5 min ${sg(d.niftyMovePct)}</div>
+            ${d.ready ? `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px;margin-top:8px">${pick(d.long, 'long')}${pick(d.short, 'short')}</div>` : ''}
+            <div style="font-size:13px;margin-top:10px"><b>Sector heat map, 9:15–9:20</b></div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">${d.sectors.map((x) => {
+              const a = Math.min(1, Math.abs(x.avg) / 1.5);
+              return `<div title="${esc(x.name)}: ${x.count} stocks · leader ${esc((x.leader || '').replace('.NS', ''))} · laggard ${esc((x.laggard || '').replace('.NS', ''))}" style="padding:6px 8px;border-radius:8px;font-size:12px;border:1px solid var(--line);background:${x.avg >= 0 ? `rgba(22,163,74,${0.08 + a * 0.35})` : `rgba(220,38,38,${0.08 + a * 0.35})`}"><b>${esc(x.name)}</b> ${sg(x.avg)}</div>`;
+            }).join('')}</div>
+            ${d.alternatives?.long?.length ? `<div class="note">Other long candidates (top sectors): ${d.alternatives.long.map((x) => `${esc(x.sector)} → ${esc((x.stock || '–').replace('.NS', ''))}`).join(' · ')}</div>` : ''}
+            ${d.alternatives?.short?.length ? `<div class="note">Other short candidates (weakest sectors): ${d.alternatives.short.map((x) => `${esc(x.sector)} → ${esc((x.stock || '–').replace('.NS', ''))}`).join(' · ')}</div>` : ''}
+            <div class="note">${esc(d.note)} The backtest so far loses after charges, so this is for paper-following only.</div>`;
+        } catch (e) {
+          $('bfToday').innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
+        } finally {
+          $('bfTodayBtn').disabled = false;
+        }
+      });
+
       // --- Strong-stock swing ---
       (async () => {
         try {
@@ -2071,15 +2152,16 @@
         { key: 'portfolio', match: /^My portfolio/, note: 'My portfolio: the shares you own, tax if you sold today, tax harvesting, risk, and whether your trading beat NIFTY. Stored only on this Mac.' },
         { key: 'invest', match: /^(What to expect|Goal planner|Market tilts|Index-fund picker|Strategies)/, note: 'Investing: long-term money — what SIPs and lump sums have done, what to invest for a goal, which index fund kept the most, and market tilts.' },
         { key: 'options', match: /^(Call \/ Put payoff odds|Live candles|Big-move odds|Volatility check|Option calculator|Selling volatility)/, note: 'Options & risk: the real chance an option pays off, how big a move is likely, volatility, and the Call / Put prediction (labelled: not better than chance).' },
-        { key: 'intraday', match: /^(Strong-stock swing|Same stocks every day)/, note: 'Trading strategies: the strong-stock swing strategy (all-time-high stocks, base and flag breakouts, ATR trailing stop) and the YouTube intraday VWAP + 20 MA strategy — signals, backtests and paper records. Paper only until they prove themselves.' },
+        { key: 'intraday', match: /^(Strong-stock swing|Same stocks every day|Breakfast strategy)/, note: 'Trading strategies: three rule-based strategies, each with live signals, an honest backtest and a paper record. Pick one below. Paper only until they prove themselves.' },
         { key: 'lab', match: /./, note: 'Research lab: every other experiment, including the ones that found no edge (AI direction calls, Kronos / Chronos, option positioning…), plus market data and settings.' },
       ];
       const OLD_VIEW = { money: 'home' }; // tab names before the split
+      const SUBS = { ath: /^Strong-stock swing/, vwap: /^Same stocks every day/, breakfast: /^Breakfast strategy/ };
       // order inside a tab (cards not listed keep page order, after these; "no edge" cards go last)
-      const ORDER = ['Ask the app', 'Analyse today', 'Today', 'Plan a trade', 'Trade journal', 'Price alerts', 'Call / Put payoff odds', 'Live candles', 'Big-move odds', 'Volatility check', 'Option calculator', 'Selling volatility', 'Strong-stock swing', 'Same stocks every day',
+      const ORDER = ['Ask the app', 'Analyse today', 'Today', 'Plan a trade', 'Trade journal', 'Price alerts', 'Call / Put payoff odds', 'Live candles', 'Big-move odds', 'Volatility check', 'Option calculator', 'Selling volatility', 'Strong-stock swing', 'Same stocks every day', 'Breakfast strategy',
         'What to expect', 'Goal planner', 'Index-fund picker', 'Market tilts', 'Strategies', 'Market data', 'Ask (research', 'Prediction hit-rate', 'Stock ranking', 'Earnings', 'Paper portfolio', 'Model evaluation', 'Settings'];
       // Tools whose direction calls were tested and found no edge: labelled, and (except the Call/Put card) moved to the end of their view.
-      const NO_EDGE = /^(Paper-Bot|Candle AI read|Live candles|Foundation models|Direction over months|Options positioning|Same stocks every day)/;
+      const NO_EDGE = /^(Paper-Bot|Candle AI read|Live candles|Foundation models|Direction over months|Options positioning|Same stocks every day|Breakfast strategy)/;
       let noEdgeDone = false;
       function markNoEdge() {
         if (noEdgeDone) return;
@@ -2091,7 +2173,7 @@
           const b = document.createElement('div');
           b.className = 'noEdge';
           b.style.cssText = 'margin:-4px 0 10px;padding:6px 10px;border-radius:8px;font-size:12px;background:var(--soft);color:var(--muted);border-left:3px solid var(--warn)';
-          b.textContent = /^Same stocks/.test(t)
+          b.textContent = /^(Same stocks|Breakfast)/.test(t)
             ? 'Tested: loses money after costs so far; improvements not proven. Kept as a paper experiment, not for real trades.'
             : 'Tested: no reliable edge for up / down — the live scorecard and back-tests matched chance. Kept for curiosity and tracking, not for decisions.';
           sec.querySelector('h2').after(b);
@@ -2112,7 +2194,18 @@
         v = OLD_VIEW[v] || v;
         if (!VIEWS.some((x) => x.key === v)) v = 'home';
         tagViews();
-        for (const sec of document.querySelectorAll('main > section.card')) sec.style.display = sec.dataset.view === v ? '' : 'none';
+        // Trading strategies: one strategy at a time, chosen with the sub-tabs
+        let sub = null;
+        if (v === 'intraday') {
+          try { sub = localStorage.getItem('strategySub'); } catch { /* default */ }
+          if (!SUBS[sub]) sub = 'ath';
+        }
+        for (const sec of document.querySelectorAll('main > section.card')) {
+          const t = sec.querySelector('h2')?.textContent.trim() || '';
+          sec.style.display = sec.dataset.view === v && (!sub || SUBS[sub].test(t)) ? '' : 'none';
+        }
+        $('subTabs').hidden = v !== 'intraday';
+        [...$('subTabs').children].forEach((b) => b.classList.toggle('active', b.dataset.sub === sub));
         [...$('viewTabs').children].forEach((b) => b.classList.toggle('active', b.dataset.view === v));
         $('viewNote').textContent = VIEWS.find((x) => x.key === v).note;
         try { localStorage.setItem('view', v); } catch { /* storage unavailable */ }
@@ -2123,6 +2216,12 @@
           showView(e.target.dataset.view);
           window.scrollTo({ top: 0 });
         }
+      });
+      $('subTabs').addEventListener('click', (e) => {
+        const k = e.target.dataset?.sub;
+        if (!k) return;
+        try { localStorage.setItem('strategySub', k); } catch { /* this view only */ }
+        showView('intraday');
       });
       // a link like /#options opens that tab
       window.addEventListener('hashchange', () => showView(location.hash.slice(1)));
