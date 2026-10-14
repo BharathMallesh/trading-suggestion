@@ -12,7 +12,7 @@ import { lastSessionDate } from './market-calendar.mjs';
 import { loadCalibration } from './calibration.mjs';
 import { computeStats } from './prediction-log.mjs';
 import { llmCredits, llmStatus, llmLastModel } from '../ling-client.mjs';
-import { backupStatus } from './backup.mjs';
+import { backupStatus, BACKUP_DIR } from './backup.mjs';
 import { growwStatus } from '../groww-data.mjs';
 import { OPENROUTER } from '../config.mjs';
 
@@ -44,6 +44,21 @@ export function freeDiskBytes(path = __dir) {
 }
 
 export const DISK_WARN_GB = 2;
+export const STORAGE_WARN_GB = 2;
+
+/** Total bytes of all files under `path` (0 if it doesn't exist). */
+export function dirBytes(path) {
+  if (!existsSync(path)) return 0;
+  const st = statSync(path);
+  if (!st.isDirectory()) return st.size;
+  return readdirSync(path).reduce((a, f) => a + dirBytes(join(path, f)), 0);
+}
+
+/** Bytes used by the app's data folder (and its two largest parts) and the local backups. */
+export function storageSizes() {
+  const data = join(__dir, 'data');
+  return { data: dirBytes(data), candles: dirBytes(join(data, 'candles')), bhav: dirBytes(join(data, 'bhav-eq')), backups: dirBytes(BACKUP_DIR()) };
+}
 export const DISK_FAIL_GB = 0.5;
 
 /**
@@ -157,6 +172,19 @@ export async function healthChecks(opts = {}) {
         : check('disk space', 'ok', `${gb.toFixed(1)} GB free`));
   } catch (err) {
     out.push(check('disk space', 'warn', `could not read free space: ${err.message.slice(0, 80)}`));
+  }
+
+  // 8b. Storage used by the app's own data and backups (grows every day)
+  try {
+    const sizes = (opts.sizesFn || storageSizes)();
+    const gb = (b) => b / 1e9;
+    const mb = (b) => `${Math.round(b / 1e6)} MB`;
+    const detail = `data ${mb(sizes.data)} (5-min history ${mb(sizes.candles)}, NSE files ${mb(sizes.bhav)}) · backups ${mb(sizes.backups)}`;
+    out.push(gb(sizes.data) > STORAGE_WARN_GB || gb(sizes.backups) > STORAGE_WARN_GB
+      ? check('storage', 'warn', `${detail} — over ${STORAGE_WARN_GB} GB; old caches in paper-bot/data (mf, fo-bhav) can be deleted and re-download when needed`)
+      : check('storage', 'ok', detail));
+  } catch (err) {
+    out.push(check('storage', 'warn', `could not measure: ${err.message.slice(0, 80)}`));
   }
 
   // 9. Backups of the evidence (daily; iCloud copy may be blocked for background jobs)

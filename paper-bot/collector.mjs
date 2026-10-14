@@ -15,7 +15,8 @@
 //   node paper-bot/collector.mjs --groww-backfill 120  # optional backfill
 //   node paper-bot/collector.mjs --status              # what is stored
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, renameSync, unlinkSync } from 'fs';
+import { gzipSync, gunzipSync } from 'zlib';
 import { dirname, join } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { candles } from '../market-data.mjs';
@@ -28,12 +29,17 @@ const STORE = process.env.CANDLE_STORE || join(__dir, 'data', 'candles');
 export const STORED_INTERVALS = ['5m', '15m'];
 const BAR_SECS = { '5m': 300, '15m': 900 };
 
-const fileFor = (interval, symbol) => join(STORE, interval, `${symbol.replace(/[^A-Za-z0-9.&^-]/g, '_')}.json`);
+// Stored gzip-compressed (≈40× smaller); plain .json files from before are still read and replaced on the next write.
+const baseFor = (interval, symbol) => join(STORE, interval, symbol.replace(/[^A-Za-z0-9.&^-]/g, '_'));
+const fileFor = (interval, symbol) => `${baseFor(interval, symbol)}.json.gz`;
+const symOf = (f) => f.replace(/\.json(\.gz)?$/, '');
 
 export function readStore(symbol, interval) {
   try {
-    const f = fileFor(interval, symbol);
-    return existsSync(f) ? JSON.parse(readFileSync(f, 'utf8')) : [];
+    const gz = fileFor(interval, symbol);
+    if (existsSync(gz)) return JSON.parse(gunzipSync(readFileSync(gz)).toString('utf8'));
+    const plain = `${baseFor(interval, symbol)}.json`;
+    return existsSync(plain) ? JSON.parse(readFileSync(plain, 'utf8')) : [];
   } catch {
     return [];
   }
@@ -49,7 +55,26 @@ export function mergeBars(...lists) {
 function writeStore(symbol, interval, rows) {
   const f = fileFor(interval, symbol);
   mkdirSync(dirname(f), { recursive: true });
-  writeFileSync(f, JSON.stringify(rows));
+  const tmp = `${f}.tmp-${process.pid}`;
+  writeFileSync(tmp, gzipSync(JSON.stringify(rows)));
+  renameSync(tmp, f);
+  const plain = `${baseFor(interval, symbol)}.json`;
+  if (existsSync(plain)) unlinkSync(plain); // replaced by the compressed file
+}
+
+/** Compress any plain .json store files left from before (one-off, safe to repeat). */
+export function compressStore() {
+  let n = 0;
+  for (const interval of STORED_INTERVALS) {
+    const dir = join(STORE, interval);
+    if (!existsSync(dir)) continue;
+    for (const f of readdirSync(dir).filter((x) => x.endsWith('.json'))) {
+      const sym = symOf(f);
+      writeStore(sym, interval, JSON.parse(readFileSync(join(dir, f), 'utf8')));
+      n++;
+    }
+  }
+  return n;
 }
 
 /** Only completed bars are stored (a live bar would be overwritten later anyway). */
@@ -152,8 +177,8 @@ export function storeGaps(want, interval = '5m') {
   }
   const stale = [];
   const holes = [];
-  for (const f of readdirSync(dir)) {
-    const sym = f.replace(/\.json$/, '');
+  for (const f of readdirSync(dir).filter((x) => /\.json(\.gz)?$/.test(x))) {
+    const sym = symOf(f);
     const days = daysOf(readStore(sym, interval));
     if (!days.size) continue;
     const sorted = [...days].sort();
@@ -172,11 +197,11 @@ export function storeStatus() {
   for (const interval of STORED_INTERVALS) {
     const dir = join(STORE, interval);
     if (!existsSync(dir)) continue;
-    for (const f of readdirSync(dir)) {
-      const rows = JSON.parse(readFileSync(join(dir, f), 'utf8'));
+    for (const f of readdirSync(dir).filter((x) => /\.json(\.gz)?$/.test(x))) {
+      const rows = readStore(symOf(f), interval);
       if (!rows.length) continue;
       const days = new Set(rows.map((r) => String(r.date).slice(0, 10))).size;
-      out.push({ interval, symbol: f.replace(/\.json$/, ''), bars: rows.length, days, from: rows[0].date, to: rows[rows.length - 1].date });
+      out.push({ interval, symbol: symOf(f), bars: rows.length, days, from: rows[0].date, to: rows[rows.length - 1].date });
     }
   }
   return out;
@@ -199,7 +224,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   }
   const symbols = [...new Set([...EVAL_UNIVERSE, ...PAPER.symbols, ...VIDEO_STOCKS, ...nifty50, '^NSEI', '^INDIAVIX'])];
   try {
-    if (args.includes('--status')) {
+    if (args.includes('--compress')) {
+      console.log(`Compressed ${compressStore()} files.`);
+    } else if (args.includes('--status')) {
       const st = storeStatus();
       if (!st.length) console.log('Store is empty — run without flags after the close.');
       for (const s of st) console.log(`${s.interval.padEnd(4)} ${s.symbol.padEnd(16)} ${String(s.bars).padStart(6)} bars · ${s.days} days · ${s.from} → ${s.to}`);

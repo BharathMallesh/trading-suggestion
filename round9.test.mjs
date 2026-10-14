@@ -152,7 +152,7 @@ test('backup: archives the evidence, verifies, keeps the last 30, reports in hea
   writeFileSync(join(root, 'paper-bot', 'prediction-history.json'), '[]');
   writeFileSync(join(root, 'paper-bot', 'data', 'candles', '5m', 'X.json'), '{}');
   const s = await backup({ root, now: new Date('2026-10-08T12:00:00Z') });
-  assert.ok(existsSync(s.file) && s.files >= 2);
+  assert.ok(existsSync(s.file) && s.files >= 1 && existsSync(s.weekly.file), 'daily evidence archive + weekly price-history archive');
   assert.equal(s.mirror.detail, 'off');
   // prune: create 32 old archives, back up again → 30 kept
   for (let i = 1; i <= 32; i++) writeFileSync(join(process.env.BACKUP_DIR, `trading-research-2026-08-${String(i).padStart(2, '0')}.tar.gz`.replace(/-08-3[12]/, (m) => `-07-${m.slice(-2)}`)), 'x');

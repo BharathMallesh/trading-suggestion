@@ -831,6 +831,26 @@
     </main>
 
     <script>
+      // Load each card's data the first time its tab is shown, not all at page start
+      // (the page has ~30 cards; most people open one or two tabs).
+      const LAZY = [];
+      const cardEl = (title) => [...document.querySelectorAll('main > section.card')].find((s) => (s.querySelector('h2')?.textContent.trim() || '').startsWith(title));
+      const cardShown = (title) => { const el = cardEl(title); return !!el && el.style.display !== 'none' && !document.hidden; };
+      function lazy(title, fn) {
+        LAZY.push({ title, fn, done: false });
+        if (typeof runLazy === 'function' && LAZY_READY) runLazy();
+      }
+      let LAZY_READY = false;
+      function runLazy() {
+        for (const x of LAZY) {
+          if (x.done) continue;
+          const el = cardEl(x.title);
+          if (el && el.style.display !== 'none') {
+            x.done = true;
+            Promise.resolve().then(x.fn).catch(() => {});
+          }
+        }
+      }
       const $ = (id) => document.getElementById(id);
       const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -1676,8 +1696,8 @@
         }
       }
       $('gpScoreMode').addEventListener('change', gpScoreLoad);
-      gpScoreLoad();
-      setInterval(gpScoreLoad, 5 * 60 * 1000); // refresh every 5 minutes
+      lazy('Live candles', gpScoreLoad);
+      setInterval(() => { if (cardShown('Live candles')) gpScoreLoad(); }, 5 * 60 * 1000); // refresh every 5 minutes while visible
 
       // --- Hit-rate calibration ---
       function renderHitStats(stats, note) {
@@ -1999,10 +2019,10 @@
           $('alOut').insertAdjacentHTML('afterbegin', `<div class="err">${esc(e.message)}</div>`);
         }
       });
-      jnLoad();
+      lazy('Trade journal', jnLoad);
 
       // --- Strategy comparison ---
-      (async () => {
+      lazy('Strategy comparison', async () => {
         try {
           const d = await api('/api/strategies/compare');
           const head = ['', ...d.rows.map((r) => `<b>${esc(r.name)}</b>${r.reliable ? ' <span style="color:var(--up);font-size:11px">passed test</span>' : ''}`)];
@@ -2021,7 +2041,7 @@
         } catch (e) {
           $('cmpOut').innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
         }
-      })();
+      });
 
       // --- Breakfast strategy ---
       function bfRender(d) {
@@ -2043,9 +2063,9 @@
         if (p) html += `<div style="font-size:14px;margin-top:8px"><b>Paper record</b> since ${esc(p.startedAt)}: ${p.summary.trades ? `${p.summary.trades} trades · won ${pc(p.summary.winRate)} · total ${rs(p.summary.totalNetRs)}` : 'no trades yet (recorded after each close)'}</div>`;
         $('bfOut').innerHTML = html;
       }
-      (async () => {
+      lazy('Breakfast strategy', async () => {
         try { bfRender(await api('/api/breakfast')); } catch (e) { $('bfOut').innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`; }
-      })();
+      });
       $('bfRunBtn').addEventListener('click', async () => {
         $('bfOut').innerHTML = '<div class="note">Re-running on all saved 5-minute history…</div>';
         try {
@@ -2086,7 +2106,7 @@
 
       // --- Strong-stock swing ---
       const VARIANTS_COUNT = 24;
-      (async () => {
+      lazy('Strong-stock swing', async () => {
         try {
           const d = await api('/api/ath-swing');
           const b = d.backtest;
@@ -2157,7 +2177,7 @@
         } catch (e) {
           $('athOut').innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
         }
-      })();
+      });
       function planFrom(t) {
         $('plSym').value = t.symbol.replace('.NS', '');
         $('plSide').value = 'long';
@@ -2217,7 +2237,7 @@
           $('lanOut').innerHTML = `<span class="err">${esc(e.message)}</span>`;
         }
       });
-      lanLoad();
+      lazy('Phone access', lanLoad);
 
       // --- Analyse today ---
       async function scanRun() {
@@ -2324,6 +2344,8 @@
         $('viewNote').textContent = VIEWS.find((x) => x.key === v).note;
         try { localStorage.setItem('view', v); } catch { /* storage unavailable */ }
         if (location.hash.slice(1) !== v) history.replaceState(null, '', `#${v}`);
+        LAZY_READY = true;
+        runLazy(); // first view of a card: load its data now
       }
       $('viewTabs').addEventListener('click', (e) => {
         if (e.target.dataset?.view) {
@@ -2383,7 +2405,7 @@
           <div class="note">${esc(ifData.note)}</div>`;
       }
       $('ifCat').addEventListener('change', ifRender);
-      (async () => {
+      lazy('Index-fund picker', async () => {
         $('ifOut').textContent = 'Loading AMFI NAV history (first load ~10–20 s)…';
         try {
           ifData = await api('/api/index-funds');
@@ -2391,7 +2413,7 @@
         } catch (e) {
           $('ifOut').innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
         }
-      })();
+      });
 
       // --- What to expect ---
       let exData = null;
@@ -2428,7 +2450,7 @@
         if (ten) html += `<div style="font-size:13px;margin-top:6px">In this history, every 10-year hold made money (worst ${p1(ten.lumpSum.worstPct)} a year), but along the way the typical investor sat through a fall of about ${ten.lumpSum.medianDeepestFallPct.toFixed(0)}%. Short holds (3 years) lost money ${x.horizons[0].lumpSum.pctWindowsLosing.toFixed(0)}% of the time.</div>`;
         $('exOut').innerHTML = html + `<div class="note">${esc(exData.note)} Not investment advice.</div>`;
       }
-      (async () => {
+      lazy('What to expect', async () => {
         $('exOut').textContent = 'Loading 25+ years of index history…';
         try {
           exData = await api('/api/expectations');
@@ -2436,7 +2458,7 @@
         } catch (e) {
           $('exOut').innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
         }
-      })();
+      });
       $('exSip').addEventListener('input', exRender);
       $('exIdx').addEventListener('change', exRender);
 
@@ -2542,10 +2564,10 @@
         }
       }
       $('viBtn').addEventListener('click', viLoad);
-      viLoad();
+      lazy('My portfolio', viLoad);
 
       // --- Market tilts (factor lab) ---
-      (async () => {
+      lazy('Market tilts', async () => {
         try {
           const r = await api('/api/factor-lab');
           if (!r.rows?.length) return ($('flOut').innerHTML = `<div class="note">${esc(r.note)}</div>`);
@@ -2559,7 +2581,7 @@
         } catch (e) {
           $('flOut').innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
         }
-      })();
+      });
 
       $('hdImportBtn').addEventListener('click', async () => {
         const f = $('hdFile').files?.[0];
@@ -2588,7 +2610,7 @@
           $('hdOut').insertAdjacentHTML('afterbegin', `<div class="err">Error: ${esc(err.message)}</div>`);
         }
       });
-      hdLoad();
+      lazy('My portfolio', hdLoad);
 
       // --- Trend filter: 25-year crisis test ---
       function renderTrendHistory(r) {
@@ -2619,7 +2641,7 @@
       });
 
       // --- Longer-horizon direction research ---
-      (async () => {
+      lazy('Direction over months', async () => {
         try {
           const r = await api('/api/direction-long');
           if (!r.valuation) return ($('dlOut').innerHTML = `<div class="note">${esc(r.note || 'Not run yet.')}</div>`);
@@ -2640,10 +2662,10 @@
         } catch (e) {
           $('dlOut').innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
         }
-      })();
+      });
 
       // --- Next 30–40 minutes test ---
-      (async () => {
+      lazy('Direction over months', async () => {
         try {
           const r = await api('/api/intraday-test');
           if (!r.model35m) return;
@@ -2662,7 +2684,7 @@
         } catch {
           /* optional */
         }
-      })();
+      });
 
       // --- Same stocks every day (VWAP + 20 MA pullback) ---
       function vpbRender(d) {
@@ -2796,21 +2818,21 @@
         }
       }
       // refresh every 3 minutes while the market is open
-      (async function tick() {
+      lazy('Same stocks every day', async function tick() {
         const live = await vpbToday();
         if (live) setTimeout(tick, 180_000);
-      })();
+      });
       $('vpbTodayBtn').addEventListener('click', () => {
         $('vpbToday').textContent = 'Loading…';
         vpbToday();
       });
-      (async () => {
+      lazy('Same stocks every day', async () => {
         try {
           vpbRender(await api('/api/vwap-pullback' + sizeQuery()));
         } catch (e) {
           $('vpbOut').innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
         }
-      })();
+      });
       $('vpbBtn').addEventListener('click', async () => {
         $('vpbOut').textContent = 'Running the backtest on ~60 days of 5-minute candles…';
         try {
@@ -2833,13 +2855,13 @@
           <div style="font-size:12px;margin-top:6px">Calibration (next session): ${(r.horizons['1d']?.reliability || []).map((b) => `said ${bmPct(b.predicted)} → happened ${bmPct(b.observed)}`).join(' · ')}</div>
           <div class="note">${esc(r.rule)}</div></div>`;
       }
-      (async () => {
+      lazy('Big-move odds', async () => {
         try {
           $('bmEval').innerHTML = bmEvalHtml(await api('/api/big-move-eval'));
         } catch (e) {
           $('bmEval').innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
         }
-      })();
+      });
       $('bmBtn').addEventListener('click', async () => {
         $('bmOut').textContent = 'Calculating…';
         try {
@@ -2881,13 +2903,13 @@
         }
         return html + `<div class="note">${esc(r.rule)} A signal that passes must also work from the next morning's open (the NSE data is published after the close) and survive controlling for that day's NIFTY move.</div>`;
       }
-      (async () => {
+      lazy('Options positioning', async () => {
         try {
           $('opOut').innerHTML = opHtml(await api('/api/options-positioning'));
         } catch (e) {
           $('opOut').innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
         }
-      })();
+      });
       $('opBtn').addEventListener('click', async () => {
         $('opOut').textContent = 'Running… (downloads any missing NSE days first)';
         $('opBtn').disabled = true;
@@ -2922,13 +2944,13 @@
         html += `<div class="note">${esc(m.rule)}<br>${m.caveats.map(esc).join('<br>')}</div>`;
         return html;
       }
-      (async () => {
+      lazy('Selling volatility', async () => {
         try {
           $('vpOut').innerHTML = vpRender(await api('/api/vol-premium'));
         } catch (e) {
           $('vpOut').innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
         }
-      })();
+      });
       $('vpBtn').addEventListener('click', async () => {
         $('vpOut').textContent = 'Replaying… (downloads any missing NSE days first)';
         $('vpBtn').disabled = true;
@@ -3017,7 +3039,7 @@
           $('fmReplay').innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
         }
       });
-      fmShowReplay();
+      lazy('Foundation models', fmShowReplay);
 
       // --- Call / Put payoff odds ---
       $('ooBtn').addEventListener('click', async () => {
@@ -3434,7 +3456,7 @@
       }
       $('tdRefreshBtn').addEventListener('click', () => tdLoad(false));
       $('tdRunBtn').addEventListener('click', () => tdLoad(true));
-      tdLoad(false);
+      lazy('Today', () => tdLoad(false));
 
       // News sentiment chip: −1 … +1, coloured, with event flags on hover.
       function sentimentBadge(n) {
