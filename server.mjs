@@ -246,6 +246,13 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       return res.end(html);
     }
+    // page assets: static/app.css and static/js/NN-name.js only (fixed patterns, no other paths)
+    if (req.method === 'GET' && /^\/static\/(app\.css|js\/\d\d-[a-z-]+\.js)$/.test(url.pathname)) {
+      const body = await readFile(join(HERE, url.pathname.slice(1)), 'utf8').catch(() => null);
+      if (body == null) return json(res, 404, { error: 'Not found' });
+      res.writeHead(200, { 'Content-Type': url.pathname.endsWith('.css') ? 'text/css; charset=utf-8' : 'text/javascript; charset=utf-8', 'Cache-Control': 'no-cache' });
+      return res.end(body);
+    }
     // plain-language user guide (docs/user-guide.html)
     if (req.method === 'GET' && (url.pathname === '/guide' || url.pathname === '/guide/')) {
       const html = await readFile(join(HERE, 'docs', 'user-guide.html'), 'utf8');

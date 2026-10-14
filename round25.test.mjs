@@ -57,3 +57,18 @@ test('storage health check: ok under the limit, warning over it', async () => {
   assert.equal(big.checks.find((c) => c.name === 'storage').level, 'warn');
   assert.ok(h.dirBytes(join(TMP, 'store')) > 0);
 });
+
+test('corporate actions: unadjusted bonus / split jumps are undone, real crashes are not', async () => {
+  const bh = await import('./paper-bot/bhav-history.mjs');
+  // Reliance-style 1:1 bonus in an old file: price halves, PREVCLOSE not adjusted
+  const bonus = [{ date: 'd1', open: 1640, high: 1650, low: 1630, close: 1645, prev: 1632, val: 1 }, { date: 'd2', open: 820, high: 825, low: 812, close: 818, prev: 1645, val: 1 }];
+  assert.ok(Math.abs(bh.actionFactor(bonus[0], bonus[1]) - 0.5) < 1e-12);
+  const adj = bh.adjust(bonus);
+  assert.ok(Math.abs(adj[0].close - 822.5) < 1e-9, 'earlier price halved');
+  // newer files: NSE adjusts PREVCLOSE itself
+  assert.ok(Math.abs(bh.actionFactor({ close: 1000 }, { open: 200, close: 201, prev: 200 }) - 0.2) < 1e-12);
+  // a genuine 30% crash (not near a standard ratio) stays a crash
+  assert.equal(bh.actionFactor({ close: 100 }, { open: 72, close: 70, prev: 100 }), 1);
+  // an ordinary day
+  assert.equal(bh.actionFactor({ close: 100 }, { open: 101, close: 99, prev: 100 }), 1);
+});

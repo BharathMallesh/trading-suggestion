@@ -7,9 +7,9 @@
 //     stocks that were ever among the 300 most-traded are kept (EQ, BE and BZ
 //     series, so a stock moved to trade-to-trade surveillance is not lost).
 //     Stored per month, gzip-compressed, in paper-bot/data/bhav-eq/.
-//   - Corporate actions (splits, bonuses) are undone with NSE's own adjusted
-//     previous close: on an ex-date PREVCLOSE ≠ yesterday's close, and the
-//     ratio rescales all earlier prices.
+//   - Corporate actions (splits, bonuses) are undone: from NSE's adjusted previous
+//     close where its files provide it, otherwise from the ex-date jump itself
+//     when it lands on a standard split / bonus ratio (see actionFactor).
 //   - The point-in-time universe for each month is the 200 most-traded stocks
 //     (median daily traded value) of the PREVIOUS month — what you could have
 //     known then — so stocks that later failed are included.
@@ -190,12 +190,36 @@ export function loadSeries({ months = null } = {}) {
   return raw;
 }
 
-/** Undo splits / bonuses using NSE's adjusted previous close (only clear corporate actions: ≥ 5% gap between the two). */
+// Standard split / bonus / consolidation price ratios (new price ÷ old price on the ex-date):
+// 2:1 split or 1:1 bonus = 1/2, 5:1 = 1/5, 10:1 = 1/10, 1:2 bonus = 2/3, 2:1 bonus = 1/3, 3:1 bonus = 1/4,
+// 1:3 bonus = 3/4, 3:2 bonus = 2/5 … and the reverse for consolidations.
+export const ACTION_RATIOS = [1 / 10, 1 / 5, 1 / 4, 1 / 3, 2 / 5, 1 / 2, 2 / 3, 3 / 4, 4 / 3, 3 / 2, 2, 5, 10];
+
+/**
+ * Corporate-action factor on day i (new price ÷ old), or 1. NSE's newer files adjust PREVCLOSE on
+ * the ex-date; its older files do NOT, so a jump near a standard ratio at the open AND the close
+ * (more than 20% overnight) is also treated as a split / bonus. A genuine crash rarely opens and
+ * closes within 5% of e.g. exactly half.
+ */
+export function actionFactor(prevRow, row) {
+  if (row.prev > 0 && prevRow.close > 0) {
+    const f = row.prev / prevRow.close;
+    if (Math.abs(Math.log(f)) > Math.log(1.05)) return f; // NSE adjusted the previous close itself
+  }
+  const rc = row.close / prevRow.close;
+  const ro = row.open / prevRow.close;
+  if (Math.abs(Math.log(rc)) < Math.log(1.2)) return 1;
+  const near = (r) => ACTION_RATIOS.find((k) => Math.abs(Math.log(r / k)) < Math.log(1.05));
+  const k = near(ro) ?? null;
+  return k != null && near(rc) === k ? k : 1;
+}
+
+/** Undo splits / bonuses: every price before an ex-date is multiplied by that day's factor. */
 export function adjust(rows) {
   const out = rows.map((r) => ({ ...r }));
   for (let i = out.length - 1; i > 0; i--) {
-    const f = out[i].prev > 0 ? out[i].prev / out[i - 1].close : 1;
-    if (f > 0 && Math.abs(Math.log(f)) > Math.log(1.05)) {
+    const f = actionFactor(rows[i - 1], rows[i]);
+    if (f !== 1) {
       for (let j = 0; j < i; j++) {
         out[j].open *= f;
         out[j].high *= f;

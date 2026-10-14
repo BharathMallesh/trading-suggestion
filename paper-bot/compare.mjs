@@ -4,7 +4,7 @@
 // Research / paper only — not investment advice.
 
 import { loadVwapPullback, paperSummary as vwapPaper } from './vwap-pullback.mjs';
-import { loadAthSwing, loadAthPaper, summarise as athSum } from './ath-swing.mjs';
+import { loadAthSwing, loadAthPaper, loadSurvivorship, summarise as athSum } from './ath-swing.mjs';
 import { loadBreakfast, loadBreakfastPaper, summarise as bfSum } from './breakfast.mjs';
 import { earlyVerdict } from './weekly.mjs';
 
@@ -12,7 +12,7 @@ const pct = (x, d = 1) => (x == null ? '–' : `${(x * 100).toFixed(d)}%`);
 const rs = (v) => (v == null ? '–' : `${v < 0 ? '−' : '+'}₹${Math.abs(Math.round(v)).toLocaleString('en-IN')}`);
 const R = (x) => (x == null ? '–' : `${x >= 0 ? '+' : ''}${x.toFixed(2)} R`);
 
-export function compareStrategies({ vwap = loadVwapPullback(), vp = vwapPaper(), ath = loadAthSwing(), ap = loadAthPaper(), bf = loadBreakfast(), bp = loadBreakfastPaper() } = {}) {
+export function compareStrategies({ vwap = loadVwapPullback(), vp = vwapPaper(), ath = loadAthSwing(), ap = loadAthPaper(), bf = loadBreakfast(), bp = loadBreakfastPaper(), sv = loadSurvivorship() } = {}) {
   const rows = [];
   // strong-stock swing
   {
@@ -23,12 +23,15 @@ export function compareStrategies({ vwap = loadVwapPullback(), vp = vwapPaper(),
     rows.push({
       key: 'ath', name: 'Strong-stock swing', style: 'Swing · days to weeks · delivery',
       test: ath ? `${ath.from?.slice(0, 4)}–${ath.to?.slice(0, 4)}, ${ath.stocks} stocks, ${ath.all.trades} trades` : 'not run',
-      backtest: pick?.adopt ? `${R(pick.test.avgR)} later years · ${R(pick.wideTest.avgR)} unseen stocks (t ${pick.combined.tStat?.toFixed(1)})` : ath ? `${R(ath.all.avgR)} (t ${ath.all.tStat?.toFixed(1)})` : '–',
+      backtest: (pick?.adopt ? `${R(pick.test.avgR)} later years · ${R(pick.wideTest.avgR)} unseen stocks (t ${pick.combined.tStat?.toFixed(1)})` : ath ? `${R(ath.all.avgR)} (t ${ath.all.tStat?.toFixed(1)})` : '–')
+        + (sv?.results?.[ver] ? ` · without survivorship bias ${R(sv.results[ver].all.avgR)} (t ${sv.results[ver].all.tStat?.toFixed(1)}), ${pct(sv.results[ver].portfolioCagr)}/yr` : ''),
       money: ath ? `${pct(pick?.adopt ? pick.portfolioCagr : ath.portfolio.cagr)}/yr vs NIFTY ${pct(ath.portfolio.niftyCagr)} · after tax ${pct((pick?.adopt ? ath.afterTax?.improved : ath.afterTax?.strategy)?.cagrAfter)} vs ${pct(ath.afterTax?.index?.cagrAfter)}` : '–',
       paper: paper.length ? `${paper.length} closed · ${pct(ps.winRate, 0)} won · ${R(ps.avgR)}` : `no closed trades yet (since ${ap?.startedAt || '–'})`,
       paperVerdict: earlyVerdict(paper.length, ps.avgR, ps.tStat, 'R'),
-      reliable: !!pick?.adopt,
-      verdict: pick?.adopt ? 'Best of the three: the only one that passed an out-of-sample test. Still trails a NIFTY fund after tax; best used as a small slice next to an index fund.' : 'Slightly positive, not proven.',
+      reliable: !!pick?.adopt && (!sv?.results?.[ver] || (sv.results[ver].all.avgR > 0 && sv.results[ver].all.tStat >= 2)),
+      verdict: pick?.adopt
+        ? `Best of the three: passed an out-of-sample test${sv?.results?.[ver] ? (sv.results[ver].all.tStat >= 2 && sv.results[ver].all.avgR > 0 ? ' and held up without survivorship bias' : ', but weakened without survivorship bias') : ''}. Still trails a NIFTY fund (more so after tax); best used as a small slice next to an index fund.`
+        : 'Slightly positive, not proven.',
     });
   }
   // YouTube VWAP
