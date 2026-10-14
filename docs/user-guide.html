@@ -160,7 +160,8 @@ details.faq p { margin-top: 8px; color: var(--muted); }
       <li class="sub"><a href="#t-predict">Call / Put prediction</a></li>
       <li class="sub"><a href="#t-callput">Call / Put payoff odds</a></li>
       <li class="sub"><a href="#t-bigmove">Big-move odds</a></li>
-      <li><a href="#lab">Intraday strategy &amp; Research lab tabs</a></li>
+      <li><a href="#lab">Trading strategies &amp; Research lab tabs</a></li>
+      <li class="sub"><a href="#t-ath">Strong-stock swing strategy</a></li>
       <li class="sub"><a href="#t-vwap">YouTube strategy: where it is</a></li>
       <li class="sub"><a href="#t-vwap-how">YouTube strategy: how it works</a></li>
       <li class="sub"><a href="#t-labothers">All other lab cards</a></li>
@@ -187,7 +188,7 @@ details.faq p { margin-top: 8px; color: var(--muted); }
       </div>
       <div class="callout">
         <h3>The one-paragraph summary</h3>
-        <p>Looking for the <b>YouTube intraday strategy</b>? It is in the <b>Intraday strategy</b> tab → “Same stocks every day”, explained <a href="#t-vwap">here</a>. Looking for the <b>Call / Put prediction</b>? It is in the <b>Options &amp; risk</b> tab, explained <a href="#t-predict">here</a>.</p>
+        <p>Looking for the <b>YouTube intraday strategy</b>? It is in the <b>Trading strategies</b> tab → “Same stocks every day”, explained <a href="#t-vwap">here</a>. Looking for the <b>Call / Put prediction</b>? It is in the <b>Options &amp; risk</b> tab, explained <a href="#t-predict">here</a>.</p>
         <p>The parts of this app you can rely on are about <b>risk, cost, tax and long-term investing</b>: how much a stock usually moves, the real chance an option pays off, what a monthly investment (SIP) in an index fund has done in good and bad periods, which index fund kept the most of its returns, and how to save tax. The parts about <b>short-term trading and up/down guesses</b> are kept in the Research lab as experiments, clearly labelled, so you can see what was tried and why it did not work.</p>
       </div>
     </section>
@@ -198,7 +199,7 @@ details.faq p { margin-top: 8px; color: var(--muted); }
       <ol class="steps">
         <li><div>The app runs on the owner’s Mac. It starts by itself when the Mac is switched on and someone logs in, so there is usually nothing to start.</div></li>
         <li><div>Open a web browser (Safari or Chrome) on that Mac and go to <code>http://127.0.0.1:3000</code>. Bookmark it.</div></li>
-        <li><div>At the top you will see seven tabs: <span class="btn">Home</span> <span class="btn">My trades</span> <span class="btn">My portfolio</span> <span class="btn">Investing</span> <span class="btn">Options &amp; risk</span> <span class="btn">Intraday strategy</span> <span class="btn">Research lab</span>. Each tab shows a different group of cards. The app remembers the last tab you used, and a grey line under the tabs says what the current tab is for. On the far right, <span class="btn">? Help &amp; guide</span> opens this guide.</div></li>
+        <li><div>At the top you will see seven tabs: <span class="btn">Home</span> <span class="btn">My trades</span> <span class="btn">My portfolio</span> <span class="btn">Investing</span> <span class="btn">Options &amp; risk</span> <span class="btn">Trading strategies</span> <span class="btn">Research lab</span>. Each tab shows a different group of cards. The app remembers the last tab you used, and a grey line under the tabs says what the current tab is for. On the far right, <span class="btn">? Help &amp; guide</span> opens this guide.</div></li>
         <li><div>Each box on the page is called a <b>card</b>. Every card has a title, a short grey explanation under it, and its own buttons. Results appear inside the card after you press a button. Some cards fill in by themselves when the page opens.</div></li>
       </ol>
       <div class="views">
@@ -207,7 +208,7 @@ details.faq p { margin-top: 8px; color: var(--muted); }
         <div class="view"><h3>My portfolio</h3><p>The shares you own: tax if you sold today, tax harvesting, risk, and whether your trading beat NIFTY.</p></div>
         <div class="view"><h3>Investing</h3><p>Long-term money: what SIPs have done, a goal planner, the index-fund picker, market tilts and two slow strategies.</p></div>
         <div class="view"><h3>Options &amp; risk</h3><p>Call / Put payoff odds, the Call / Put prediction, big-move odds, volatility, an option calculator and option selling.</p></div>
-        <div class="view"><h3>Intraday strategy</h3><p>The YouTube VWAP + 20 MA strategy: today’s signals, your trade size and the paper record.</p></div>
+        <div class="view"><h3>Trading strategies</h3><p>Two rule-based strategies with live signals, backtests and paper records: the strong-stock swing strategy and the YouTube intraday strategy.</p></div>
         <div class="view"><h3>Research lab</h3><p>Every other experiment, mostly ones that found no edge, plus market data and settings.</p></div>
       </div>
       <div class="callout warn">
@@ -473,19 +474,46 @@ details.faq p { margin-top: 8px; color: var(--muted); }
 
     <!-- LAB -->
     <section class="part" id="lab">
-      <h2>Intraday strategy and Research lab tabs</h2>
-      <div class="prose"><p>The <b>Intraday strategy</b> tab holds the YouTube strategy. The <b>Research lab</b> tab holds every other experiment. Most found that the idea does <b>not</b> work after costs, and the app says so; cards with a grey “Tested: no reliable edge” note are listed last.</p></div>
+      <h2>Trading strategies and Research lab tabs</h2>
+      <div class="prose"><p>The <b>Trading strategies</b> tab holds the strong-stock swing strategy and the YouTube intraday strategy. The <b>Research lab</b> tab holds every other experiment. Most found that the idea does <b>not</b> work after costs, and the app says so; cards with a grey “Tested: no reliable edge” note are listed last.</p></div>
       <div class="cards">
+        <article class="tool" id="t-ath">
+          <div class="eyebrow">Tab: Trading strategies</div>
+          <header><h3>Strong-stock swing</h3><span class="badge b-exp">Experiment: paper only</span></header>
+          <p class="what">A swing-trading strategy (positions held days to weeks) built from a trader interview. The idea: trade only strong stocks, risk a small fixed amount, and let the few big winners pay for the many small losers.</p>
+          <h3 style="font-size:1.05rem">How it works, step by step</h3>
+          <ol class="steps">
+            <li><div><b>Only strong stocks.</b> A stock qualifies if it made an all-time high in the last 12 months and is still within 30% of it. A stock like SBI near its record qualifies; one like Yes Bank, far below an old peak, does not.</div></li>
+            <li><div><b>Setup A, oversold base:</b> the strong stock has fallen enough that its <i>weekly</i> RSI is 35 or lower, then stops making new lows for at least 5 trading days (a base). Buy on the first daily close above the top of that base.</div></li>
+            <li><div><b>Setup B, flag:</b> a quick strong rise (at least 4× its normal daily move within 10 days), then a short pause of 3–15 days that keeps most of the gain. Buy on the first close above the top of the rise.</div></li>
+            <li><div><b>Enter</b> at the next day’s opening price.</div></li>
+            <li><div><b>Stop-loss</b> 1 ATR (one normal day’s move) below the base or flag low.</div></li>
+            <li><div><b>No fixed target.</b> A trailing “Chandelier” stop follows the price up: the highest price since entry minus 3 ATR. Exit at the next open after a close below it. Small losses, occasional big winners.</div></li>
+            <li><div><b>Size</b> each trade to risk 1% of capital, with at most 10 positions open.</div></li>
+          </ol>
+          <div class="cols">
+            <div><h4>Using the card</h4><ol><li>Open the <b>Trading strategies</b> tab.</li><li>Press <span class="btn">Scan today's signals</span> (about 20 seconds). It uses completed daily candles only.</li><li><b>Signals</b> list stocks that broke out at the latest close, with the stop and risk. <span class="btn">Plan this trade</span> opens My trades with everything filled in.</li><li><b>Watch</b> lists oversold strong stocks still building a base.</li></ol></div>
+            <div><h4>What the backtest found (NIFTY 200, 2010–2026, after charges)</h4><ul>
+              <li>788 trades, 37% won, <b>+0.06 R per trade</b>: slightly positive but not statistically reliable.</li>
+              <li><b>Flag breakouts</b> did best (+0.13 R); oversold-base breakouts about broke even.</li>
+              <li>The trader’s claim holds: the best 10% of trades made <b>4.5×</b> the total profit; the other 90% lost money together.</li>
+              <li>As a portfolio it made about <b>6.7% a year</b> (flags only 7.8%) vs NIFTY’s ~10%, but its worst fall was only 7–11%.</li>
+              <li>The stock list is today’s NIFTY 200, which flatters the result.</li>
+            </ul></div>
+          </div>
+          <div class="example"><b>Should I trade it with real money?</b> Not yet. It is tracked on paper from 14 October 2026; judge it after many months of results.</div>
+        </article>
+
         <article class="tool" id="t-vwap">
-          <div class="eyebrow">Tab: Intraday strategy</div>
+          <div class="eyebrow">Tab: Trading strategies</div>
           <header><h3>Same stocks every day (the YouTube strategy)</h3><span class="badge b-exp">Experiment: paper only</span></header>
           <p class="what">An intraday trading strategy from the Dhan YouTube video “The Power of Trading the Same Stocks Every Day”, coded into the app exactly as the video describes. The app tests it honestly and follows it every day with pretend money.</p>
 
           <div class="callout">
             <h3>Where to find it</h3>
             <ol class="steps">
-              <li><div>Open the app and press the <span class="btn">Intraday strategy</span> tab at the top.</div></li>
-              <li><div>The card called <b>Same stocks every day</b> (subtitle “VWAP + 20 MA pullback · intraday · backtest + live paper”) is the only card in that tab.</div></li>
+              <li><div>Open the app and press the <span class="btn">Trading strategies</span> tab at the top.</div></li>
+              <li><div>The card called <b>Same stocks every day</b> (subtitle “VWAP + 20 MA pullback · intraday · backtest + live paper”) is the second card in that tab.</div></li>
               <li><div>Or ask in <b>Ask the app</b> (Home tab): “How did the strategy do today?” or “Any signal on Trent?”.</div></li>
             </ol>
           </div>
@@ -623,7 +651,7 @@ details.faq p { margin-top: 8px; color: var(--muted); }
         <div class="task">
           <h3>“I want to follow the YouTube strategy”</h3>
           <ol>
-            <li><b>Intraday strategy</b> tab → <b>Same stocks every day</b>. Set <b>Your size</b>.</li>
+            <li><b>Trading strategies</b> tab → <b>Same stocks every day</b>. Set <b>Your size</b>.</li>
             <li>Watch <b>Today’s signals</b> during market hours, or ask “How did the strategy do today?”.</li>
             <li>Check the <b>When can we trust it?</b> meter each week.</li>
             <li>Do not use real money until it says it passed.</li>

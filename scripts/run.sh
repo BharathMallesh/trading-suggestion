@@ -31,7 +31,9 @@ case "${1:-}" in
     caffeinate -i -w $$ & # keep the Mac awake until this job finishes
     echo "$(date '+%F %T') collect"; node paper-bot/collector.mjs --notify
     # same-stocks intraday strategy: record today's paper trades (after the close) and send the day's summary
-    node paper-bot/vwap-pullback.mjs --paper --notify ;;
+    node paper-bot/vwap-pullback.mjs --paper --notify
+    # strong-stock swing strategy: forward paper record on completed daily candles
+    node paper-bot/ath-swing.mjs --paper ;;
   monitor)
     # Weekdays only, and only if the server is up.
     if ! curl -s -o /dev/null --max-time 5 http://127.0.0.1:3000/; then
@@ -57,7 +59,9 @@ case "${1:-}" in
     # Factor lab: NSE momentum / quality / low-vol / value indices vs NIFTY (adds each new month-end)
     node paper-bot/factor-lab.mjs >/dev/null
     # "Analyse today": how often trends kept going, by time of day and alignment
-    node paper-bot/today-scan.mjs >/dev/null ;;
+    node paper-bot/today-scan.mjs >/dev/null
+    # strong-stock swing strategy: re-run the backtest on the newest data
+    node paper-bot/ath-swing.mjs >/dev/null ;;
   backup)
     caffeinate -i -w $$ & # keep the Mac awake until this job finishes
     echo "$(date '+%F %T') backup"; node paper-bot/backup.mjs ;;

@@ -56,6 +56,7 @@ import { tradesVsIndex } from './paper-bot/vs-index.mjs';
 import { loadFactorLab } from './paper-bot/factor-lab.mjs';
 import { todayScan } from './paper-bot/today-scan.mjs';
 import { loadJournal, saveSettings as saveJournalSettings, planTrade, addTrade, closeTrade, deleteTrade, journalStats, todayStatus, addAlert, deleteAlert, checkAlerts, SETUPS } from './paper-bot/journal.mjs';
+import { loadAthSwing, athSwingScan, loadAthPaper, summarise as athSummarise } from './paper-bot/ath-swing.mjs';
 import { vwapPullbackTest, saveVwapPullback, loadVwapPullback, paperSummary, paperUpdate, loadImprove, todaySignals, parseSizing, sizeTrade, noteLiveSeen } from './paper-bot/vwap-pullback.mjs';
 import { nseOpenNow } from './paper-bot/market-calendar.mjs';
 import { bigMove, evaluateBigMove, saveBigMoveEval, loadBigMoveEval } from './paper-bot/big-move.mjs';
@@ -71,6 +72,7 @@ let expectCache = null; // /api/expectations (daily)
 let fundsCache = null; // /api/index-funds (daily)
 let vwapTodayCache = null; // /api/vwap-today (1 minute)
 let todayScanCache = null; // /api/today-scan (2 minutes)
+let athScanCache = null; // /api/ath-swing/scan (10 minutes)
 const monthlyCache = {}; // goal planner: index → { at, data }
 // Bind to loopback only — this is a local tool holding a server-side API key,
 // not something to expose on the network.
@@ -564,6 +566,15 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && url.pathname === '/api/journal/delete') return json(res, 200, await deleteTrade((await readJson(req)).id));
     if (req.method === 'POST' && url.pathname === '/api/alerts/add') return json(res, 200, await addAlert(await readJson(req)));
     if (req.method === 'POST' && url.pathname === '/api/alerts/delete') return json(res, 200, await deleteAlert((await readJson(req)).id));
+    if (req.method === 'GET' && url.pathname === '/api/ath-swing') {
+      const paper = loadAthPaper();
+      return json(res, 200, { backtest: loadAthSwing(), paper: paper ? { startedAt: paper.startedAt, updatedAt: paper.updatedAt, summary: athSummarise(paper.trades), open: paper.trades.filter((t) => t.open), recent: paper.trades.filter((t) => !t.open).slice(-15).reverse() } : null });
+    }
+    if (req.method === 'GET' && url.pathname === '/api/ath-swing/scan') {
+      // strong-stock swing scan on completed daily candles (NIFTY 200)
+      if (!athScanCache || Date.now() - athScanCache.at > 600_000) athScanCache = { at: Date.now(), data: await athSwingScan({}) };
+      return json(res, 200, athScanCache.data);
+    }
     if (req.method === 'GET' && url.pathname === '/api/today-scan') {
       // "Analyse today": NIFTY 50 trend scan; at most one fresh scan every 2 minutes
       if (!todayScanCache || Date.now() - todayScanCache.at > 120_000) todayScanCache = { at: Date.now(), data: await todayScan({}) };

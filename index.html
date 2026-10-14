@@ -82,7 +82,7 @@
         <button type="button" data-view="portfolio" title="Your shares, tax and whether your trading beat NIFTY">My portfolio</button>
         <button type="button" data-view="invest" title="SIP, goals, index funds, market tilts">Investing</button>
         <button type="button" data-view="options" title="Call / Put odds and prediction, big moves, volatility">Options &amp; risk</button>
-        <button type="button" data-view="intraday" title="The YouTube VWAP + 20 MA strategy, live and on paper">Intraday strategy</button>
+        <button type="button" data-view="intraday" title="The YouTube intraday strategy and the strong-stock swing strategy, live and on paper">Trading strategies</button>
         <button type="button" data-view="lab" title="Every experiment, including the ones that found no edge">Research lab</button>
         <a href="/guide" target="_blank" rel="noopener" style="margin-left:auto;align-self:center;font-weight:600;color:var(--accent);text-decoration:none;font-size:14px" title="Step-by-step guide to every card, for beginners">? Help &amp; guide</a>
       </div>
@@ -606,6 +606,19 @@
         </p>
         <div id="dlOut"></div>
         <div id="itOut" style="margin-top:12px"></div>
+      </section>
+
+      <!-- Strong-stock swing strategy (trader interview) -->
+      <section class="card span2" id="athCard">
+        <h2>Strong-stock swing <span style="font-size:12px;color:var(--warn);font-weight:500">ALL-TIME-HIGH STOCKS · BASE &amp; FLAG BREAKOUTS · ATR TRAILING STOP · DAILY CHARTS</span></h2>
+        <p class="hint">The swing-trading logic from a trader interview, coded as rules and tested on today's NIFTY 200 stocks since 2010:
+          trade only <b>structurally strong</b> stocks (an all-time high in the last 12 months and within 30% of it), buy the first breakout after an
+          <b>oversold base</b> (weekly RSI ≤ 35, no new low for 5+ days) or a <b>flag</b> (a quick 4-ATR run, then a 3–15 day pause), stop
+          <b>1 ATR below</b> the base or flag low, and let winners run with a <b>Chandelier stop</b> (highest high − 3 ATR). No fixed target: small losses, occasional big winners.
+          Positions held days to weeks (delivery). Paper only — not investment advice.</p>
+        <button id="athScanBtn" type="button">Scan today's signals</button>
+        <div id="athScan" style="margin-top:10px"></div>
+        <div id="athOut" style="margin-top:12px">Loading…</div>
       </section>
 
       <!-- Same-stocks intraday strategy (VWAP + 20 MA pullback) -->
@@ -1945,6 +1958,72 @@
       });
       jnLoad();
 
+      // --- Strong-stock swing ---
+      (async () => {
+        try {
+          const d = await api('/api/ath-swing');
+          const b = d.backtest;
+          const pc = (x, k = 0) => (x == null ? '–' : (x * 100).toFixed(k) + '%');
+          const R = (x) => (x == null ? '–' : (x >= 0 ? '+' : '') + x.toFixed(2) + ' R');
+          let html = '';
+          if (b) {
+            const row = (n, x) => !x?.trades ? '' : `<tr><td style="text-align:left">${esc(n)}</td><td>${x.trades}</td><td>${pc(x.winRate)}</td><td style="color:${x.avgR >= 0 ? 'var(--up)' : 'var(--down)'}"><b>${R(x.avgR)}</b></td><td>${pc(x.avgRetPct, 1)}</td><td>${x.avgDays.toFixed(0)}</td><td>${x.profitFactor?.toFixed(2) ?? '–'}</td><td>${x.tStat?.toFixed(1) ?? '–'}</td></tr>`;
+            const a = b.all;
+            const pf = b.portfolio;
+            html += `<div style="font-size:14px"><b>Backtest: ${b.stocks} stocks, ${esc(b.from)} → ${esc(b.to)}, after charges</b></div>
+              <div style="overflow-x:auto"><table style="font-size:12px"><thead><tr><th style="text-align:left">Trades</th><th>Count</th><th>Won</th><th>Avg per trade</th><th>Avg return</th><th>Days held</th><th>Profit factor</th><th>t</th></tr></thead><tbody>
+                ${row('All', a)}${row(`Before ${b.splitDate}`, b.firstHalf)}${row(`From ${b.splitDate}`, b.secondHalf)}${Object.entries(b.bySetup).map(([k, v]) => row(k, v)).join('')}</tbody></table></div>
+              <table style="font-size:13px"><tbody>
+                <tr><td>Portfolio (1% risk a trade, ≤10 open, idle cash at ${pf.cashRatePct}%)</td><td><b>${pc(pf.cagr, 1)} a year</b> vs NIFTY ${pc(pf.niftyCagr, 1)} · worst fall ${pc(pf.maxDrawdown)} · invested ${pc(pf.timeInMarket)} of the time</td></tr>
+                <tr><td>Flag breakouts only</td><td>${pc(pf.flagOnly.cagr, 1)} a year · worst fall ${pc(pf.flagOnly.maxDrawdown)} · invested ${pc(pf.flagOnly.timeInMarket)}</td></tr>
+                <tr><td>"90% of profit from 10% of trades"?</td><td>The best 10% of trades made <b>${pc(a.top10ShareOfR)}</b> of the total net result${a.top10ShareOfR > 1 ? ' — the other 90% lost money together. The big winners carry everything, as the trader says.' : '.'} Best trade ${R(a.bestR)}, median ${R(a.medianR)}.</td></tr>
+                <tr><td>Losing streaks</td><td>Longest run of losses: <b>${a.longestLosingStreak}</b> in a row. With a ${pc(a.winRate)} win rate over ${a.trades} trades, a streak that long happens by chance ${pc(a.streakProbability)} of the time${a.streakProbability < 0.05 ? ' — unusually long, a sign the edge may be weaker than the win rate suggests' : ''}.</td></tr>
+              </tbody></table>
+              <div style="margin:8px 0;padding:8px 10px;border-radius:8px;background:var(--soft);font-size:13px"><b>Verdict:</b> slightly positive per trade (${R(a.avgR)}, t ${a.tStat?.toFixed(1)}), not statistically reliable. Flag breakouts did best; oversold-base breakouts about broke even. As a portfolio it trailed simply holding NIFTY, but with far smaller falls. The stock list is today's NIFTY 200, which flatters the result (stocks that collapsed are missing). Paper-tracked from ${esc(d.paper?.startedAt || 'today')}.</div>
+              <details><summary style="cursor:pointer;font-size:13px">By year</summary><div style="overflow-x:auto"><table style="font-size:12px"><thead><tr><th style="text-align:left">Year</th><th>Trades</th><th>Won</th><th>Avg per trade</th></tr></thead><tbody>${Object.entries(b.byYear).map(([y, v]) => `<tr><td style="text-align:left">${esc(y)}</td><td>${v.trades}</td><td>${pc(v.winRate)}</td><td style="color:${v.avgR >= 0 ? 'var(--up)' : 'var(--down)'}">${R(v.avgR)}</td></tr>`).join('')}</tbody></table></div></details>`;
+          } else html += '<div class="note">Backtest not run yet (the weekly refit runs it).</div>';
+          const p = d.paper;
+          if (p) html += `<div style="font-size:14px;margin-top:10px"><b>Paper record</b> since ${esc(p.startedAt)}: ${p.summary.trades ? `${p.summary.trades} closed trades · won ${pc(p.summary.winRate)} · ${R(p.summary.avgR)} per trade` : 'no closed trades yet'}${p.open.length ? ` · ${p.open.length} open: ${p.open.map((t) => esc(t.symbol.replace('.NS', ''))).join(', ')}` : ''}. Updated after each close.</div>`;
+          html += `<div class="note">${esc(b?.note || '')}</div>`;
+          $('athOut').innerHTML = html;
+        } catch (e) {
+          $('athOut').innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
+        }
+      })();
+      function planFrom(t) {
+        $('plSym').value = t.symbol.replace('.NS', '');
+        $('plSide').value = 'long';
+        $('plProduct').value = 'delivery';
+        $('plSetup').value = 'Breakout';
+        $('plEntry').value = t.close.toFixed(2);
+        $('plStop').value = t.stop.toFixed(2);
+        $('plTarget').value = '';
+        showView('trades');
+        $('planCard').scrollIntoView({ behavior: 'smooth' });
+        $('plBtn').click();
+      }
+      $('athScanBtn').addEventListener('click', async () => {
+        $('athScanBtn').disabled = true;
+        $('athScan').innerHTML = '<div class="note">Scanning NIFTY 200 on completed daily candles (about 20 seconds)…</div>';
+        try {
+          const d = await api('/api/ath-swing/scan');
+          let html = `<div style="font-size:14px"><b>Latest completed day: ${esc(d.date)}</b> · ${d.strongCount} of ${d.universe} stocks are structurally strong</div>`;
+          html += d.triggered.length ? `<div style="font-size:14px;margin-top:8px;color:var(--up)"><b>Signals: breakout at the close (${d.triggered.length})</b></div><div style="overflow-x:auto"><table style="font-size:12px"><thead><tr><th style="text-align:left">Stock</th><th>Setup</th><th>Close</th><th>Breakout level</th><th>Stop (1 ATR below the low)</th><th>Risk</th><th>Trailing stop now</th><th></th></tr></thead><tbody>${d.triggered.map((t, i) =>
+            `<tr><td style="text-align:left"><b>${esc(t.symbol.replace('.NS', ''))}</b></td><td>${esc(t.setup)}</td><td>${t.close.toFixed(1)}</td><td>${t.trigger.toFixed(1)}</td><td>${t.stop.toFixed(1)}</td><td>${t.riskPct.toFixed(1)}%</td><td>${t.chandelier.toFixed(1)}</td><td><button type="button" data-plan="${i}" style="margin:0;padding:3px 10px">Plan this trade</button></td></tr>`).join('')}</tbody></table></div>
+            <div class="note">The rules buy at the next session's open. "Plan this trade" opens My trades with the stock, entry and stop filled in so you can see the share count and charges.</div>` : '<div class="note" style="margin-top:6px">No breakout signals at the latest close.</div>';
+          if (d.forming.length) html += `<div style="font-size:13px;margin-top:8px"><b>Watch: oversold strong stocks (${d.forming.length})</b> — waiting for a base and a breakout: ${d.forming.map((x) => esc(x.symbol.replace('.NS', ''))).join(', ')}</div>`;
+          html += `<details style="margin-top:8px"><summary style="cursor:pointer;font-size:13px">Strong stocks closest to their all-time high (${d.strong.length})</summary><div style="overflow-x:auto"><table style="font-size:12px"><thead><tr><th style="text-align:left">Stock</th><th>Close</th><th>All-time high</th><th>Below it</th><th>ATH made</th><th>Weekly RSI</th></tr></thead><tbody>${d.strong.map((x) =>
+            `<tr><td style="text-align:left">${esc(x.symbol.replace('.NS', ''))}</td><td>${x.close.toFixed(1)}</td><td>${x.ath.toFixed(1)}</td><td>${x.fromAthPct.toFixed(1)}%</td><td>${x.athDaysAgo} sessions ago</td><td>${x.weeklyRsi?.toFixed(0) ?? '–'}</td></tr>`).join('')}</tbody></table></div></details>
+            <div class="note">${esc(d.note)}</div>`;
+          $('athScan').innerHTML = html;
+          $('athScan').querySelectorAll('button[data-plan]').forEach((btn) => btn.addEventListener('click', () => planFrom(d.triggered[+btn.dataset.plan])));
+        } catch (e) {
+          $('athScan').innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
+        } finally {
+          $('athScanBtn').disabled = false;
+        }
+      });
+
       // --- Analyse today ---
       async function scanRun() {
         $('scanBtn').disabled = true;
@@ -1992,12 +2071,12 @@
         { key: 'portfolio', match: /^My portfolio/, note: 'My portfolio: the shares you own, tax if you sold today, tax harvesting, risk, and whether your trading beat NIFTY. Stored only on this Mac.' },
         { key: 'invest', match: /^(What to expect|Goal planner|Market tilts|Index-fund picker|Strategies)/, note: 'Investing: long-term money — what SIPs and lump sums have done, what to invest for a goal, which index fund kept the most, and market tilts.' },
         { key: 'options', match: /^(Call \/ Put payoff odds|Live candles|Big-move odds|Volatility check|Option calculator|Selling volatility)/, note: 'Options & risk: the real chance an option pays off, how big a move is likely, volatility, and the Call / Put prediction (labelled: not better than chance).' },
-        { key: 'intraday', match: /^Same stocks every day/, note: 'Intraday strategy: the YouTube VWAP + 20 MA pullback strategy — today’s signals, your trade size, and the paper record. Paper only until the trust meter says it passed.' },
+        { key: 'intraday', match: /^(Strong-stock swing|Same stocks every day)/, note: 'Trading strategies: the strong-stock swing strategy (all-time-high stocks, base and flag breakouts, ATR trailing stop) and the YouTube intraday VWAP + 20 MA strategy — signals, backtests and paper records. Paper only until they prove themselves.' },
         { key: 'lab', match: /./, note: 'Research lab: every other experiment, including the ones that found no edge (AI direction calls, Kronos / Chronos, option positioning…), plus market data and settings.' },
       ];
       const OLD_VIEW = { money: 'home' }; // tab names before the split
       // order inside a tab (cards not listed keep page order, after these; "no edge" cards go last)
-      const ORDER = ['Ask the app', 'Analyse today', 'Today', 'Plan a trade', 'Trade journal', 'Price alerts', 'Call / Put payoff odds', 'Live candles', 'Big-move odds', 'Volatility check', 'Option calculator', 'Selling volatility',
+      const ORDER = ['Ask the app', 'Analyse today', 'Today', 'Plan a trade', 'Trade journal', 'Price alerts', 'Call / Put payoff odds', 'Live candles', 'Big-move odds', 'Volatility check', 'Option calculator', 'Selling volatility', 'Strong-stock swing', 'Same stocks every day',
         'What to expect', 'Goal planner', 'Index-fund picker', 'Market tilts', 'Strategies', 'Market data', 'Ask (research', 'Prediction hit-rate', 'Stock ranking', 'Earnings', 'Paper portfolio', 'Model evaluation', 'Settings'];
       // Tools whose direction calls were tested and found no edge: labelled, and (except the Call/Put card) moved to the end of their view.
       const NO_EDGE = /^(Paper-Bot|Candle AI read|Live candles|Foundation models|Direction over months|Options positioning|Same stocks every day)/;
