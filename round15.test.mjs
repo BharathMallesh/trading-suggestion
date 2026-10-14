@@ -11,6 +11,8 @@ process.env.NSE_HOLIDAYS_PATH = join(TMP, 'nse-holidays.json');
 process.env.CANDLE_STORE = join(TMP, 'candles');
 process.env.MONITOR_DIR = join(TMP, 'monitor');
 process.env.VWAP_PAPER_PATH = join(TMP, 'vwap-paper.json');
+process.env.ATH_PAPER_PATH = join(TMP, 'ath-paper.json');
+process.env.BREAKFAST_PAPER_PATH = join(TMP, 'breakfast-paper.json');
 after(() => rmSync(TMP, { recursive: true, force: true }));
 
 const cal = await import('./paper-bot/market-calendar.mjs');
@@ -86,8 +88,8 @@ test('weekly scorecard: last trading day of the week, strategy section, refresh 
   assert.equal(v.totalNetRs, 600);
   assert.equal(v.totalTrades, 3);
   const built = w.buildWeekly({ reports: [], entries: [], week, paper });
-  assert.match(built.markdown, /VWAP pullback strategy \(paper\) · recorded up to 2026-10-13/);
-  assert.match(built.summary, /video strategy \+₹400/);
+  assert.match(built.markdown, /Trading strategies \(paper\) · recorded up to 2026-10-13/);
+  assert.match(built.summary, /video \+₹400/);
   // written at 15:00 Friday, then the evening's trades are added in place
   const wk = w.maybeWeekly({ entries: [], now: IST('2026-10-16', '15:05'), paper });
   assert.ok(wk);

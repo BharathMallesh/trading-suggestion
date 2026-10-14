@@ -679,20 +679,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     athPaperUpdate()
       .then(async (r) => {
         console.log(`Strong-stock swing paper: since ${r.startedAt} · ${r.trades} trades (${r.open} open)`);
-        if (!process.argv.includes('--notify')) return;
-        // evening summary: new signals at today's close (bought at tomorrow's open) and today's paper exits
-        const { isTradingDay } = await import('./market-calendar.mjs');
-        const t = new Date(Date.now() + 19800_000);
-        if (!isTradingDay(t.toISOString().slice(0, 10)) || t.getUTCHours() * 60 + t.getUTCMinutes() < 15 * 60 + 35) return;
-        const scan = await athSwingScan({});
+        if (!process.argv.includes('--alerts')) return;
         const ver = activeRules() !== RULES ? 'improved' : 'original';
-        const parts = [];
-        if (scan.triggered.length) parts.push(`${scan.triggered.length} new signal${scan.triggered.length > 1 ? 's' : ''}: ${scan.triggered.slice(0, 4).map((x) => `${x.symbol.replace('.NS', '')} ${x.setup === 'flag breakout' ? 'flag' : 'base'} (stop ₹${x.stop.toFixed(1)})`).join(', ')} — buy at tomorrow's open on paper`);
-        const mine = r.exitsToday.filter((x) => x.version === ver);
-        if (mine.length) parts.push(`exits: ${mine.map((x) => `${x.symbol.replace('.NS', '')} ${x.r >= 0 ? '+' : ''}${x.r.toFixed(1)}R`).join(', ')}`);
-        const { execFile } = await import('node:child_process');
-        if (parts.length) execFile('osascript', ['-e', 'on run argv', '-e', 'display notification (item 2 of argv) with title (item 1 of argv)', '-e', 'end run', 'Strong-stock swing', parts.join(' · ').slice(0, 220)], () => {});
-        console.log(parts.join(' · ') || 'No new swing signals today.');
         // price alerts at the trailing stops of open paper positions (My trades → Price alerts)
         const { syncSourceAlerts } = await import('./journal.mjs');
         const open = loadAthPaper()?.trades.filter((x) => x.open && x.version === ver && x.trail > 0) || [];
@@ -703,7 +691,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
         console.error('Error:', err.message);
         process.exit(1);
       });
-  } else {
+  } else if (!process.argv.includes('--survivorship')) {
     athSwingTest()
       .then((r) => {
         saveAthSwing(r);
@@ -742,4 +730,81 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
         process.exit(1);
       });
   }
+}
+
+// ------------------------------------------------- survivorship check ---
+
+const SURV = () => process.env.ATH_SURV_PATH || join(HERE, 'data', 'ath-survivorship.json');
+
+/**
+ * The same strategy on a survivorship-free universe: every month's 200 most-traded
+ * NSE stocks as they were THEN (from NSE's own daily files, including companies
+ * that later collapsed or were delisted), prices adjusted for splits / bonuses.
+ * `series` / `universe` come from bhav-history.mjs.
+ */
+export function survivorshipRun(series, universe, market, { testFrom = '2010-01-01', rulesList = { original: RULES, improved: activeRules() } } = {}) {
+  const lastDate = [...series.values()].reduce((a, rows) => (rows.length && rows[rows.length - 1].date > a ? rows[rows.length - 1].date : a), '');
+  const goneBefore = new Date(Date.parse(lastDate) - 30 * 86400000).toISOString().slice(0, 10);
+  const gone = new Set([...series].filter(([, rows]) => rows.length && rows[rows.length - 1].date < goneBefore).map(([s]) => s));
+  const prepared = [...series].filter(([, rows]) => rows.length > 300).map(([s, rows]) => ({ s, rows, bars: indicators(rows), first: rows[0].date }));
+  const out = {};
+  for (const [name, rules] of Object.entries(rulesList)) {
+    const trades = prepared.flatMap(({ s, rows, bars, first }) => tradesFor(s, rows, rules, { bars, market })
+      .filter((t) => t.entryDate >= testFrom
+        && universe.get(t.signalDate.slice(0, 7))?.has(s)
+        // the all-time-high test needs history: at least a year of stored prices before the signal
+        && Date.parse(t.signalDate) - Date.parse(first) >= 365 * 86400000));
+    const done = trades.filter((t) => !t.open);
+    const dates = done.map((t) => t.entryDate).sort();
+    const mid = dates[dates.length >> 1];
+    const pf = portfolio(trades, rules);
+    const yrs = dates.length ? (Date.parse(pf.endDate || lastDate) - Date.parse(dates[0])) / (365.25 * 86400000) : 0;
+    out[name] = {
+      all: summarise(trades), firstHalf: summarise(done.filter((t) => t.entryDate < mid)), secondHalf: summarise(done.filter((t) => t.entryDate >= mid)),
+      inLaterGoneStocks: summarise(done.filter((t) => gone.has(t.symbol))),
+      portfolioCagr: yrs > 0 ? cagr(rules.capital, pf.finalEquity, yrs) : null, maxDrawdown: maxDrawdown(pf.curve),
+    };
+  }
+  const members = new Set([...universe.values()].flatMap((x) => [...x]));
+  return {
+    at: new Date().toISOString(), from: testFrom, to: lastDate,
+    stocksEverInUniverse: members.size, laterGone: [...members].filter((s) => gone.has(s)).length,
+    results: out,
+    note: 'Universe each month = the 200 most-traded NSE stocks of the previous month, as they were then (NSE daily files, including stocks that later collapsed, were suspended or delisted). Prices adjusted for splits / bonuses with NSE\'s adjusted previous close. A stock that changed its NSE symbol appears as two. Compare with the main backtest, which uses today\'s NIFTY 200.',
+  };
+}
+
+export async function survivorshipTest({ loadCandles = candles } = {}) {
+  const { loadSeries, pointInTimeUniverse } = await import('./bhav-history.mjs');
+  const series = loadSeries();
+  if (!series.size) throw new Error('No NSE history yet: run node paper-bot/bhav-history.mjs first.');
+  const universe = pointInTimeUniverse(series);
+  const nifty = (await loadCandles('^NSEI', { period1: Math.floor(Date.parse('2005-01-01') / 1000), interval: '1d' })).filter((x) => x.close > 0);
+  const r = survivorshipRun(series, universe, marketMap(nifty));
+  writeJsonAtomic(SURV(), r);
+  return r;
+}
+
+export function loadSurvivorship() {
+  try {
+    return existsSync(SURV()) ? JSON.parse(readFileSync(SURV(), 'utf8')) : null;
+  } catch {
+    return null;
+  }
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href && process.argv.includes('--survivorship')) {
+  survivorshipTest()
+    .then((r) => {
+      const p = (x, d = 1) => (x == null ? '–' : `${(x * 100).toFixed(d)}%`);
+      console.log(`\nSURVIVORSHIP-FREE CHECK · ${r.from} → ${r.to} · ${r.stocksEverInUniverse} stocks were in the top 200 at some point · ${r.laterGone} of them later stopped trading`);
+      for (const [k, v] of Object.entries(r.results)) {
+        console.log(`  ${k.padEnd(9)} ${v.all.trades} trades · win ${p(v.all.winRate, 0)} · ${v.all.avgR?.toFixed(2)} R (t ${v.all.tStat?.toFixed(2)}) · halves ${v.firstHalf.avgR?.toFixed(2)} / ${v.secondHalf.avgR?.toFixed(2)} R · in later-gone stocks: ${v.inLaterGoneStocks.trades} trades ${v.inLaterGoneStocks.avgR?.toFixed(2) ?? '–'} R · portfolio ${p(v.portfolioCagr)} · max DD ${p(v.maxDrawdown, 0)}`);
+      }
+      console.log(`\n${r.note}`);
+    })
+    .catch((err) => {
+      console.error('Error:', err.message);
+      process.exit(1);
+    });
 }

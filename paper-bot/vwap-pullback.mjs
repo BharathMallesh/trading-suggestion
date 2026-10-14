@@ -818,12 +818,6 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href &
       const t = istNow();
       const lines = closeSummary(loadPaper(), t.date);
       console.log(lines.join('\n'));
-      try {
-        const { refreshWeeklyStrategy } = await import('./weekly.mjs');
-        if (refreshWeeklyStrategy(loadPaper())) console.log('Weekly scorecard: strategy section updated.');
-      } catch (err) {
-        console.log(`Weekly scorecard not updated: ${err.message}`);
-      }
       if (process.argv.includes('--notify') && isTradingDay(t.date) && t.mins >= 15 * 60 + 35) {
         const { notify } = await import('./monitor.mjs');
         notify(`Strategy paper · ${t.date}`, lines.join(' · '));

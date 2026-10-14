@@ -1,0 +1,67 @@
+// Side-by-side comparison of the three trading strategies (library): style,
+// what the backtest found (after costs), what the paper record shows so far,
+// and a plain verdict. Reads the saved results only (no downloads).
+// Research / paper only — not investment advice.
+
+import { loadVwapPullback, paperSummary as vwapPaper } from './vwap-pullback.mjs';
+import { loadAthSwing, loadAthPaper, summarise as athSum } from './ath-swing.mjs';
+import { loadBreakfast, loadBreakfastPaper, summarise as bfSum } from './breakfast.mjs';
+import { earlyVerdict } from './weekly.mjs';
+
+const pct = (x, d = 1) => (x == null ? '–' : `${(x * 100).toFixed(d)}%`);
+const rs = (v) => (v == null ? '–' : `${v < 0 ? '−' : '+'}₹${Math.abs(Math.round(v)).toLocaleString('en-IN')}`);
+const R = (x) => (x == null ? '–' : `${x >= 0 ? '+' : ''}${x.toFixed(2)} R`);
+
+export function compareStrategies({ vwap = loadVwapPullback(), vp = vwapPaper(), ath = loadAthSwing(), ap = loadAthPaper(), bf = loadBreakfast(), bp = loadBreakfastPaper() } = {}) {
+  const rows = [];
+  // strong-stock swing
+  {
+    const pick = ath?.improve?.pick;
+    const ver = pick?.adopt ? 'improved' : 'original';
+    const paper = (ap?.trades || []).filter((t) => (t.version || 'original') === ver && !t.open);
+    const ps = athSum(paper);
+    rows.push({
+      key: 'ath', name: 'Strong-stock swing', style: 'Swing · days to weeks · delivery',
+      test: ath ? `${ath.from?.slice(0, 4)}–${ath.to?.slice(0, 4)}, ${ath.stocks} stocks, ${ath.all.trades} trades` : 'not run',
+      backtest: pick?.adopt ? `${R(pick.test.avgR)} later years · ${R(pick.wideTest.avgR)} unseen stocks (t ${pick.combined.tStat?.toFixed(1)})` : ath ? `${R(ath.all.avgR)} (t ${ath.all.tStat?.toFixed(1)})` : '–',
+      money: ath ? `${pct(pick?.adopt ? pick.portfolioCagr : ath.portfolio.cagr)}/yr vs NIFTY ${pct(ath.portfolio.niftyCagr)} · after tax ${pct((pick?.adopt ? ath.afterTax?.improved : ath.afterTax?.strategy)?.cagrAfter)} vs ${pct(ath.afterTax?.index?.cagrAfter)}` : '–',
+      paper: paper.length ? `${paper.length} closed · ${pct(ps.winRate, 0)} won · ${R(ps.avgR)}` : `no closed trades yet (since ${ap?.startedAt || '–'})`,
+      paperVerdict: earlyVerdict(paper.length, ps.avgR, ps.tStat, 'R'),
+      reliable: !!pick?.adopt,
+      verdict: pick?.adopt ? 'Best of the three: the only one that passed an out-of-sample test. Still trails a NIFTY fund after tax; best used as a small slice next to an index fund.' : 'Slightly positive, not proven.',
+    });
+  }
+  // YouTube VWAP
+  {
+    const b = vwap?.perTrade;
+    const vid = vp?.byVariant?.video;
+    rows.push({
+      key: 'vwap', name: 'YouTube intraday (VWAP)', style: 'Intraday · 4 stocks · max 2 trades/day',
+      test: vwap ? `${vwap.sessions} sessions, ${vwap.stocks?.length || 4} stocks` : 'not run',
+      backtest: b ? `${rs(b.avgNetRs)} a trade (t ${b.tStat?.toFixed(1)}); before costs ${rs(vwap.beforeCosts?.avgNetRs)}` : '–',
+      money: vwap?.widerList ? `16 other stocks: ${rs(vwap.widerList.avgNetRs)} a trade` : '–',
+      paper: vid?.trades ? `${vid.trades} trades · ${pct(vid.winRate, 0)} won · total ${rs(vid.totalNetRs)}` : `no trades yet (since ${vp?.startedAt || '–'})`,
+      paperVerdict: vid?.trust?.verdict || '–',
+      reliable: false,
+      verdict: 'Loses after charges so far; no filter fixed it. Paper only.',
+    });
+  }
+  // Breakfast
+  {
+    const ps = bfSum(bp?.trades || []);
+    rows.push({
+      key: 'breakfast', name: 'Breakfast strategy', style: 'Intraday · 9:21–9:45 · sector leaders',
+      test: bf ? `${bf.sessions} sessions, ${bf.stocks} stocks, ${bf.both.trades} trades` : 'not run',
+      backtest: bf ? `${rs(bf.both.avgNetRs)} a trade (t ${bf.both.tStat?.toFixed(1)}); before costs ${rs(bf.beforeCosts.avgNetRs)}` : '–',
+      money: bf ? `stop-out ≈ ${rs(-bf.rules.capital * bf.rules.leverage * bf.rules.stopPct / 100)} on ₹1 lakh at 5×` : '–',
+      paper: ps.trades ? `${ps.trades} trades · ${pct(ps.winRate, 0)} won · total ${rs(ps.totalNetRs)}` : `no trades yet (since ${bp?.startedAt || '–'})`,
+      paperVerdict: earlyVerdict(ps.trades, ps.avgNetRs, ps.tStat, '₹'),
+      reliable: false,
+      verdict: 'Breaks even before charges; charges make it lose. Early sample (history grows daily). Paper only.',
+    });
+  }
+  return {
+    rows,
+    advice: 'Only the strong-stock swing strategy has passed an honest out-of-sample test, and even it trails a NIFTY index fund after tax. Sensible use: a low-cost index fund as the core, and at most a small slice (e.g. 20%) in the swing strategy once its paper record holds up. Keep both intraday strategies on paper.',
+  };
+}

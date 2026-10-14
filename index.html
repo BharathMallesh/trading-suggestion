@@ -88,6 +88,7 @@
       </div>
       <div class="note" id="viewNote" style="margin-top:6px"></div>
       <div class="tabs" id="subTabs" hidden style="margin-top:8px;padding:6px;border:1px solid var(--line);border-radius:12px;background:var(--panel)">
+        <button type="button" data-sub="compare" title="All three strategies side by side">Compare all</button>
         <button type="button" data-sub="ath" title="Swing trades in strong stocks: base and flag breakouts, ATR trailing stop">Strong-stock swing</button>
         <button type="button" data-sub="vwap" title="YouTube intraday strategy: VWAP + 20 MA pullback in 4 stocks">YouTube intraday (VWAP)</button>
         <button type="button" data-sub="breakfast" title="Strongest sector's strongest stock at 9:20, out by 9:45">Breakfast strategy</button>
@@ -173,6 +174,20 @@
         </div>
         <button id="alBtn" type="button">Add alert</button>
         <div id="alOut" style="margin-top:10px"></div>
+      </section>
+
+      <!-- Phone access (home network, PIN) -->
+      <section class="card span2" id="lanCard">
+        <h2>Phone access <span style="font-size:12px;color:var(--warn);font-weight:500">HOME WI-FI ONLY · PIN PROTECTED · OFF BY DEFAULT</span></h2>
+        <p class="hint">Open this app from your phone or another computer on the same home Wi-Fi. Other devices must log in with a PIN (6–12 digits, stored only as a hash);
+          5 wrong tries lock that device out for 15 minutes. Only home-network addresses can connect — nothing is put on the internet. The connection is plain HTTP on your
+          own Wi-Fi, so use it only on a network you trust. Turning it on or off restarts the app (about 10 seconds), and macOS may ask whether to allow incoming connections for "node": that choice is yours.</p>
+        <div class="row" style="align-items:flex-end;gap:8px">
+          <div><label>New PIN (6–12 digits)</label><input id="lanPin" type="password" inputmode="numeric" autocomplete="new-password" /></div>
+          <label style="display:flex;align-items:center;gap:6px;font-size:14px"><input id="lanOn" type="checkbox" style="width:auto" /> Allow phone access</label>
+          <button id="lanSave" type="button" style="flex:0 0 auto">Save</button>
+        </div>
+        <div id="lanOut" class="note" style="margin-top:8px"></div>
       </section>
 
       <!-- Today: everything an investor checks, on one screen -->
@@ -611,6 +626,14 @@
         </p>
         <div id="dlOut"></div>
         <div id="itOut" style="margin-top:12px"></div>
+      </section>
+
+      <!-- Strategy comparison: the three strategies side by side -->
+      <section class="card span2" id="cmpCard">
+        <h2>Strategy comparison <span style="font-size:12px;color:var(--warn);font-weight:500">BACKTEST · PAPER RECORD · VERDICT · AFTER COSTS</span></h2>
+        <p class="hint">The three strategies side by side: what kind of trading each is, what its backtest found after charges, what its paper record shows so far, and a plain verdict.
+          Use the sub-tabs above to open one strategy and run its test.</p>
+        <div id="cmpOut">Loading…</div>
       </section>
 
       <!-- Breakfast strategy (trader interview): sector strength at 9:20 -->
@@ -1978,6 +2001,28 @@
       });
       jnLoad();
 
+      // --- Strategy comparison ---
+      (async () => {
+        try {
+          const d = await api('/api/strategies/compare');
+          const head = ['', ...d.rows.map((r) => `<b>${esc(r.name)}</b>${r.reliable ? ' <span style="color:var(--up);font-size:11px">passed test</span>' : ''}`)];
+          const line = (label, f) => `<tr><td style="text-align:left;color:var(--muted)">${label}</td>${d.rows.map((r) => `<td style="text-align:left">${f(r)}</td>`).join('')}</tr>`;
+          $('cmpOut').innerHTML = `<div style="overflow-x:auto"><table style="font-size:12px"><thead><tr>${head.map((h) => `<th style="text-align:left">${h}</th>`).join('')}</tr></thead><tbody>
+            ${line('Style', (r) => esc(r.style))}
+            ${line('Tested on', (r) => esc(r.test))}
+            ${line('Backtest (after costs)', (r) => esc(r.backtest))}
+            ${line('In money', (r) => esc(r.money))}
+            ${line('Paper record', (r) => esc(r.paper))}
+            ${line('Paper verdict', (r) => `<span class="note">${esc(r.paperVerdict)}</span>`)}
+            ${line('Verdict', (r) => `<b style="color:${r.reliable ? 'var(--up)' : 'var(--ink)'}">${esc(r.verdict)}</b>`)}
+          </tbody></table></div>
+          <div style="margin-top:8px;padding:8px 10px;border-radius:8px;background:var(--soft);font-size:13px">${esc(d.advice)}</div>
+          <div class="note">R = result in multiples of the amount risked per trade. Research only, not investment advice.</div>`;
+        } catch (e) {
+          $('cmpOut').innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
+        }
+      })();
+
       // --- Breakfast strategy ---
       function bfRender(d) {
         const b = d.backtest;
@@ -2091,6 +2136,20 @@
               })()}
               <details><summary style="cursor:pointer;font-size:13px">By year</summary><div style="overflow-x:auto"><table style="font-size:12px"><thead><tr><th style="text-align:left">Year</th><th>Trades</th><th>Won</th><th>Avg per trade</th></tr></thead><tbody>${Object.entries(b.byYear).map(([y, v]) => `<tr><td style="text-align:left">${esc(y)}</td><td>${v.trades}</td><td>${pc(v.winRate)}</td><td style="color:${v.avgR >= 0 ? 'var(--up)' : 'var(--down)'}">${R(v.avgR)}</td></tr>`).join('')}</tbody></table></div></details>`;
           } else html += '<div class="note">Backtest not run yet (the weekly refit runs it).</div>';
+          const sv = d.survivorship;
+          if (sv) {
+            const o = sv.results.original;
+            const im = sv.results.improved;
+            const lineS = (n, x) => `<tr><td style="text-align:left">${esc(n)}</td><td>${x.all.trades}</td><td>${pc(x.all.winRate)}</td><td style="color:${x.all.avgR >= 0 ? 'var(--up)' : 'var(--down)'}"><b>${R(x.all.avgR)}</b></td><td>${x.all.tStat?.toFixed(1) ?? '–'}</td><td>${R(x.firstHalf.avgR)} / ${R(x.secondHalf.avgR)}</td><td>${x.inLaterGoneStocks.trades ? `${x.inLaterGoneStocks.trades} trades, ${R(x.inLaterGoneStocks.avgR)}` : '–'}</td><td>${pc(x.portfolioCagr, 1)}</td></tr>`;
+            const keeps = im && im.all.avgR > 0 && im.all.tStat >= 2;
+            html += `<div style="margin-top:10px;padding:10px 12px;border-radius:10px;border:1px solid ${keeps ? 'var(--up)' : 'var(--warn)'}">
+              <div style="font-size:14px"><b>Survivorship check</b>: the stocks as they really were each month (${esc(sv.from)} → ${esc(sv.to)})</div>
+              <div class="note">${sv.stocksEverInUniverse} stocks were among the 200 most traded at some point; ${sv.laterGone} of them later stopped trading (collapsed, suspended, delisted or renamed). The main backtest above could not include those.</div>
+              <div style="overflow-x:auto"><table style="font-size:12px"><thead><tr><th style="text-align:left">Rules</th><th>Trades</th><th>Won</th><th>Avg per trade</th><th>t</th><th>First / second half</th><th>In stocks that later disappeared</th><th>Portfolio per year</th></tr></thead><tbody>
+                ${lineS('Original', o)}${im ? lineS('Improved (in use)', im) : ''}</tbody></table></div>
+              <div style="font-size:13px;margin-top:6px"><b>${keeps ? 'The improved rules hold up without survivorship bias.' : 'Without survivorship bias the result is weaker than the main backtest — treat the strategy with extra caution.'}</b></div>
+              <div class="note">${esc(sv.note)}</div></div>`;
+          }
           const p = d.paper;
           if (p) html += `<div style="font-size:14px;margin-top:10px"><b>Paper record</b> since ${esc(p.startedAt)} (original and improved rules side by side): ${Object.entries(p.byVersion || {}).map(([v, x]) => `${esc(v)}: ${x.trades ? `${x.trades} closed · won ${pc(x.winRate)} · ${R(x.avgR)}` : 'no closed trades yet'}`).join(' · ') || 'no trades yet'}${p.open.length ? ` · open: ${p.open.map((t) => `${esc(t.symbol.replace('.NS', ''))} (${esc(t.version || 'original')}, trailing stop ${t.trail?.toFixed(1) ?? '–'})`).join(', ')}` : ''}. Updated after each close; a Mac notification lists new signals and exits, and the open positions' trailing stops are set as price alerts in My trades.</div>`;
           html += `<div class="note">${esc(b?.note || '')}</div>`;
@@ -2133,6 +2192,32 @@
           $('athScanBtn').disabled = false;
         }
       });
+
+      // --- Phone access ---
+      async function lanLoad(msg = '') {
+        try {
+          const d = await api('/api/lan');
+          $('lanOn').checked = d.enabled;
+          $('lanOut').innerHTML = (msg ? `<b>${esc(msg)}</b><br>` : '') + (d.running
+            ? `<b style="color:var(--up)">On.</b> On your phone (same Wi-Fi) open: ${d.urls.map((u) => `<b>${esc(u)}</b>`).join(' or ') || '(no home-network address found)'} and enter the PIN.`
+            : `Off.${d.hasPin ? ' A PIN is set.' : ' Set a PIN to turn it on.'}${d.urls.length ? ` This Mac's home-network address: ${d.urls.map(esc).join(', ')}` : ''}`);
+        } catch (e) {
+          $('lanOut').innerHTML = location.hostname === '127.0.0.1' || location.hostname === 'localhost' ? `<span class="err">${esc(e.message)}</span>` : 'These settings can be changed only on the Mac. <a href="/logout">Log out</a>';
+        }
+      }
+      $('lanSave').addEventListener('click', async () => {
+        try {
+          const r = await api('/api/lan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: $('lanOn').checked, pin: $('lanPin').value }) });
+          $('lanPin').value = '';
+          if (r.restarting) {
+            $('lanOut').textContent = 'Saved. Restarting the app…';
+            setTimeout(() => lanLoad('Saved.'), 13000);
+          } else lanLoad('Saved.');
+        } catch (e) {
+          $('lanOut').innerHTML = `<span class="err">${esc(e.message)}</span>`;
+        }
+      });
+      lanLoad();
 
       // --- Analyse today ---
       async function scanRun() {
@@ -2181,14 +2266,14 @@
         { key: 'portfolio', match: /^My portfolio/, note: 'My portfolio: the shares you own, tax if you sold today, tax harvesting, risk, and whether your trading beat NIFTY. Stored only on this Mac.' },
         { key: 'invest', match: /^(What to expect|Goal planner|Market tilts|Index-fund picker|Strategies)/, note: 'Investing: long-term money — what SIPs and lump sums have done, what to invest for a goal, which index fund kept the most, and market tilts.' },
         { key: 'options', match: /^(Call \/ Put payoff odds|Live candles|Big-move odds|Volatility check|Option calculator|Selling volatility)/, note: 'Options & risk: the real chance an option pays off, how big a move is likely, volatility, and the Call / Put prediction (labelled: not better than chance).' },
-        { key: 'intraday', match: /^(Strong-stock swing|Same stocks every day|Breakfast strategy)/, note: 'Trading strategies: three rule-based strategies, each with live signals, an honest backtest and a paper record. Pick one below. Paper only until they prove themselves.' },
+        { key: 'intraday', match: /^(Strategy comparison|Strong-stock swing|Same stocks every day|Breakfast strategy)/, note: 'Trading strategies: three rule-based strategies, each with live signals, an honest backtest and a paper record. Pick one below. Paper only until they prove themselves.' },
         { key: 'lab', match: /./, note: 'Research lab: every other experiment, including the ones that found no edge (AI direction calls, Kronos / Chronos, option positioning…), plus market data and settings.' },
       ];
       const OLD_VIEW = { money: 'home' }; // tab names before the split
-      const SUBS = { ath: /^Strong-stock swing/, vwap: /^Same stocks every day/, breakfast: /^Breakfast strategy/ };
+      const SUBS = { compare: /^Strategy comparison/, ath: /^Strong-stock swing/, vwap: /^Same stocks every day/, breakfast: /^Breakfast strategy/ };
       // order inside a tab (cards not listed keep page order, after these; "no edge" cards go last)
-      const ORDER = ['Ask the app', 'Analyse today', 'Today', 'Plan a trade', 'Trade journal', 'Price alerts', 'Call / Put payoff odds', 'Live candles', 'Big-move odds', 'Volatility check', 'Option calculator', 'Selling volatility', 'Strong-stock swing', 'Same stocks every day', 'Breakfast strategy',
-        'What to expect', 'Goal planner', 'Index-fund picker', 'Market tilts', 'Strategies', 'Market data', 'Ask (research', 'Prediction hit-rate', 'Stock ranking', 'Earnings', 'Paper portfolio', 'Model evaluation', 'Settings'];
+      const ORDER = ['Ask the app', 'Analyse today', 'Today', 'Plan a trade', 'Trade journal', 'Price alerts', 'Call / Put payoff odds', 'Live candles', 'Big-move odds', 'Volatility check', 'Option calculator', 'Selling volatility', 'Strategy comparison', 'Strong-stock swing', 'Same stocks every day', 'Breakfast strategy',
+        'What to expect', 'Goal planner', 'Index-fund picker', 'Market tilts', 'Strategies', 'Market data', 'Ask (research', 'Prediction hit-rate', 'Stock ranking', 'Earnings', 'Paper portfolio', 'Model evaluation', 'Settings', 'Phone access'];
       // Tools whose direction calls were tested and found no edge: labelled, and (except the Call/Put card) moved to the end of their view.
       const NO_EDGE = /^(Paper-Bot|Candle AI read|Live candles|Foundation models|Direction over months|Options positioning|Same stocks every day|Breakfast strategy)/;
       let noEdgeDone = false;
@@ -2227,7 +2312,7 @@
         let sub = null;
         if (v === 'intraday') {
           try { sub = localStorage.getItem('strategySub'); } catch { /* default */ }
-          if (!SUBS[sub]) sub = 'ath';
+          if (!SUBS[sub]) sub = 'compare';
         }
         for (const sec of document.querySelectorAll('main > section.card')) {
           const t = sec.querySelector('h2')?.textContent.trim() || '';
@@ -3285,8 +3370,14 @@
           html += `<details style="margin:8px 0;border:1px solid var(--line);border-radius:10px;padding:8px 10px"><summary style="cursor:pointer;font-size:13px"><b>Weekly scorecard ${esc(w.week.label)}</b> · ${esc(w.summary)}</summary>
             <table><thead><tr><th style="text-align:left">Account</th><th>Equity</th><th>This week</th><th>Since start</th></tr></thead><tbody>${w.accounts.map((a) =>
               `<tr><td style="text-align:left">${esc(a.name)}</td><td>₹${Math.round(a.equity).toLocaleString('en-IN')}</td><td>${a.weekPct == null ? '–' : (a.weekPct >= 0 ? '+' : '') + a.weekPct.toFixed(2) + '%'}</td><td>${a.totalPct == null ? '–' : (a.totalPct >= 0 ? '+' : '') + a.totalPct.toFixed(2) + '%'}</td></tr>`).join('')}</tbody></table>
-            ${w.strategy ? `<table style="font-size:12px"><thead><tr><th style="text-align:left">Strategy version (paper)</th><th>Trades this week</th><th>Week net</th><th>Total net</th></tr></thead><tbody>${w.strategy.map((x) =>
-              `<tr><td style="text-align:left">${esc(x.label)}</td><td>${x.weekTrades}</td><td style="color:${x.weekNetRs >= 0 ? 'var(--up)' : 'var(--down)'}">${(x.weekNetRs < 0 ? '−₹' : '+₹') + Math.abs(Math.round(x.weekNetRs)).toLocaleString('en-IN')}</td><td>${(x.totalNetRs < 0 ? '−₹' : '+₹') + Math.abs(Math.round(x.totalNetRs)).toLocaleString('en-IN')}</td></tr>`).join('')}</tbody></table>` : ''}
+            ${w.strategy ? (() => {
+              const fmt = (v, u) => (u === 'R' ? `${v < 0 ? '−' : '+'}${Math.abs(v).toFixed(1)} R` : (v < 0 ? '−₹' : '+₹') + Math.abs(Math.round(v)).toLocaleString('en-IN'));
+              return `<table style="font-size:12px"><thead><tr><th style="text-align:left">Strategy (paper)</th><th>Trades this week</th><th>Week result</th><th>Total</th><th style="text-align:left">Can we trust it?</th></tr></thead><tbody>${w.strategy.map((x) => {
+                const wk = x.weekResult ?? x.weekNetRs ?? 0;
+                const tot = x.totalResult ?? x.totalNetRs ?? 0;
+                return `<tr><td style="text-align:left">${esc(x.label)}</td><td>${x.weekTrades}</td><td style="color:${wk >= 0 ? 'var(--up)' : 'var(--down)'}">${fmt(wk, x.unit)}</td><td>${fmt(tot, x.unit)}</td><td style="text-align:left" class="note">${esc(x.trust?.verdict || '')}</td></tr>`;
+              }).join('')}</tbody></table>`;
+            })() : ''}
             <div class="note">${w.predictions.scored ? `${w.predictions.scored} predictions scored this week · Brier ${w.predictions.brier.app.toFixed(4)} vs coin-flip ${w.predictions.brier.uniform.toFixed(4)}` : 'No predictions scored this week.'}${w.allTime?.verdict ? ' · All time: ' + esc(w.allTime.verdict) : ''}</div></details>`;
         }
         if (r.alerts?.length) {

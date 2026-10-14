@@ -56,8 +56,10 @@ import { tradesVsIndex } from './paper-bot/vs-index.mjs';
 import { loadFactorLab } from './paper-bot/factor-lab.mjs';
 import { todayScan } from './paper-bot/today-scan.mjs';
 import { loadJournal, saveSettings as saveJournalSettings, planTrade, addTrade, closeTrade, deleteTrade, journalStats, todayStatus, addAlert, deleteAlert, checkAlerts, SETUPS } from './paper-bot/journal.mjs';
-import { loadAthSwing, athSwingScan, loadAthPaper, summarise as athSummarise } from './paper-bot/ath-swing.mjs';
+import { loadAthSwing, athSwingScan, loadAthPaper, loadSurvivorship, summarise as athSummarise } from './paper-bot/ath-swing.mjs';
 import { loadBreakfast, breakfastTest, saveBreakfast, breakfastToday, loadBreakfastPaper, summarise as bfSummarise } from './paper-bot/breakfast.mjs';
+import { compareStrategies } from './paper-bot/compare.mjs';
+import { lanConfig, saveLan, isLoopback, isPrivate, localUrls, loginAttempt, validSession, logout, loginPage } from './paper-bot/lan.mjs';
 import { vwapPullbackTest, saveVwapPullback, loadVwapPullback, paperSummary, paperUpdate, loadImprove, todaySignals, parseSizing, sizeTrade, noteLiveSeen } from './paper-bot/vwap-pullback.mjs';
 import { nseOpenNow } from './paper-bot/market-calendar.mjs';
 import { bigMove, evaluateBigMove, saveBigMoveEval, loadBigMoveEval } from './paper-bot/big-move.mjs';
@@ -77,8 +79,11 @@ let athScanCache = null; // /api/ath-swing/scan (10 minutes)
 let bfTodayCache = null; // /api/breakfast/today (1 minute)
 const monthlyCache = {}; // goal planner: index → { at, data }
 // Bind to loopback only — this is a local tool holding a server-side API key,
-// not something to expose on the network.
-const HOST = '127.0.0.1';
+// not something to expose on the network — unless "Phone access" was switched
+// on (Research lab → Phone access): then the home network too, PIN-protected
+// (see paper-bot/lan.mjs). Read once at start; changing it restarts the server.
+const LAN = lanConfig();
+const HOST = LAN.enabled ? '0.0.0.0' : '127.0.0.1';
 
 // JSON can't represent Infinity (it becomes null); send it as the string
 // "Infinity" so e.g. a profit factor with no losing trades survives the trip.
@@ -125,7 +130,7 @@ async function readJson(req) {
 //   any that don't come from this page (blocks CSRF from other tabs).
 // - POSTs must be application/json, which a foreign page can't send without
 //   a CORS preflight that this server never approves.
-const ALLOWED_HOSTS = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`, `[::1]:${PORT}`]);
+const ALLOWED_HOSTS = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`, `[::1]:${PORT}`, ...(LAN.enabled ? localUrls(PORT).map((u) => u.replace('http://', '')) : [])]);
 function guard(req, url) {
   const host = String(req.headers.host || '').toLowerCase();
   if (!ALLOWED_HOSTS.has(host)) throw new HttpError(421, 'Unknown Host header — open the dashboard via http://localhost:' + PORT);
@@ -184,7 +189,56 @@ const server = http.createServer(async (req, res) => {
     return json(res, 400, { error: 'Bad URL' });
   }
   try {
+    // phone access: devices other than this Mac need the PIN (and must be on the home network)
+    const remote = req.socket.remoteAddress;
+    if (!isLoopback(remote)) {
+      if (!LAN.enabled || !isPrivate(remote)) {
+        res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+        return res.end('Phone access is off. Switch it on from the Mac: Research lab → Phone access.');
+      }
+      guard(req, url);
+      if (url.pathname === '/login') {
+        if (req.method === 'POST') {
+          const pin = new URLSearchParams(await readBody(req)).get('pin');
+          const r = loginAttempt(remote, pin);
+          if (r.ok) {
+            res.writeHead(303, { Location: '/', 'Set-Cookie': r.cookie });
+            return res.end();
+          }
+          res.writeHead(401, { 'Content-Type': 'text/html; charset=utf-8' });
+          return res.end(loginPage(r.locked ? `Too many wrong tries. Try again in ${r.retryInMin ?? 15} minutes.` : `Wrong PIN. ${r.left} tries left.`));
+        }
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        return res.end(loginPage());
+      }
+      if (!validSession(req.headers.cookie)) {
+        if (url.pathname.startsWith('/api/')) return json(res, 401, { error: 'Log in first (open the page again).' });
+        res.writeHead(303, { Location: '/login' });
+        return res.end();
+      }
+      if (url.pathname === '/logout') {
+        logout(req.headers.cookie);
+        res.writeHead(303, { Location: '/login', 'Set-Cookie': 'tr_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0' });
+        return res.end();
+      }
+      if (url.pathname.startsWith('/api/lan')) return json(res, 403, { error: 'Phone access settings can be changed only on the Mac.' });
+    }
     guard(req, url);
+
+    // --- phone access settings (this Mac only) ---
+    if (url.pathname === '/api/lan' && req.method === 'GET') {
+      const c = lanConfig();
+      return json(res, 200, { enabled: c.enabled, hasPin: c.hasPin, running: LAN.enabled, urls: localUrls(PORT) });
+    }
+    if (url.pathname === '/api/lan' && req.method === 'POST') {
+      const body = await readJson(req);
+      const c = saveLan({ enabled: !!body.enabled, pin: body.pin });
+      const restart = c.enabled !== LAN.enabled || (body.pin && c.enabled);
+      json(res, 200, { enabled: c.enabled, hasPin: c.hasPin, restarting: restart, urls: localUrls(PORT) });
+      // the listening address is chosen at start: restart (launchd starts the server again)
+      if (restart) setTimeout(() => process.exit(0), 500);
+      return;
+    }
 
     // --- static page ---
     if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
@@ -568,6 +622,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && url.pathname === '/api/journal/delete') return json(res, 200, await deleteTrade((await readJson(req)).id));
     if (req.method === 'POST' && url.pathname === '/api/alerts/add') return json(res, 200, await addAlert(await readJson(req)));
     if (req.method === 'POST' && url.pathname === '/api/alerts/delete') return json(res, 200, await deleteAlert((await readJson(req)).id));
+    if (req.method === 'GET' && url.pathname === '/api/strategies/compare') return json(res, 200, compareStrategies());
     if (req.method === 'GET' && url.pathname === '/api/breakfast') {
       const paper = loadBreakfastPaper();
       return json(res, 200, { backtest: loadBreakfast(), paper: paper ? { startedAt: paper.startedAt, updatedAt: paper.updatedAt, summary: bfSummarise(paper.trades), trades: paper.trades.slice(-20).reverse() } : null });
@@ -585,7 +640,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/api/ath-swing') {
       const paper = loadAthPaper();
       const byVersion = paper ? Object.fromEntries([...new Set(paper.trades.map((t) => t.version || 'original'))].map((v) => [v, athSummarise(paper.trades.filter((t) => (t.version || 'original') === v))])) : {};
-      return json(res, 200, { backtest: loadAthSwing(), paper: paper ? { startedAt: paper.startedAt, updatedAt: paper.updatedAt, summary: athSummarise(paper.trades), byVersion, open: paper.trades.filter((t) => t.open), recent: paper.trades.filter((t) => !t.open).slice(-15).reverse() } : null });
+      return json(res, 200, { backtest: loadAthSwing(), survivorship: loadSurvivorship(), paper: paper ? { startedAt: paper.startedAt, updatedAt: paper.updatedAt, summary: athSummarise(paper.trades), byVersion, open: paper.trades.filter((t) => t.open), recent: paper.trades.filter((t) => !t.open).slice(-15).reverse() } : null });
     }
     if (req.method === 'GET' && url.pathname === '/api/ath-swing/scan') {
       // strong-stock swing scan on completed daily candles (NIFTY 200)

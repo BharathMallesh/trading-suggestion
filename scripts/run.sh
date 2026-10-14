@@ -30,12 +30,12 @@ case "${1:-}" in
   collect)
     caffeinate -i -w $$ & # keep the Mac awake until this job finishes
     echo "$(date '+%F %T') collect"; node paper-bot/collector.mjs --notify
-    # same-stocks intraday strategy: record today's paper trades (after the close) and send the day's summary
-    node paper-bot/vwap-pullback.mjs --paper --notify
-    # strong-stock swing strategy: forward paper record on completed daily candles
-    node paper-bot/ath-swing.mjs --paper --notify
-    # breakfast strategy: record the day's 9:20 sector picks
-    node paper-bot/breakfast.mjs --paper ;;
+    # paper records of all three strategies (after the close)
+    node paper-bot/vwap-pullback.mjs --paper
+    node paper-bot/ath-swing.mjs --paper --alerts   # also: trailing-stop price alerts for open swing positions
+    node paper-bot/breakfast.mjs --paper
+    # one evening notification for all strategies + this week's scorecard refreshed
+    node paper-bot/evening.mjs --notify ;;
   monitor)
     # Weekdays only, and only if the server is up.
     if ! curl -s -o /dev/null --max-time 5 http://127.0.0.1:3000/; then
@@ -64,6 +64,8 @@ case "${1:-}" in
     node paper-bot/today-scan.mjs >/dev/null
     # strong-stock swing strategy: re-run the backtest on the newest data
     node paper-bot/ath-swing.mjs >/dev/null
+    # survivorship-free check: add the week's NSE daily files, re-run on the point-in-time top 200
+    node paper-bot/bhav-history.mjs >/dev/null && node paper-bot/ath-swing.mjs --survivorship >/dev/null
     # breakfast strategy: re-run on the growing 5-minute history
     node paper-bot/breakfast.mjs >/dev/null ;;
   backup)

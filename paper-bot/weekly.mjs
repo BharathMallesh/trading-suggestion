@@ -13,6 +13,8 @@ import { fileURLToPath } from 'url';
 import { scorecard } from './monitor-score.mjs';
 import { isTradingDay } from './market-calendar.mjs';
 import { PAPER_VARIANTS, summarise, trustMeter } from './vwap-pullback.mjs';
+import { loadAthPaper, summarise as athSummarise } from './ath-swing.mjs';
+import { loadBreakfastPaper, summarise as bfSummarise } from './breakfast.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const MONITOR_DIR = () => process.env.MONITOR_DIR || join(HERE, 'monitor');
@@ -64,26 +66,59 @@ const pct = (x, d = 1) => (x == null || !Number.isFinite(x) ? '–' : `${x >= 0 
  *   report before the week (baseline for "this week" account changes).
  */
 /** The VWAP strategy's paper versions for one week: trades, net, running total, trust verdict. */
-export function strategyWeek(paper, week) {
-  if (!paper?.trades) return null;
-  return Object.entries(PAPER_VARIANTS).map(([k, v]) => {
-    const all = paper.trades.filter((x) => (x.variant || 'video') === k);
-    const wk = summarise(all.filter((x) => x.date >= week.from && x.date <= week.to));
-    const total = summarise(all);
-    return { key: k, label: v.label, weekTrades: wk.trades, weekNetRs: wk.totalNetRs ?? 0, weekWinRate: wk.winRate ?? null, totalTrades: total.trades, totalNetRs: total.totalNetRs ?? 0, trust: trustMeter(total) };
-  });
+/** Simple verdict for a paper record with no trust meter of its own. */
+export function earlyVerdict(n, avg, t, unit) {
+  if (!n) return 'No closed trades yet.';
+  if (n < 100) return `Too early: ${n} of 100 trades, ${avg > 0 ? 'ahead' : 'behind'} so far.`;
+  if (avg > 0 && t >= 2) return `Profitable after costs with t ≥ 2 over ${n} trades.`;
+  return avg > 0 ? `Slightly ahead (${unit}), not reliable yet.` : 'Losing after costs.';
+}
+
+/**
+ * Paper results of every strategy for one week: the YouTube VWAP versions (₹), the strong-stock
+ * swing versions (R, by exit date) and the Breakfast strategy (₹). `papers` overrides the files.
+ */
+export function strategyWeek(paper, week, papers = {}) {
+  const rows = [];
+  if (paper?.trades) {
+    for (const [k, v] of Object.entries(PAPER_VARIANTS)) {
+      const all = paper.trades.filter((x) => (x.variant || 'video') === k);
+      const wk = summarise(all.filter((x) => x.date >= week.from && x.date <= week.to));
+      const total = summarise(all);
+      rows.push({ key: k, group: 'YouTube intraday', label: v.label, unit: '₹', weekTrades: wk.trades, weekNetRs: wk.totalNetRs ?? 0, weekResult: wk.totalNetRs ?? 0, weekWinRate: wk.winRate ?? null, totalTrades: total.trades, totalNetRs: total.totalNetRs ?? 0, totalResult: total.totalNetRs ?? 0, trust: trustMeter(total) });
+    }
+  }
+  const swing = papers.swing !== undefined ? papers.swing : loadAthPaper();
+  if (swing?.trades) {
+    for (const v of [...new Set(swing.trades.map((x) => x.version || 'original'))].sort()) {
+      const all = swing.trades.filter((x) => (x.version || 'original') === v && !x.open);
+      const wkT = all.filter((x) => x.exitDate >= week.from && x.exitDate <= week.to);
+      const tot = athSummarise(all);
+      const sumR = (a) => a.reduce((x, t) => x + t.r, 0);
+      rows.push({ key: `swing-${v}`, group: 'Strong-stock swing', label: `Strong-stock swing (${v} rules)`, unit: 'R', weekTrades: wkT.length, weekResult: sumR(wkT), weekWinRate: wkT.length ? wkT.filter((x) => x.r > 0).length / wkT.length : null, totalTrades: all.length, totalResult: sumR(all), trust: { verdict: earlyVerdict(all.length, tot.avgR, tot.tStat, 'R') } });
+    }
+  }
+  const bf = papers.breakfast !== undefined ? papers.breakfast : loadBreakfastPaper();
+  if (bf?.trades) {
+    const wk = bfSummarise(bf.trades.filter((x) => x.date >= week.from && x.date <= week.to));
+    const tot = bfSummarise(bf.trades);
+    rows.push({ key: 'breakfast', group: 'Breakfast', label: 'Breakfast strategy (long + short)', unit: '₹', weekTrades: wk.trades, weekResult: wk.totalNetRs ?? 0, weekWinRate: wk.winRate ?? null, totalTrades: tot.trades, totalResult: tot.totalNetRs ?? 0, trust: { verdict: earlyVerdict(tot.trades, tot.avgNetRs, tot.tStat, '₹') } });
+  }
+  return rows.length ? rows : null;
 }
 
 const rsx = (v) => `${v < 0 ? '−' : '+'}₹${Math.abs(Math.round(v)).toLocaleString('en-IN')}`;
+const res = (v, unit) => (unit === 'R' ? `${v < 0 ? '−' : '+'}${Math.abs(v).toFixed(1)} R` : rsx(v));
 const STRAT_START = '<!-- strategy -->';
 const STRAT_END = '<!-- /strategy -->';
 /** Markdown block for the strategy section (replaceable when later sessions are recorded). */
 export function strategyMarkdown(rows, asOf) {
-  const lines = [STRAT_START, '', `## VWAP pullback strategy (paper)${asOf ? ` · recorded up to ${asOf}` : ''}`, ''];
+  const lines = [STRAT_START, '', `## Trading strategies (paper)${asOf ? ` · recorded up to ${asOf}` : ''}`, ''];
   if (!rows) lines.push('No paper record yet.');
   else {
-    lines.push('| Version | This week | Week net | Since start | Total net | Can we trust it? |', '|---|---|---|---|---|---|');
-    for (const r of rows) lines.push(`| ${r.label} | ${r.weekTrades} trade${r.weekTrades === 1 ? '' : 's'}${r.weekWinRate != null ? ` (${Math.round(r.weekWinRate * 100)}% won)` : ''} | ${rsx(r.weekNetRs)} | ${r.totalTrades} | ${rsx(r.totalNetRs)} | ${r.trust.verdict} |`);
+    lines.push('| Strategy | This week | Week result | Since start | Total | Can we trust it? |', '|---|---|---|---|---|---|');
+    for (const r of rows) lines.push(`| ${r.label} | ${r.weekTrades} trade${r.weekTrades === 1 ? '' : 's'}${r.weekWinRate != null ? ` (${Math.round(r.weekWinRate * 100)}% won)` : ''} | ${res(r.weekResult ?? r.weekNetRs, r.unit)} | ${r.totalTrades} | ${res(r.totalResult ?? r.totalNetRs, r.unit)} | ${r.trust.verdict} |`);
+    lines.push('', 'R = results in multiples of the amount risked per trade (strong-stock swing).');
   }
   lines.push('', STRAT_END);
   return lines.join('\n');
@@ -144,7 +179,7 @@ export function buildWeekly({ reports, entries, week, prevReport = null, paper =
   const summary = [
     nifty ? `NIFTY ${pct(nifty.weekPct, 2)}` : null,
     ...others.map((a) => `${a.key} ${pct(a.weekPct, 2)}`),
-    ...(strategy || []).filter((r) => r.weekTrades).map((r) => `${r.key} strategy ${rsx(r.weekNetRs)}`),
+    ...(strategy || []).filter((r) => r.weekTrades).map((r) => `${r.key} ${res(r.weekResult ?? r.weekNetRs, r.unit)}`),
     card.scored ? `${card.scored} scored, Brier ${card.brier.app.toFixed(2)} vs coin ${card.brier.uniform.toFixed(2)}` : 'no predictions scored',
     issues.length ? `${issues.length} health issue${issues.length > 1 ? 's' : ''}` : null,
   ].filter(Boolean).join(' · ');

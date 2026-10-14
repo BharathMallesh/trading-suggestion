@@ -476,7 +476,7 @@ details.faq p { margin-top: 8px; color: var(--muted); }
     <!-- LAB -->
     <section class="part" id="lab">
       <h2>Trading strategies and Research lab tabs</h2>
-      <div class="prose"><p>The <b>Trading strategies</b> tab holds three strategies. A row of sub-tabs under the main tabs (<span class="btn">Strong-stock swing</span> <span class="btn">YouTube intraday (VWAP)</span> <span class="btn">Breakfast strategy</span>) shows one strategy at a time; the app remembers your choice. The <b>Research lab</b> tab holds every other experiment. Most found that the idea does <b>not</b> work after costs, and the app says so; cards with a grey “Tested: no reliable edge” note are listed last.</p></div>
+      <div class="prose"><p>The <b>Trading strategies</b> tab holds three strategies. A row of sub-tabs under the main tabs (<span class="btn">Compare all</span> <span class="btn">Strong-stock swing</span> <span class="btn">YouTube intraday (VWAP)</span> <span class="btn">Breakfast strategy</span>) shows one at a time; the app remembers your choice. <b>Compare all</b> puts the three side by side: style, backtest after costs, money, paper record and a plain verdict. The <b>Research lab</b> tab holds every other experiment. Most found that the idea does <b>not</b> work after costs, and the app says so; cards with a grey “Tested: no reliable edge” note are listed last.</p></div>
       <div class="cards">
         <article class="tool" id="t-ath">
           <div class="eyebrow">Tab: Trading strategies</div>
@@ -608,6 +608,7 @@ details.faq p { margin-top: 8px; color: var(--muted); }
                 <tr><td class="term">Strategies</td><td>Two slow, rule-based strategies run with pretend money against simply holding NIFTY: a trend filter (hold NIFTY above its 200-day average, otherwise a liquid fund) and a momentum top-20. Includes 10-year and 25-year tests.</td><td><span class="badge b-care">Use with care</span></td></tr>
                 <tr><td class="term">Volatility check</td><td>Compares how big a move option prices expect with the app’s forecast. Volatility is where the app showed real skill.</td><td><span class="badge b-good">Reliable</span></td></tr>
                 <tr><td class="term">Settings</td><td>Brokerage and charges used in all calculations. Match them to your broker.</td><td>—</td></tr>
+                <tr><td class="term">Phone access</td><td>Open the app from your phone on the same home Wi-Fi. Off by default; set a PIN (6–12 digits) and tick “Allow phone access” on the Mac. The card shows the address to open on the phone (e.g. http://192.168.1.3:3000). Wrong PINs lock a device out for 15 minutes; settings can be changed only on the Mac.</td><td>—</td></tr>
                 <tr><td class="term">Ask (research · explain)</td><td>An AI answers finance questions, explains concepts or summarises pasted text. It refuses to predict prices. Needs AI credits.</td><td><span class="badge b-care">Explanations</span></td></tr>
                 <tr><td class="term">Prediction hit-rate</td><td>The scorecard of every Call/Put guess the app made, checked against what happened.</td><td><span class="badge b-good">Honest record</span></td></tr>
                 <tr><td class="term">Stock ranking</td><td>Ranks stocks against each other by momentum, low volatility and closeness to their yearly high, with a replay test of whether that worked.</td><td><span class="badge b-care">Use with care</span></td></tr>
@@ -712,9 +713,9 @@ details.faq p { margin-top: 8px; color: var(--muted); }
       <div class="schedule">
         <div><span class="when">Always</span><span>The app itself runs in the background whenever the Mac is logged in.</span></div>
         <div><span class="when">10:00 · 13:00 · 15:00</span><span>On trading days: checks your watchlist and portfolio, data health and alerts. The 3 PM Friday run writes the weekly scorecard.</span></div>
-        <div><span class="when">16:05</span><span>On trading days: saves the day’s 5-minute price history, records the strategy’s paper trades and sends a Mac notification with the day’s result.</span></div>
+        <div><span class="when">16:05</span><span>On trading days: saves the day’s 5-minute price history (NIFTY 200), records the paper trades of all three strategies, sets price alerts at the swing strategy’s trailing stops, and sends <b>one</b> Mac notification summarising all three strategies (including new swing signals).</span></div>
         <div><span class="when">18:30 daily</span><span>Backs up all the app’s data to a backup folder and iCloud.</span></div>
-        <div><span class="when">Saturday 10:00</span><span>Re-tests the models on the newest data, refreshes the NSE holiday list and the Market tilts table.</span></div>
+        <div><span class="when">Saturday 10:00</span><span>Re-tests the models and all three strategies on the newest data, adds the week’s NSE daily files and re-runs the survivorship check, refreshes the NSE holiday list and the Market tilts table.</span></div>
       </div>
       <div class="callout">
         <h3>Keep the Mac awake at 4 PM</h3>
@@ -747,6 +748,7 @@ details.faq p { margin-top: 8px; color: var(--muted); }
         <details class="faq"><summary>The strategy shows “No trades yet”</summary><p>Paper trades are recorded only after the market closes (after 4:05 PM) on trading days. During the day, see “Today’s signals” instead.</p></details>
         <details class="faq"><summary>Why does the app keep saying it cannot predict direction?</summary><p>Because it tested that thoroughly and it is true, for this app and, the evidence suggests, for almost everyone. The app would rather tell you plainly than give you confident numbers that lose money.</p></details>
         <details class="faq"><summary>Is my portfolio data sent anywhere?</summary><p>No. Holdings and tradebooks are stored only on this Mac (and in its backups). The app only downloads public market data.</p></details>
+        <details class="faq"><summary>Can I use the app on my phone?</summary><p>Yes, on the same home Wi-Fi. On the Mac open Research lab → Phone access, set a PIN, tick “Allow phone access” and press Save. Then open the address shown (like http://192.168.1.3:3000) on your phone and enter the PIN. It does not work from outside your home network.</p></details>
         <details class="faq"><summary>Can the app place an order for me?</summary><p>No. It has no ability to buy or sell. All trades shown are pretend (paper) trades.</p></details>
       </div>
     </section>
