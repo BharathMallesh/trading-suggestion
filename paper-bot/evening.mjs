@@ -24,11 +24,12 @@ export function eveningLines(date, { vwap = loadPaper(), breakfast = loadBreakfa
   const b = (breakfast?.trades || []).filter((t) => t.date === date);
   out.push({ title: 'Breakfast', short: b.length ? `Breakfast ${rs(b.reduce((a, t) => a + t.net, 0))}` : 'Breakfast: no trade', detail: b.length ? b.map((t) => `${t.symbol.replace('.NS', '')} ${t.side} ${t.reason} ${rs(t.net)}`).join(', ') : 'no setup' });
   const exits = (swing?.trades || []).filter((t) => !t.open && t.exitDate === date && (t.version || 'original') === swingVersion);
-  const sig = scan?.triggered || [];
+  const sig = (scan?.triggered || []).filter((x) => !x.held);
+  const held = (scan?.triggered || []).filter((x) => x.held);
   const parts = [];
   if (sig.length) parts.push(`${sig.length} new signal${sig.length > 1 ? 's' : ''} (${sig.slice(0, 3).map((x) => x.symbol.replace('.NS', '')).join(', ')})`);
   if (exits.length) parts.push(`exits ${exits.map((t) => `${t.symbol.replace('.NS', '')} ${t.r >= 0 ? '+' : ''}${t.r.toFixed(1)}R`).join(', ')}`);
-  out.push({ title: 'Strong-stock swing', short: parts.length ? `Swing: ${parts.join(', ')}` : 'Swing: no signals', detail: [...sig.map((x) => `${x.symbol.replace('.NS', '')} ${x.setup} · buy at the next open on paper · stop ₹${x.stop.toFixed(1)}`), ...exits.map((t) => `${t.symbol.replace('.NS', '')} exited (${t.reason}) ${t.r.toFixed(2)} R`)].join(' · ') || 'nothing new' });
+  out.push({ title: 'Strong-stock swing', short: parts.length ? `Swing: ${parts.join(', ')}` : 'Swing: no signals', detail: [...sig.map((x) => `${x.symbol.replace('.NS', '')} ${x.setup} · buy at the next open on paper · stop ₹${x.stop.toFixed(1)}`), ...held.map((x) => `${x.symbol.replace('.NS', '')} ${x.setup} again · already held on paper, no new buy`), ...exits.map((t) => `${t.symbol.replace('.NS', '')} exited (${t.reason}) ${t.r.toFixed(2)} R`)].join(' · ') || 'nothing new' });
   return out;
 }
 

@@ -54,6 +54,11 @@ test('evening summary: one short line per strategy', async () => {
   assert.equal(lines[1].short, 'Breakfast −₹5,360');
   assert.equal(lines[2].short, 'Swing: 1 new signal (LT), exits BHEL +3.2R');
   assert.match(lines[2].detail, /LT flag breakout · buy at the next open on paper · stop ₹3500\.0/);
+  const again = eveningLines('2026-10-15', { vwap: { trades: [] }, breakfast: null, swing: null, scan: { triggered: [{ symbol: 'HDFCBANK.NS', setup: 'oversold base breakout', stop: 674.8 }, { symbol: 'TATACONSUM.NS', setup: 'oversold base breakout', stop: 925.6, held: true }] } })[2];
+  assert.equal(again.short, 'Swing: 1 new signal (HDFCBANK)', 'a stock already held is not counted as new');
+  assert.match(again.detail, /HDFCBANK oversold base breakout · buy at the next open on paper/);
+  assert.match(again.detail, /TATACONSUM oversold base breakout again · already held on paper, no new buy/);
+  assert.doesNotMatch(again.detail, /TATACONSUM[^·]*buy at the next open/);
   assert.equal(eveningLines('2026-10-15', { vwap: { trades: [] }, breakfast: null, swing: null }).map((l) => l.short).join(' · '), 'YouTube: no trade · Breakfast: no trade · Swing: no signals');
 });
 

@@ -629,6 +629,10 @@ export async function athSwingScan({ loadCandles = candles, now = new Date(), ru
     }
   }
   strong.sort((a, b) => a.fromAthPct - b.fromAthPct);
+  // a stock the paper record already holds (same rules version) is not a new buy
+  const ver = rules !== RULES ? 'improved' : 'original';
+  const held = new Set((loadAthPaper()?.trades || []).filter((t) => t.open && (t.version || 'original') === ver).map((t) => t.symbol));
+  for (const t of triggered) t.held = held.has(t.symbol);
   return {
     at: new Date().toISOString(), date: lastDate, universe: data.length, strongCount: strong.length,
     rules: { chandelierAtr: rules.chandelierAtr, stopAtr: rules.stopAtr, setups: rules.setups, marketFilter: rules.marketFilter, improved: rules !== RULES },
