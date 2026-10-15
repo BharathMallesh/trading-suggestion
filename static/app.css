@@ -1,4 +1,6 @@
 /* Trading Research Dashboard styles (served at /static/app.css). */
+/* hidden must win over display rules such as .tabs { display: flex } (sub-tab bar outside Trading strategies) */
+[hidden] { display: none !important; }
 :root {
   /* soft light theme */
   --bg: #f3f5fb; --panel: #ffffff; --line: #e3e8f2; --ink: #1f2a44;
