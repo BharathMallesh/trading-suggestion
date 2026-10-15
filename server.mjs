@@ -56,7 +56,8 @@ import { tradesVsIndex } from './paper-bot/vs-index.mjs';
 import { loadFactorLab } from './paper-bot/factor-lab.mjs';
 import { todayScan } from './paper-bot/today-scan.mjs';
 import { loadJournal, saveSettings as saveJournalSettings, planTrade, addTrade, closeTrade, deleteTrade, journalStats, todayStatus, addAlert, deleteAlert, checkAlerts, SETUPS } from './paper-bot/journal.mjs';
-import { loadAthSwing, athSwingScan, loadAthPaper, loadSurvivorship, summarise as athSummarise } from './paper-bot/ath-swing.mjs';
+import { loadAthSwing, athSwingScan, loadAthPaper, loadSurvivorship, summarise as athSummarise, activeRules, RULES as ATH_RULES } from './paper-bot/ath-swing.mjs';
+import { dayResults } from './paper-bot/day-results.mjs';
 import { loadBreakfast, breakfastTest, saveBreakfast, breakfastToday, loadBreakfastPaper, summarise as bfSummarise } from './paper-bot/breakfast.mjs';
 import { compareStrategies } from './paper-bot/compare.mjs';
 import { lanConfig, saveLan, isLoopback, isPrivate, localUrls, loginAttempt, validSession, logout, loginPage } from './paper-bot/lan.mjs';
@@ -656,6 +657,17 @@ const server = http.createServer(async (req, res) => {
       const paper = loadAthPaper();
       const byVersion = paper ? Object.fromEntries([...new Set(paper.trades.map((t) => t.version || 'original'))].map((v) => [v, athSummarise(paper.trades.filter((t) => (t.version || 'original') === v))])) : {};
       return json(res, 200, { backtest: loadAthSwing(), survivorship: loadSurvivorship(), paper: paper ? { startedAt: paper.startedAt, updatedAt: paper.updatedAt, summary: athSummarise(paper.trades), byVersion, open: paper.trades.filter((t) => t.open), recent: paper.trades.filter((t) => !t.open).slice(-15).reverse() } : null });
+    }
+    if (req.method === 'GET' && url.pathname === '/api/day-results') {
+      // Home → "Today's results": one day's paper trades across all three strategies
+      let scan = null;
+      try {
+        if (!athScanCache || Date.now() - athScanCache.at > 600_000) athScanCache = { at: Date.now(), data: await athSwingScan({}) };
+        scan = athScanCache.data;
+      } catch {
+        // swing signals are optional here
+      }
+      return json(res, 200, dayResults(url.searchParams.get('date') || null, { scan, swingVersion: activeRules() !== ATH_RULES ? 'improved' : 'original' }));
     }
     if (req.method === 'GET' && url.pathname === '/api/ath-swing/scan') {
       // strong-stock swing scan on completed daily candles (NIFTY 200)

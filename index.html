@@ -24,7 +24,7 @@
     <!-- tab bar: stays at the top while scrolling; one swipeable row on small screens -->
     <nav class="tabbar" aria-label="Sections">
       <div class="tabs" id="viewTabs">
-        <button type="button" class="active" data-view="home" title="Ask a question, analyse today, alerts">Home</button>
+        <button type="button" class="active" data-view="home" title="Today's results, ask a question, analyse today, alerts">Home</button>
         <button type="button" data-view="trades" title="Plan a trade, keep a journal, daily loss limit, price alerts">My trades</button>
         <button type="button" data-view="portfolio" title="Your shares, tax and whether your trading beat NIFTY">My portfolio</button>
         <button type="button" data-view="invest" title="SIP, goals, index funds, market tilts">Investing</button>
@@ -43,6 +43,18 @@
     <div class="note" id="viewNote"></div>
 
     <main>
+      <!-- Daily results: what each strategy did on one day (paper records) -->
+      <section class="card span2" id="dayCard">
+        <h2>Daily results <span style="font-size:12px;color:var(--warn);font-weight:500">ALL THREE STRATEGIES · PAPER ONLY</span></h2>
+        <p class="hint">One click shows what every strategy did today on paper: each YouTube intraday trade, the Breakfast trades, and the strong-stock swing strategy's buys,
+          exits, open positions and new signals, with profit or loss after charges. Filled in after the market closes (the 4:05 PM run). Pick an earlier date to look back.</p>
+        <div class="row" style="gap:8px;align-items:flex-end">
+          <div style="flex:0 0 auto"><button id="dayBtn" type="button" style="margin-top:0">Show today's results</button></div>
+          <div style="flex:0 1 200px"><label>Or another day</label><select id="dayPick"><option value="">Latest trading day</option></select></div>
+        </div>
+        <div id="dayOut" style="margin-top:12px"></div>
+      </section>
+
       <!-- Ask the app: plain-language questions answered with the validated tools -->
       <section class="card span2" id="askAppCard">
         <h2>Ask the app <span style="font-size:12px;color:var(--warn);font-weight:500">FACTS FROM THE TESTED TOOLS · NO BUY / SELL CALLS</span></h2>
@@ -787,5 +799,6 @@
     <script src="/static/js/08-intraday-vwap.js"></script>
     <script src="/static/js/09-options-risk.js"></script>
     <script src="/static/js/10-lab.js"></script>
+    <script src="/static/js/11-day-results.js"></script>
   </body>
 </html>

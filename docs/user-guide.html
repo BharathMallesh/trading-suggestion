@@ -148,6 +148,7 @@ details.faq p { margin-top: 8px; color: var(--muted); }
       <li><a href="#words">Words you will see</a></li>
       <li class="label">Screens</li>
       <li><a href="#money">Home, portfolio, investing, options tabs</a></li>
+      <li class="sub"><a href="#t-day">Daily results</a></li>
       <li class="sub"><a href="#t-scan">Analyse today</a></li>
       <li class="sub"><a href="#t-ask">Ask the app</a></li>
       <li class="sub"><a href="#t-today">Today</a></li>
@@ -204,7 +205,7 @@ details.faq p { margin-top: 8px; color: var(--muted); }
         <li><div>Each box on the page is called a <b>card</b>. Every card has a title, a short grey explanation under it, and its own buttons. Results appear inside the card after you press a button. Some cards fill in by themselves when the page opens.</div></li>
       </ol>
       <div class="views">
-        <div class="view"><h3>Home</h3><p>Start here every day: <b>Ask the app</b>, the <b>Analyse today</b> button and the <b>Today</b> alerts card.</p></div>
+        <div class="view"><h3>Home</h3><p>Start here every day: <b>Daily results</b> (what each strategy did today), <b>Ask the app</b>, the <b>Analyse today</b> button and the <b>Today</b> alerts card.</p></div>
         <div class="view"><h3>My trades</h3><p>Plan each trade before you place it, keep a journal with your own scorecard, a daily loss limit, and price alerts.</p></div>
         <div class="view"><h3>My portfolio</h3><p>The shares you own: tax if you sold today, tax harvesting, risk, and whether your trading beat NIFTY.</p></div>
         <div class="view"><h3>Investing</h3><p>Long-term money: what SIPs have done, a goal planner, the index-fund picker, market tilts and two slow strategies.</p></div>
@@ -296,6 +297,22 @@ details.faq p { margin-top: 8px; color: var(--muted); }
             <div><h4>Questions it understands</h4><ul><li><b>A stock:</b> “What will happen to TCS?”, “How is SBI doing?”</li><li><b>Today’s market:</b> “Which is the best stock to invest today?”</li><li><b>Options:</b> “NIFTY call put this week”, “Options on Infosys”</li><li><b>Funds:</b> “Which index fund?”</li><li><b>The strategy:</b> “How did the strategy do today?”, “Any signal on Trent?”</li></ul></div>
           </div>
           <div class="example"><b>Good to know:</b> asking “what will happen” gives facts about risk (how much it usually moves, the chance of a big move, recent news), not a prediction of up or down. The app will say clearly that direction cannot be predicted.</div>
+        </article>
+
+        <article class="tool" id="t-day">
+          <div class="eyebrow">Tab: Home</div>
+          <header><h3>Daily results</h3><span class="badge b-care">Paper only</span></header>
+          <p class="what">One button that shows what every strategy did on paper that day: each YouTube intraday trade, the Breakfast trades, and the strong-stock swing strategy’s buys, sales, open positions and new signals, all after charges.</p>
+          <div class="cols">
+            <div><h4>Steps</h4><ol><li>Open the <b>Home</b> tab. It is the first card.</li><li>Press <span class="btn">Show today's results</span>.</li><li>To look back, choose a date in <b>Or another day</b>.</li></ol></div>
+            <div><h4>How to read it</h4><ul>
+              <li><b>Three boxes at the top:</b> the day’s profit or loss for the YouTube strategy (video rules) and Breakfast, and how many swing positions are open.</li>
+              <li><b>Trade tables:</b> stock, buy or short, entry, stop, target, exit, shares, why it closed (hit stop, hit target, closed at 3 PM / 9:45), charges and net result.</li>
+              <li><b>Swing list:</b> stocks bought at that day’s open, stocks sold, new signals (bought at the next open), and stocks that signalled again but are already held.</li>
+              <li><b>Since start:</b> each strategy’s running total, so one day is seen in context.</li>
+            </ul></div>
+          </div>
+          <div class="example"><b>Good to know:</b> results appear after the market closes, when the 4:05 PM run updates the paper records. Pressing it during the day says so; for the live view use the Trading strategies tab. A single day says nothing about whether a strategy works.</div>
         </article>
 
         <article class="tool" id="t-scan">
