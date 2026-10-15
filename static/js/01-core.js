@@ -142,3 +142,42 @@ async function api(path, opts) {
   if (!res.ok) throw new Error(data.error || res.statusText);
   return data;
 }
+
+
+// ---- phones: wide tables become cards (CSS in app.css, max-width 640px) ----
+// Every table with a header row gets class "stack" and each cell a data-label from its column
+// header, so on a narrow screen each row shows as a small card of "label — value" lines.
+// The first cell becomes the card's title when it names the row (stock, version, date…).
+function labelTable(t) {
+  const head = t.tHead?.rows?.[0];
+  if (!head || head.cells.length < 4) return; // narrow tables already fit
+  const labels = [...head.cells].map((c) => c.textContent.trim());
+  t.classList.add('stack');
+  for (const tr of t.tBodies[0]?.rows || []) {
+    [...tr.cells].forEach((td, i) => {
+      if (i === 0 && (labels[0] === '' || td.style.textAlign === 'left')) td.classList.add('title');
+      else td.dataset.label = labels[i] ?? '';
+    });
+  }
+}
+let labelPending = false;
+function labelTables() {
+  labelPending = false;
+  for (const t of document.querySelectorAll('main table')) if (!t.dataset.labelled || t.dataset.rows !== String(t.rows.length)) {
+    labelTable(t);
+    t.dataset.labelled = '1';
+    t.dataset.rows = String(t.rows.length);
+  }
+}
+new MutationObserver(() => {
+  if (!labelPending) {
+    labelPending = true;
+    requestAnimationFrame(labelTables);
+  }
+}).observe(document.querySelector('main'), { childList: true, subtree: true });
+
+// keep the chosen tab visible in the swipeable tab row
+document.addEventListener('click', (e) => {
+  const b = e.target.closest?.('#viewTabs button, #subTabs button');
+  if (b) setTimeout(() => b.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' }), 50);
+});

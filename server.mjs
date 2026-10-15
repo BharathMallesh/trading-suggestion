@@ -246,6 +246,14 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       return res.end(html);
     }
+    // home-screen app: manifest + icons (fixed names only)
+    if (req.method === 'GET' && (url.pathname === '/manifest.webmanifest' || /^\/static\/icon-(180|192|512)\.png$/.test(url.pathname))) {
+      const file = url.pathname === '/manifest.webmanifest' ? 'static/manifest.webmanifest' : url.pathname.slice(1);
+      const body = await readFile(join(HERE, file)).catch(() => null);
+      if (body == null) return json(res, 404, { error: 'Not found' });
+      res.writeHead(200, { 'Content-Type': file.endsWith('.png') ? 'image/png' : 'application/manifest+json', 'Cache-Control': 'max-age=86400' });
+      return res.end(body);
+    }
     // page assets: static/app.css and static/js/NN-name.js only (fixed patterns, no other paths)
     if (req.method === 'GET' && /^\/static\/(app\.css|js\/\d\d-[a-z-]+\.js)$/.test(url.pathname)) {
       const body = await readFile(join(HERE, url.pathname.slice(1)), 'utf8').catch(() => null);

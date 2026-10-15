@@ -66,3 +66,60 @@ th:first-child, td:first-child { text-align: left; }
 .tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
 .tabs button { background: var(--soft); color: var(--muted); border: 1px solid var(--line); margin: 0; padding: 6px 12px; }
 .tabs button.active { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+
+/* ===================== tab bar (all screens) ===================== */
+.tabbar {
+  position: sticky; top: 0; z-index: 30;
+  padding: calc(8px + env(safe-area-inset-top, 0px)) 24px 8px;
+  background: rgba(243, 245, 251, 0.94); backdrop-filter: saturate(1.4) blur(8px); -webkit-backdrop-filter: saturate(1.4) blur(8px);
+  border-bottom: 1px solid var(--line); display: grid; gap: 6px;
+}
+.tabbar .tabs { margin: 0; align-items: center; }
+.tabbar .help { margin-left: auto; font-weight: 600; color: var(--accent); text-decoration: none; font-size: 14px; white-space: nowrap; }
+#subTabs { padding: 4px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+#viewNote { padding: 8px 24px 0; }
+
+/* ===================== tablets and phones ===================== */
+@media (max-width: 860px) {
+  header { padding: calc(14px + env(safe-area-inset-top, 0px)) 16px 10px; }
+  .tabbar { padding: 6px 12px; padding-top: 6px; }
+  #viewNote { padding: 8px 16px 0; font-size: 12px; }
+  /* one swipeable row instead of three wrapped rows */
+  #viewTabs, #subTabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; scroll-snap-type: x proximity; }
+  #viewTabs::-webkit-scrollbar, #subTabs::-webkit-scrollbar { display: none; }
+  .tabs button, .tabbar .help { flex: 0 0 auto; white-space: nowrap; scroll-snap-align: start; }
+  .tabbar .help { margin-left: 4px; padding: 6px 4px; }
+  /* bigger touch targets */
+  button, select, input { min-height: 40px; }
+  .tabs button { min-height: 36px; }
+  .row { flex-wrap: wrap; }
+}
+
+/* ===================== phones ===================== */
+@media (max-width: 640px) {
+  header .sub { font-size: 12px; }
+  h1 { font-size: 18px; }
+  .card { padding: 14px; border-radius: 12px; }
+  main { gap: 12px; padding: 10px 10px 28px; }
+  .row > * { min-width: 46%; }
+  /* tables become cards: one card per row, "label — value" lines (labels added by 01-core.js) */
+  table.stack, table.stack tbody { display: block; width: 100%; white-space: normal; overflow: visible; }
+  table.stack thead { display: none; }
+  table.stack tr { display: block; border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; margin: 8px 0; background: var(--panel); }
+  table.stack td { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; text-align: right !important; border: 0; padding: 3px 0; white-space: normal; overflow-wrap: anywhere; min-width: 0; }
+  table.stack td::before { content: attr(data-label); color: var(--muted); font-size: 12px; text-align: left; flex: 0 0 auto; max-width: 48%; }
+  table.stack td.title { font-weight: 700; font-size: 14px; justify-content: flex-start; text-align: left !important; padding-bottom: 5px; border-bottom: 1px solid var(--line); margin-bottom: 3px; }
+  table.stack td.title::before { content: none; }
+  table.stack td:empty { display: none; }
+  table.stack tr:hover td { background: transparent; }
+}
+/* very small phones */
+@media (max-width: 360px) {
+  .tabs button { padding: 6px 10px; font-size: 13px; }
+  .row > * { min-width: 100%; }
+}
+/* installed app (home-screen, full screen): keep content clear of the notch / home bar */
+@media (display-mode: standalone) {
+  header { padding-top: calc(14px + env(safe-area-inset-top, 0px)); }
+  main { padding-bottom: calc(28px + env(safe-area-inset-bottom, 0px)); }
+}

@@ -2,15 +2,28 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Trading Research Dashboard</title>
+    <!-- add to home screen: opens full-screen with its own icon (phones / tablets) -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#4f5bd5" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Trading" />
+    <link rel="apple-touch-icon" href="/static/icon-180.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png" />
     <link rel="stylesheet" href="/static/app.css" />
   </head>
   <body>
     <header>
       <h1>Trading Research Dashboard</h1>
       <div class="sub">Research &amp; education only — no price predictions, no buy/sell/hold, no broker. Decision-support, never decision-making.</div>
-      <div class="tabs" id="viewTabs" style="margin-top:10px">
+    </header>
+
+    <!-- tab bar: stays at the top while scrolling; one swipeable row on small screens -->
+    <nav class="tabbar" aria-label="Sections">
+      <div class="tabs" id="viewTabs">
         <button type="button" class="active" data-view="home" title="Ask a question, analyse today, alerts">Home</button>
         <button type="button" data-view="trades" title="Plan a trade, keep a journal, daily loss limit, price alerts">My trades</button>
         <button type="button" data-view="portfolio" title="Your shares, tax and whether your trading beat NIFTY">My portfolio</button>
@@ -18,16 +31,16 @@
         <button type="button" data-view="options" title="Call / Put odds and prediction, big moves, volatility">Options &amp; risk</button>
         <button type="button" data-view="intraday" title="The YouTube intraday strategy and the strong-stock swing strategy, live and on paper">Trading strategies</button>
         <button type="button" data-view="lab" title="Every experiment, including the ones that found no edge">Research lab</button>
-        <a href="/guide" target="_blank" rel="noopener" style="margin-left:auto;align-self:center;font-weight:600;color:var(--accent);text-decoration:none;font-size:14px" title="Step-by-step guide to every card, for beginners">? Help &amp; guide</a>
+        <a class="help" href="/guide" target="_blank" rel="noopener" title="Step-by-step guide to every card, for beginners">? Help &amp; guide</a>
       </div>
-      <div class="note" id="viewNote" style="margin-top:6px"></div>
-      <div class="tabs" id="subTabs" hidden style="margin-top:8px;padding:6px;border:1px solid var(--line);border-radius:12px;background:var(--panel)">
+      <div class="tabs" id="subTabs" hidden>
         <button type="button" data-sub="compare" title="All three strategies side by side">Compare all</button>
         <button type="button" data-sub="ath" title="Swing trades in strong stocks: base and flag breakouts, ATR trailing stop">Strong-stock swing</button>
         <button type="button" data-sub="vwap" title="YouTube intraday strategy: VWAP + 20 MA pullback in 4 stocks">YouTube intraday (VWAP)</button>
         <button type="button" data-sub="breakfast" title="Strongest sector's strongest stock at 9:20, out by 9:45">Breakfast strategy</button>
       </div>
-    </header>
+    </nav>
+    <div class="note" id="viewNote"></div>
 
     <main>
       <!-- Ask the app: plain-language questions answered with the validated tools -->
