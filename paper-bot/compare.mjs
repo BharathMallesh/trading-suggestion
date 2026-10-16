@@ -31,7 +31,7 @@ export function compareStrategies({ vwap = loadVwapPullback(), vp = vwapPaper(),
       paperVerdict: earlyVerdict(paper.length, ps.avgR, ps.tStat, 'R'),
       reliable: !!pick?.adopt && (!sv?.results?.[ver] || (sv.results[ver].all.avgR > 0 && sv.results[ver].all.tStat >= 2)),
       verdict: pick?.adopt
-        ? `Best of the three: passed an out-of-sample test${sv?.results?.[ver] ? (sv.results[ver].all.tStat >= 2 && sv.results[ver].all.avgR > 0 ? ' and held up without survivorship bias' : ', but weakened without survivorship bias') : ''}. Still trails a NIFTY fund (more so after tax); best used as a small slice next to an index fund.`
+        ? `Best of the four: passed an out-of-sample test${sv?.results?.[ver] ? (sv.results[ver].all.tStat >= 2 && sv.results[ver].all.avgR > 0 ? ' and held up without survivorship bias' : ', but weakened without survivorship bias') : ''}. Still trails a NIFTY fund (more so after tax); best used as a small slice next to an index fund.`
         : 'Slightly positive, not proven.',
     });
   }
