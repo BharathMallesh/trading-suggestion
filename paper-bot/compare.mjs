@@ -25,7 +25,8 @@ export function compareStrategies({ vwap = loadVwapPullback(), vp = vwapPaper(),
       key: 'ath', name: 'Strong-stock swing', style: 'Swing · days to weeks · delivery',
       test: ath ? `${ath.from?.slice(0, 4)}–${ath.to?.slice(0, 4)}, ${ath.stocks} stocks, ${ath.all.trades} trades` : 'not run',
       backtest: (pick?.adopt ? `${R(pick.test.avgR)} later years · ${R(pick.wideTest.avgR)} unseen stocks (t ${pick.combined.tStat?.toFixed(1)})` : ath ? `${R(ath.all.avgR)} (t ${ath.all.tStat?.toFixed(1)})` : '–')
-        + (sv?.results?.[ver] ? ` · without survivorship bias ${R(sv.results[ver].all.avgR)} (t ${sv.results[ver].all.tStat?.toFixed(1)}), ${pct(sv.results[ver].portfolioCagr)}/yr` : ''),
+        + (sv?.results?.[ver] ? ` · without survivorship bias ${R(sv.results[ver].all.avgR)} (t ${sv.results[ver].all.tStat?.toFixed(1)}), ${pct(sv.results[ver].portfolioCagr)}/yr` : '')
+        + (sv?.results?.wide && sv.index ? ` · wide-trail paper version ${pct(sv.results.wide.portfolioCagr)}/yr (${pct(sv.results.wide.portfolioCagrAfterTax)} after tax) vs NIFTY ${pct(sv.index.cagr)} (${pct(sv.index.cagrAfterTax)}), not proven` : ''),
       money: ath ? `${pct(pick?.adopt ? pick.portfolioCagr : ath.portfolio.cagr)}/yr vs NIFTY ${pct(ath.portfolio.niftyCagr)} · after tax ${pct((pick?.adopt ? ath.afterTax?.improved : ath.afterTax?.strategy)?.cagrAfter)} vs ${pct(ath.afterTax?.index?.cagrAfter)}` : '–',
       paper: paper.length ? `${paper.length} closed · ${pct(ps.winRate, 0)} won · ${R(ps.avgR)}` : `no closed trades yet (since ${ap?.startedAt || '–'})`,
       paperVerdict: earlyVerdict(paper.length, ps.avgR, ps.tStat, 'R'),

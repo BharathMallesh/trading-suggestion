@@ -124,6 +124,7 @@ lazy('Strong-stock swing', async () => {
           <table style="font-size:12px"><thead><tr><th style="text-align:left"></th><th>Before tax</th><th>After tax</th></tr></thead><tbody>
             <tr><td style="text-align:left">Strategy, original rules</td><td>${pc(at.strategy.cagrPre, 1)} a year</td><td><b>${pc(at.strategy.cagrAfter, 1)}</b></td></tr>
             ${at.improved ? `<tr><td style="text-align:left">Strategy, improved rules</td><td>${pc(at.improved.cagrPre, 1)} a year</td><td><b>${pc(at.improved.cagrAfter, 1)}</b></td></tr>` : ''}
+            ${b.wideTrail ? `<tr><td style="text-align:left">Strategy, wide trail (paper version)</td><td>${pc(b.wideTrail.cagr, 1)} a year</td><td><b>${pc(b.wideTrail.cagrAfter, 1)}</b></td></tr>` : ''}
             <tr><td style="text-align:left">NIFTY index fund, held throughout</td><td>${pc(at.index.cagrPre, 1)} a year</td><td><b>${pc(at.index.cagrAfter, 1)}</b></td></tr></tbody></table>
           <div class="note">${esc(at.note)}</div>
           <div style="font-size:14px;margin-top:10px"><b>Core + satellite</b>: part NIFTY fund, part strategy, rebalanced yearly (${b.coreSatellite.years} calendar years)</div>
@@ -139,18 +140,23 @@ lazy('Strong-stock swing', async () => {
     if (sv) {
       const o = sv.results.original;
       const im = sv.results.improved;
-      const lineS = (n, x) => `<tr><td style="text-align:left">${esc(n)}</td><td>${x.all.trades}</td><td>${pc(x.all.winRate)}</td><td style="color:${x.all.avgR >= 0 ? 'var(--up)' : 'var(--down)'}"><b>${R(x.all.avgR)}</b></td><td>${x.all.tStat?.toFixed(1) ?? '–'}</td><td>${R(x.firstHalf.avgR)} / ${R(x.secondHalf.avgR)}</td><td>${x.inLaterGoneStocks.trades ? `${x.inLaterGoneStocks.trades} trades, ${R(x.inLaterGoneStocks.avgR)}` : '–'}</td><td>${pc(x.portfolioCagr, 1)}</td></tr>`;
+      const lineS = (n, x) => `<tr><td style="text-align:left">${esc(n)}</td><td>${x.all.trades}</td><td>${pc(x.all.winRate)}</td><td style="color:${x.all.avgR >= 0 ? 'var(--up)' : 'var(--down)'}"><b>${R(x.all.avgR)}</b></td><td>${x.all.tStat?.toFixed(1) ?? '–'}</td><td>${R(x.firstHalf.avgR)} / ${R(x.secondHalf.avgR)}</td><td>${x.inLaterGoneStocks.trades ? `${x.inLaterGoneStocks.trades} trades, ${R(x.inLaterGoneStocks.avgR)}` : '–'}</td><td>${pc(x.portfolioCagr, 1)}${x.portfolioCagrAfterTax != null ? ` (<b>${pc(x.portfolioCagrAfterTax, 1)}</b> after tax)` : ''}</td><td>${x.halves ? `${pc(x.halves.before, 1)} / ${pc(x.halves.after, 1)}` : '–'}</td><td>${pc(x.maxDrawdown)}</td></tr>`;
+      const wd = sv.results.wide;
+      const ix = sv.index;
       const keeps = im && im.all.avgR > 0 && im.all.tStat >= 2;
       html += `<div style="margin-top:10px;padding:10px 12px;border-radius:10px;border:1px solid ${keeps ? 'var(--up)' : 'var(--warn)'}">
         <div style="font-size:14px"><b>Survivorship check</b>: the stocks as they really were each month (${esc(sv.from)} → ${esc(sv.to)})</div>
         <div class="note">${sv.stocksEverInUniverse} stocks were among the 200 most traded at some point; ${sv.laterGone} of them later stopped trading (collapsed, suspended, delisted or renamed). The main backtest above could not include those.</div>
-        <div style="overflow-x:auto"><table style="font-size:12px"><thead><tr><th style="text-align:left">Rules</th><th>Trades</th><th>Won</th><th>Avg per trade</th><th>t</th><th>First / second half</th><th>In stocks that later disappeared</th><th>Portfolio per year</th></tr></thead><tbody>
-          ${lineS('Original', o)}${im ? lineS('Improved (in use)', im) : ''}</tbody></table></div>
+        <div style="overflow-x:auto"><table style="font-size:12px"><thead><tr><th style="text-align:left">Rules</th><th>Trades</th><th>Won</th><th>Avg per trade</th><th>t</th><th>First / second half</th><th>In stocks that later disappeared</th><th>Portfolio per year</th><th>Per year before / from ${esc(im?.halves?.split?.slice(0, 4) || '2018')}</th><th>Worst fall</th></tr></thead><tbody>
+          ${lineS('Original', o)}${im ? lineS('Improved (in use)', im) : ''}${wd ? lineS('Wide trail (paper)', wd) : ''}
+          ${ix ? `<tr><td style="text-align:left">NIFTY index fund</td><td>–</td><td>–</td><td>–</td><td>–</td><td>–</td><td>–</td><td>${pc(ix.cagr, 1)} (<b>${pc(ix.cagrAfterTax, 1)}</b> after tax)</td><td>${pc(ix.halves.before, 1)} / ${pc(ix.halves.after, 1)}</td><td>${pc(ix.maxDrawdown)}</td></tr>` : ''}</tbody></table></div>
+        ${wd && ix ? `<div style="margin-top:6px;padding:8px 10px;border-radius:8px;background:var(--soft);font-size:13px"><b>Wide trail version</b> (5 ATR trailing stop, 1.5% risk a trade, up to 20 stocks): ${pc(wd.portfolioCagr, 1)} a year (${pc(wd.portfolioCagrAfterTax, 1)} after tax) against ${pc(ix.cagr, 1)} (${pc(ix.cagrAfterTax, 1)}) for NIFTY, ahead in both halves, worst fall ${pc(wd.maxDrawdown)} vs ${pc(ix.maxDrawdown)}.
+          <b>Not proven:</b> its lead over NIFTY month by month is not statistically reliable, some years trail NIFTY badly (2018, 2019), and the settings were chosen with the later years partly in view, so treat about 11% after tax as optimistic. It is recorded on paper next to the other versions; live signals still use the improved rules. A half NIFTY fund, half strategy split is the steadier choice.</div>` : ''}
         <div style="font-size:13px;margin-top:6px"><b>${keeps ? 'The improved rules hold up without survivorship bias.' : 'Without survivorship bias the result is weaker than the main backtest — treat the strategy with extra caution.'}</b></div>
         <div class="note">${esc(sv.note)}</div></div>`;
     }
     const p = d.paper;
-    if (p) html += `<div style="font-size:14px;margin-top:10px"><b>Paper record</b> since ${esc(p.startedAt)} (original and improved rules side by side): ${Object.entries(p.byVersion || {}).map(([v, x]) => `${esc(v)}: ${x.trades ? `${x.trades} closed · won ${pc(x.winRate)} · ${R(x.avgR)}` : 'no closed trades yet'}`).join(' · ') || 'no trades yet'}${p.open.length ? ` · open: ${p.open.map((t) => `${esc(t.symbol.replace('.NS', ''))} (${esc(t.version || 'original')}, trailing stop ${t.trail?.toFixed(1) ?? '–'})`).join(', ')}` : ''}. Updated after each close; a Mac notification lists new signals and exits, and the open positions' trailing stops are set as price alerts in My trades.</div>`;
+    if (p) html += `<div style="font-size:14px;margin-top:10px"><b>Paper record</b> since ${esc(p.startedAt)} (original, improved and wide-trail rules side by side): ${Object.entries(p.byVersion || {}).map(([v, x]) => `${esc(v)}: ${x.trades ? `${x.trades} closed · won ${pc(x.winRate)} · ${R(x.avgR)}` : 'no closed trades yet'}`).join(' · ') || 'no trades yet'}${p.open.length ? ` · open: ${p.open.map((t) => `${esc(t.symbol.replace('.NS', ''))} (${esc(t.version || 'original')}, trailing stop ${t.trail?.toFixed(1) ?? '–'})`).join(', ')}` : ''}. Updated after each close; a Mac notification lists new signals and exits, and the open positions' trailing stops are set as price alerts in My trades.</div>`;
     html += `<div class="note">${esc(b?.note || '')}</div>`;
     $('athOut').innerHTML = html;
   } catch (e) {

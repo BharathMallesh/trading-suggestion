@@ -54,6 +54,14 @@ export const RULES = {
   setups: 'both', // 'both' | 'flag' | 'base'
 };
 
+/**
+ * "Wide trail" version (2026-10-16 portfolio study, survivorship-free, chosen on 2010–17, judged on
+ * 2018–26): a 5 ATR trailing stop improved both halves; 1.5% risk per trade and up to 20 positions
+ * held up in both halves (2% risk did not). Applied on top of the rules in use. Paper only.
+ */
+export const WIDE = { chandelierAtr: 5, riskPct: 1.5, maxOpen: 20 };
+export const wideRules = (base = activeRules()) => ({ ...base, ...WIDE });
+
 // ------------------------------------------------------------ indicators ---
 
 /** ATR (simple average of true range), all-time high so far and its age, weekly RSI known at each day. */
@@ -255,8 +263,11 @@ const SLAB = 0.3 * 1.04;
  * Idle cash earns a liquid-fund rate. With { tax: true }: each financial year's net trading gain is
  * taxed as short-term (losses carried forward) and interest at the slab rate, paid on 1 April.
  * yearEquity: equity on 1 January each year (open positions at cost), for yearly comparisons.
+ * With { closes, days } (closes(symbol) → Map date → close; days = trading dates): the clock steps
+ * through every trading day and open positions are valued at each close, so `curve` (and its
+ * drawdown) and yearEquity include losses on positions still open. Sizing is unchanged.
  */
-export function portfolio(trades, r = RULES, { tax = false } = {}) {
+export function portfolio(trades, r = RULES, { tax = false, closes = null, days = null } = {}) {
   const sorted = [...trades].sort((a, b) => a.entryDate.localeCompare(b.entryDate) || a.symbol.localeCompare(b.symbol));
   let cash = r.capital;
   let cashDate = sorted[0]?.entryDate ?? null;
@@ -312,18 +323,46 @@ export function portfolio(trades, r = RULES, { tax = false } = {}) {
     }
     accrue(date);
   };
-  for (const t of sorted) {
-    closeUpTo(t.entryDate);
-    if (open.length >= r.maxOpen) continue;
+  const enter = (t) => {
+    if (open.length >= r.maxOpen) return;
     const eq = equity();
     const value = Math.min((eq * r.riskPct) / 100 / t.riskPct, (eq * r.maxPositionPct) / 100, cash);
-    if (value < eq * 0.01) continue;
+    if (value < eq * 0.01) return;
     cash -= value;
     open.push({ t, value, exitDate: t.exitDate });
     taken.push({ ...t, value, pnl: value * t.retPct });
-    curve.push({ date: t.entryDate, equity: eq });
-  }
+    if (!mtm) curve.push({ date: t.entryDate, equity: eq });
+  };
   const lastDate = sorted.reduce((a, t) => (t.exitDate > a ? t.exitDate : a), cashDate || '');
+  const mtm = !!(closes && days?.length && sorted.length);
+  if (!mtm) {
+    for (const t of sorted) {
+      closeUpTo(t.entryDate);
+      enter(t);
+    }
+  } else {
+    // daily clock: exits, then the day's entries, then value open positions at the close
+    const last = new Map(); // symbol → latest close seen
+    const marked = (d) => cash + open.reduce((a, p) => {
+      const px = closes(p.t.symbol)?.get(d);
+      if (px) last.set(p.t.symbol, px);
+      return a + p.value * ((px ?? last.get(p.t.symbol) ?? p.t.entry) / p.t.entry);
+    }, 0);
+    let k = 0;
+    let year = null;
+    for (const d of days) {
+      if (d < sorted[0].entryDate || d > lastDate) continue;
+      closeUpTo(d);
+      if (year && d.slice(0, 4) !== year) yearEquity[d.slice(0, 4)] = curve[curve.length - 1].equity; // last close of the old year
+      year = d.slice(0, 4);
+      while (k < sorted.length && sorted[k].entryDate <= d) enter(sorted[k++]);
+      curve.push({ date: d, equity: marked(d) });
+    }
+    while (k < sorted.length) {
+      closeUpTo(sorted[k].entryDate);
+      enter(sorted[k++]);
+    }
+  }
   closeUpTo(lastDate);
   const span = cashDate && sorted.length ? (Date.parse(lastDate) - Date.parse(sorted[0].entryDate)) / 86400000 : 0;
   return { taken, finalEquity: cash, curve, yearEquity, endDate: lastDate, taxPaid, timeInMarket: span > 0 ? investedDays / span : null };
@@ -423,6 +462,18 @@ function maxDrawdown(curve) {
   return dd;
 }
 
+/** Daily closes as lookups for portfolio({ closes, days }). */
+function closeLookup(list) {
+  const m = new Map(list.map(({ s, rows }) => [s, new Map(rows.map((x) => [x.date, x.close]))]));
+  return (sym) => m.get(sym);
+}
+/** Yearly growth between two dates on an equity curve. */
+function curveCagr(curve, from, to) {
+  const seg = curve.filter((p) => p.date >= from && p.date <= to);
+  if (seg.length < 2) return null;
+  return cagr(seg[0].equity, seg[seg.length - 1].equity, (Date.parse(seg[seg.length - 1].date) - Date.parse(seg[0].date)) / (365.25 * 86400000));
+}
+
 async function universe() {
   try {
     const idx = await loadIndexList('nifty200');
@@ -506,9 +557,10 @@ export async function athSwingTest({ loadCandles = candles, from = '2005-01-01',
   const mid = dates[dates.length >> 1];
   const byYear = {};
   for (const t of done) (byYear[t.entryDate.slice(0, 4)] ||= []).push(t);
-  const pf = portfolio(all);
-  const pfFlag = portfolio(all.filter((t) => t.setup === 'flag breakout'));
-  const pfTax = portfolio(all, RULES, { tax: true });
+  const mtm = { closes: closeLookup(data), days: niftyAll.map((x) => x.date) }; // value open positions at every close
+  const pf = portfolio(all, RULES, mtm);
+  const pfFlag = portfolio(all.filter((t) => t.setup === 'flag breakout'), RULES, mtm);
+  const pfTax = portfolio(all, RULES, { tax: true, ...mtm });
   const nifty = niftyAll.filter((x) => x.date >= testFrom);
   const yrs = (Date.parse(nifty[nifty.length - 1].date) - Date.parse(nifty[0].date)) / (365.25 * 86400000);
   const pfDone = pf.taken.filter((t) => !t.open);
@@ -526,8 +578,14 @@ export async function athSwingTest({ loadCandles = candles, from = '2005-01-01',
   const adopt = pickRow.test.avgR > 0 && wideTest.avgR > 0 && combined.tStat >= 2;
   const marketOnly = rows.find((x) => x.rules.setups === 'both' && x.rules.marketFilter && x.rules.chandelierAtr === 3 && x.rules.stopAtr === 1);
   const pickAll = run(data, pickRow.rules);
-  const pfPick = portfolio(pickAll);
-  const pfPickTax = portfolio(pickAll, pickRow.rules, { tax: true });
+  const pfPick = portfolio(pickAll, { ...RULES, ...pickRow.rules }, mtm);
+  const pfPickTax = portfolio(pickAll, { ...RULES, ...pickRow.rules }, { tax: true, ...mtm });
+  // "wide trail" version on top of the rules in use (paper only; see WIDE)
+  const wRules = wideRules(adopt ? { ...RULES, ...pickRow.rules } : RULES);
+  const wideAll = run(data, wRules);
+  const wideDone = wideAll.filter((t) => !t.open);
+  const pfWide = portfolio(wideAll, wRules, mtm);
+  const pfWideTax = portfolio(wideAll, wRules, { tax: true, ...mtm });
 
   // 3: the same base rules on NIFTY 500 stocks outside the NIFTY 200
   const wideBase = summarise(run(wdata, RULES));
@@ -573,6 +631,11 @@ export async function athSwingTest({ loadCandles = candles, from = '2005-01-01',
       rule: 'Each version is scored on trades before the split date only (by t-statistic, needing 60+ trades); the pick is then judged on later trades, and on NIFTY 500 stocks outside the NIFTY 200 that were never used. Adopted only if both are profitable and the combined t ≥ 2.',
     },
     wide: { stocks: wdata.length, base: wideBase },
+    wideTrail: {
+      rules: WIDE, all: summarise(wideAll), firstHalf: summarise(wideDone.filter((t) => t.entryDate < mid)), secondHalf: summarise(wideDone.filter((t) => t.entryDate >= mid)),
+      cagr: cagr(RULES.capital, pfWide.finalEquity, yrs), cagrAfter: cagr(RULES.capital, pfWideTax.finalEquity, yrs), maxDrawdown: maxDrawdown(pfWide.curve),
+      note: '5 ATR trailing stop, 1.5% risk per trade, up to 20 positions, on top of the rules in use. Chosen in a survivorship-free study (2010–17 to choose, 2018–26 to judge); recorded on paper next to the other versions, not adopted for live signals.',
+    },
     afterTax: {
       strategy: { preTax: pf.finalEquity, afterTax: pfTax.finalEquity, taxPaid: pfTax.taxPaid, cagrPre: cagr(RULES.capital, pf.finalEquity, yrs), cagrAfter: cagr(RULES.capital, pfTax.finalEquity, yrs) },
       improved: { preTax: pfPick.finalEquity, afterTax: pfPickTax.finalEquity, taxPaid: pfPickTax.taxPaid, cagrPre: cagr(RULES.capital, pfPick.finalEquity, yrs), cagrAfter: cagr(RULES.capital, pfPickTax.finalEquity, yrs) },
@@ -581,7 +644,7 @@ export async function athSwingTest({ loadCandles = candles, from = '2005-01-01',
     },
     coreSatellite: { mixes, mixesPick, years: Object.keys(idxYearly).filter((y) => swYearly[y] != null).length, note: 'Calendar years with yearly rebalancing, before tax. Yearly steps understate falls inside a year.' },
     topTrades: [...done].sort((a, b) => b.r - a.r).slice(0, 10),
-    note: 'Universe = today\'s NIFTY 200 (survivorship bias: stocks that collapsed and left the index are missing, which flatters a strong-stock strategy). Patterns are approximated by fixed rules. Entries next open, exits next open after a close below the Chandelier stop, delivery charges + 0.1% slippage a side. Portfolio: 1% risk per trade, ≤10 open, ≤20% per stock; idle cash earns 6%/yr (liquid fund); open positions valued at cost. NIFTY includes ≈1.2%/yr dividends. Research only.',
+    note: 'Universe = today\'s NIFTY 200 (survivorship bias: stocks that collapsed and left the index are missing, which flatters a strong-stock strategy). Patterns are approximated by fixed rules. Entries next open, exits next open after a close below the Chandelier stop, delivery charges + 0.1% slippage a side. Portfolio: 1% risk per trade, ≤10 open, ≤20% per stock; idle cash earns 6%/yr (liquid fund); positions valued at every day\'s close (worst fall includes open positions). NIFTY includes ≈1.2%/yr dividends. Research only.',
   };
 }
 
@@ -657,6 +720,7 @@ export async function athPaperUpdate({ loadCandles = candles, now = new Date() }
   const versions = { original: RULES };
   const act = activeRules();
   if (act !== RULES) versions.improved = act;
+  versions.wide = wideRules(act); // 5 ATR trail (paper only, not used for live signals)
   const key = (t) => `${t.version}|${t.symbol}|${t.entryDate}`;
   const prev = new Map(st.trades.map((t) => [key({ version: 'original', ...t }), t]));
   const fresh = [];
@@ -725,6 +789,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
         line(`NIFTY 500 ex-200 (${r.wide.stocks})`, r.wide.base);
         const at = r.afterTax;
         console.log(`After tax: strategy ${p(at.strategy.cagrPre, 1)} → ${p(at.strategy.cagrAfter, 1)} a year · NIFTY fund ${p(at.index.cagrPre, 1)} → ${p(at.index.cagrAfter, 1)}`);
+        if (r.wideTrail) console.log(`Wide trail (paper version: 5 ATR, 1.5% risk, ≤20 open): ${r.wideTrail.all.trades} trades · ${r.wideTrail.all.avgR?.toFixed(2)} R (t ${r.wideTrail.all.tStat?.toFixed(2)}) · halves ${r.wideTrail.firstHalf.avgR?.toFixed(2)} / ${r.wideTrail.secondHalf.avgR?.toFixed(2)} R · CAGR ${p(r.wideTrail.cagr, 1)} (after tax ${p(r.wideTrail.cagrAfter, 1)}) · max drawdown ${p(r.wideTrail.maxDrawdown)}`);
         console.log('Core + satellite (index % / strategy %: CAGR · worst year · deepest fall):');
         for (const m of r.coreSatellite.mixes) console.log(`  ${m.indexPct}/${m.strategyPct}: ${p(m.cagr, 1)} · ${p(m.worstYear, 1)} · ${p(m.maxDrawdown)}`);
         console.log(`\n${r.note}`);
@@ -746,11 +811,13 @@ const SURV = () => process.env.ATH_SURV_PATH || join(HERE, 'data', 'ath-survivor
  * that later collapsed or were delisted), prices adjusted for splits / bonuses.
  * `series` / `universe` come from bhav-history.mjs.
  */
-export function survivorshipRun(series, universe, market, { testFrom = '2010-01-01', rulesList = { original: RULES, improved: activeRules() } } = {}) {
+export function survivorshipRun(series, universe, market, { testFrom = '2010-01-01', rulesList = { original: RULES, improved: activeRules(), wide: wideRules() }, nifty = null, splitYear = '2018-01-01' } = {}) {
   const lastDate = [...series.values()].reduce((a, rows) => (rows.length && rows[rows.length - 1].date > a ? rows[rows.length - 1].date : a), '');
   const goneBefore = new Date(Date.parse(lastDate) - 30 * 86400000).toISOString().slice(0, 10);
   const gone = new Set([...series].filter(([, rows]) => rows.length && rows[rows.length - 1].date < goneBefore).map(([s]) => s));
   const prepared = [...series].filter(([, rows]) => rows.length > 300).map(([s, rows]) => ({ s, rows, bars: indicators(rows), first: rows[0].date }));
+  const closes = closeLookup(prepared);
+  const days = [...market.keys()].sort();
   const out = {};
   for (const [name, rules] of Object.entries(rulesList)) {
     const trades = prepared.flatMap(({ s, rows, bars, first }) => tradesFor(s, rows, rules, { bars, market })
@@ -761,20 +828,38 @@ export function survivorshipRun(series, universe, market, { testFrom = '2010-01-
     const done = trades.filter((t) => !t.open);
     const dates = done.map((t) => t.entryDate).sort();
     const mid = dates[dates.length >> 1];
-    const pf = portfolio(trades, rules);
+    const pf = portfolio(trades, rules, { closes, days });
+    const pfTax = portfolio(trades, rules, { tax: true, closes, days });
     const yrs = dates.length ? (Date.parse(pf.endDate || lastDate) - Date.parse(dates[0])) / (365.25 * 86400000) : 0;
     out[name] = {
+      rules: { chandelierAtr: rules.chandelierAtr, riskPct: rules.riskPct, maxOpen: rules.maxOpen },
       all: summarise(trades), firstHalf: summarise(done.filter((t) => t.entryDate < mid)), secondHalf: summarise(done.filter((t) => t.entryDate >= mid)),
       inLaterGoneStocks: summarise(done.filter((t) => gone.has(t.symbol))),
       portfolioCagr: yrs > 0 ? cagr(rules.capital, pf.finalEquity, yrs) : null, maxDrawdown: maxDrawdown(pf.curve),
+      portfolioCagrAfterTax: yrs > 0 ? cagr(rules.capital, pfTax.finalEquity, yrs) : null,
+      halves: { split: splitYear, before: curveCagr(pf.curve, testFrom, splitYear), after: curveCagr(pf.curve, splitYear, lastDate) },
+      start: dates[0] || null,
     };
   }
   const members = new Set([...universe.values()].flatMap((x) => [...x]));
+  // NIFTY (≈1.2%/yr dividends) over the same span, long-term tax once at the end
+  let index = null;
+  const start = Object.values(out).map((x) => x.start).filter(Boolean).sort()[0];
+  if (nifty && start) {
+    const tr = niftyTR(nifty.filter((x) => x.date >= start && x.date <= lastDate));
+    if (tr.length > 1) {
+      const yrs = (Date.parse(tr[tr.length - 1].date) - Date.parse(tr[0].date)) / (365.25 * 86400000);
+      const end = RULES.capital * (tr[tr.length - 1].tr / tr[0].tr);
+      const after = end - Math.max(0, end - RULES.capital - ltcgExemption(lastDate)) * ltcgRate(lastDate);
+      const curve = tr.map((x) => ({ date: x.date, equity: x.tr }));
+      index = { cagr: cagr(RULES.capital, end, yrs), cagrAfterTax: cagr(RULES.capital, after, yrs), maxDrawdown: maxDrawdown(curve), halves: { split: splitYear, before: curveCagr(curve, start, splitYear), after: curveCagr(curve, splitYear, lastDate) } };
+    }
+  }
   return {
-    at: new Date().toISOString(), from: testFrom, to: lastDate,
+    at: new Date().toISOString(), from: testFrom, to: lastDate, index,
     stocksEverInUniverse: members.size, laterGone: [...members].filter((s) => gone.has(s)).length,
     results: out,
-    note: 'Universe each month = the 200 most-traded NSE stocks of the previous month, as they were then (NSE daily files, including stocks that later collapsed, were suspended or delisted). Prices adjusted for splits / bonuses (NSE\'s adjusted previous close, or a standard-ratio jump at the ex-date open). A stock that changed its NSE symbol appears as two. Compare with the main backtest, which uses today\'s NIFTY 200.',
+    note: 'Universe each month = the 200 most-traded NSE stocks of the previous month, as they were then (NSE daily files, including stocks that later collapsed, were suspended or delisted). Prices adjusted for splits / bonuses (NSE\'s adjusted previous close, or a standard-ratio jump at the ex-date open). A stock that changed its NSE symbol appears as two. Compare with the main backtest, which uses today\'s NIFTY 200. Portfolios are valued at every day\'s close (worst fall includes open positions); after tax: short-term gains each year, liquid-fund interest at a 30% slab. "wide" = 5 ATR trailing stop, 1.5% risk per trade, up to 20 positions (paper only).',
   };
 }
 
@@ -784,7 +869,7 @@ export async function survivorshipTest({ loadCandles = candles } = {}) {
   if (!series.size) throw new Error('No NSE history yet: run node paper-bot/bhav-history.mjs first.');
   const universe = pointInTimeUniverse(series);
   const nifty = (await loadCandles('^NSEI', { period1: Math.floor(Date.parse('2005-01-01') / 1000), interval: '1d' })).filter((x) => x.close > 0);
-  const r = survivorshipRun(series, universe, marketMap(nifty));
+  const r = survivorshipRun(series, universe, marketMap(nifty), { nifty });
   writeJsonAtomic(SURV(), r);
   return r;
 }
@@ -803,8 +888,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href &
       const p = (x, d = 1) => (x == null ? '–' : `${(x * 100).toFixed(d)}%`);
       console.log(`\nSURVIVORSHIP-FREE CHECK · ${r.from} → ${r.to} · ${r.stocksEverInUniverse} stocks were in the top 200 at some point · ${r.laterGone} of them later stopped trading`);
       for (const [k, v] of Object.entries(r.results)) {
-        console.log(`  ${k.padEnd(9)} ${v.all.trades} trades · win ${p(v.all.winRate, 0)} · ${v.all.avgR?.toFixed(2)} R (t ${v.all.tStat?.toFixed(2)}) · halves ${v.firstHalf.avgR?.toFixed(2)} / ${v.secondHalf.avgR?.toFixed(2)} R · in later-gone stocks: ${v.inLaterGoneStocks.trades} trades ${v.inLaterGoneStocks.avgR?.toFixed(2) ?? '–'} R · portfolio ${p(v.portfolioCagr)} · max DD ${p(v.maxDrawdown, 0)}`);
+        console.log(`  ${k.padEnd(9)} ${v.all.trades} trades · win ${p(v.all.winRate, 0)} · ${v.all.avgR?.toFixed(2)} R (t ${v.all.tStat?.toFixed(2)}) · halves ${v.firstHalf.avgR?.toFixed(2)} / ${v.secondHalf.avgR?.toFixed(2)} R · in later-gone stocks: ${v.inLaterGoneStocks.trades} trades ${v.inLaterGoneStocks.avgR?.toFixed(2) ?? '–'} R · portfolio ${p(v.portfolioCagr)} (after tax ${p(v.portfolioCagrAfterTax)}) · before/after ${v.halves?.split?.slice(0, 4)} ${p(v.halves?.before)} / ${p(v.halves?.after)} · max DD ${p(v.maxDrawdown, 0)}`);
       }
+      if (r.index) console.log(`  NIFTY     ${p(r.index.cagr)} (after tax ${p(r.index.cagrAfterTax)}) · before/after ${r.index.halves.split.slice(0, 4)} ${p(r.index.halves.before)} / ${p(r.index.halves.after)} · max DD ${p(r.index.maxDrawdown, 0)}`);
       console.log(`\n${r.note}`);
     })
     .catch((err) => {
