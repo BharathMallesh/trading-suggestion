@@ -192,26 +192,36 @@ export function loadSeries({ months = null } = {}) {
 
 // Standard split / bonus / consolidation price ratios (new price ÷ old price on the ex-date):
 // 2:1 split or 1:1 bonus = 1/2, 5:1 = 1/5, 10:1 = 1/10, 1:2 bonus = 2/3, 2:1 bonus = 1/3, 3:1 bonus = 1/4,
-// 1:3 bonus = 3/4, 3:2 bonus = 2/5 … and the reverse for consolidations.
-export const ACTION_RATIOS = [1 / 10, 1 / 5, 1 / 4, 1 / 3, 2 / 5, 1 / 2, 2 / 3, 3 / 4, 4 / 3, 3 / 2, 2, 5, 10];
+// 1:3 bonus = 3/4, 3:2 bonus = 2/5, 10:1 split + 1:1 bonus = 1/20 … and the reverse for consolidations.
+export const ACTION_RATIOS = [1 / 20, 1 / 10, 1 / 5, 1 / 4, 1 / 3, 2 / 5, 1 / 2, 2 / 3, 3 / 4, 4 / 3, 3 / 2, 2, 5, 10];
 
 /**
- * Corporate-action factor on day i (new price ÷ old), or 1. NSE's newer files adjust PREVCLOSE on
- * the ex-date; its older files do NOT, so a jump near a standard ratio at the open AND the close
- * (more than 20% overnight) is also treated as a split / bonus. A genuine crash rarely opens and
- * closes within 5% of e.g. exactly half.
+ * Corporate-action factor on day i (new price ÷ old), or 1. NSE's newer files may adjust PREVCLOSE on
+ * the ex-date; most of its files do NOT, so the factor is inferred from the ex-date OPEN (set by the
+ * pre-open auction before the day's trading moves the price). The open must sit on a standard ratio ×
+ * the previous close far more closely than on the previous close itself — within a fifth of the jump
+ * in log terms, and never more than 10% off (≈7% for 2/3, ≈10% for 1/2) — and the close within 25% of
+ * that ratio-implied price: stocks often run 5–20% on the ex-date (CANBK's 5:1 split, COCHINSHIP's 1:1
+ * bonus closing at the upper circuit). 3/4 and 4/3 (a 1:3 bonus) are only just beyond the 20% price
+ * bands, where a genuine crash can open, so they need the open within 3% and the close within 10%:
+ * a −20% crash (≈7% from 3/4) or a −28% / −30% day stays a crash. After a suspension (> 31 days without
+ * trading) nothing is inferred, since anything can happen then.
  */
 export function actionFactor(prevRow, row) {
   if (row.prev > 0 && prevRow.close > 0) {
     const f = row.prev / prevRow.close;
     if (Math.abs(Math.log(f)) > Math.log(1.05)) return f; // NSE adjusted the previous close itself
   }
-  const rc = row.close / prevRow.close;
+  if (!(prevRow.close > 0 && row.open > 0 && row.close > 0)) return 1;
+  if (prevRow.date && row.date && Date.parse(row.date) - Date.parse(prevRow.date) > 31 * 86400000) return 1;
   const ro = row.open / prevRow.close;
-  if (Math.abs(Math.log(rc)) < Math.log(1.2)) return 1;
-  const near = (r) => ACTION_RATIOS.find((k) => Math.abs(Math.log(r / k)) < Math.log(1.05));
-  const k = near(ro) ?? null;
-  return k != null && near(rc) === k ? k : 1;
+  const rc = row.close / prevRow.close;
+  const misfit = (k) => Math.abs(Math.log(ro / k));
+  const k = ACTION_RATIOS.reduce((a, x) => (misfit(x) < misfit(a) ? x : a));
+  // 3/4 and 4/3 sit just past what a real move can open at, so they get tight bands
+  const nearOne = Math.abs(Math.log(k)) < Math.log(1.4);
+  if (misfit(k) >= Math.min(nearOne ? Math.log(1.03) : Math.log(1.1), Math.abs(Math.log(ro)) / 5)) return 1;
+  return Math.abs(Math.log(rc / k)) < Math.log(nearOne ? 1.1 : 1.25) ? k : 1;
 }
 
 /** Undo splits / bonuses: every price before an ex-date is multiplied by that day's factor. */

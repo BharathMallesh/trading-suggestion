@@ -774,7 +774,7 @@ export function survivorshipRun(series, universe, market, { testFrom = '2010-01-
     at: new Date().toISOString(), from: testFrom, to: lastDate,
     stocksEverInUniverse: members.size, laterGone: [...members].filter((s) => gone.has(s)).length,
     results: out,
-    note: 'Universe each month = the 200 most-traded NSE stocks of the previous month, as they were then (NSE daily files, including stocks that later collapsed, were suspended or delisted). Prices adjusted for splits / bonuses with NSE\'s adjusted previous close. A stock that changed its NSE symbol appears as two. Compare with the main backtest, which uses today\'s NIFTY 200.',
+    note: 'Universe each month = the 200 most-traded NSE stocks of the previous month, as they were then (NSE daily files, including stocks that later collapsed, were suspended or delisted). Prices adjusted for splits / bonuses (NSE\'s adjusted previous close, or a standard-ratio jump at the ex-date open). A stock that changed its NSE symbol appears as two. Compare with the main backtest, which uses today\'s NIFTY 200.',
   };
 }
 
