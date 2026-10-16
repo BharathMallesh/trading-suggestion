@@ -13,6 +13,8 @@ process.env.MONITOR_DIR = join(TMP, 'monitor');
 process.env.VWAP_PAPER_PATH = join(TMP, 'vwap-paper.json');
 process.env.ATH_PAPER_PATH = join(TMP, 'ath-paper.json');
 process.env.BREAKFAST_PAPER_PATH = join(TMP, 'breakfast-paper.json');
+process.env.NIFTY_DIP_PAPER_PATH = join(TMP, 'nifty-dip-paper.json');
+process.env.NIFTY_DIP_PATH = join(TMP, 'nifty-dip.json');
 after(() => rmSync(TMP, { recursive: true, force: true }));
 
 const cal = await import('./paper-bot/market-calendar.mjs');

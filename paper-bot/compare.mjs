@@ -1,4 +1,4 @@
-// Side-by-side comparison of the three trading strategies (library): style,
+// Side-by-side comparison of the trading strategies (library): style,
 // what the backtest found (after costs), what the paper record shows so far,
 // and a plain verdict. Reads the saved results only (no downloads).
 // Research / paper only — not investment advice.
@@ -7,12 +7,13 @@ import { loadVwapPullback, paperSummary as vwapPaper } from './vwap-pullback.mjs
 import { loadAthSwing, loadAthPaper, loadSurvivorship, summarise as athSum } from './ath-swing.mjs';
 import { loadBreakfast, loadBreakfastPaper, summarise as bfSum } from './breakfast.mjs';
 import { earlyVerdict } from './weekly.mjs';
+import { loadNiftyDip, loadNiftyDipPaper, summarise as dipSum } from './nifty-dip.mjs';
 
 const pct = (x, d = 1) => (x == null ? '–' : `${(x * 100).toFixed(d)}%`);
 const rs = (v) => (v == null ? '–' : `${v < 0 ? '−' : '+'}₹${Math.abs(Math.round(v)).toLocaleString('en-IN')}`);
 const R = (x) => (x == null ? '–' : `${x >= 0 ? '+' : ''}${x.toFixed(2)} R`);
 
-export function compareStrategies({ vwap = loadVwapPullback(), vp = vwapPaper(), ath = loadAthSwing(), ap = loadAthPaper(), bf = loadBreakfast(), bp = loadBreakfastPaper(), sv = loadSurvivorship() } = {}) {
+export function compareStrategies({ vwap = loadVwapPullback(), vp = vwapPaper(), ath = loadAthSwing(), ap = loadAthPaper(), bf = loadBreakfast(), bp = loadBreakfastPaper(), sv = loadSurvivorship(), dip = loadNiftyDip(), dp = loadNiftyDipPaper() } = {}) {
   const rows = [];
   // strong-stock swing
   {
@@ -61,6 +62,22 @@ export function compareStrategies({ vwap = loadVwapPullback(), vp = vwapPaper(),
       paperVerdict: earlyVerdict(ps.trades, ps.avgNetRs, ps.tStat, '₹'),
       reliable: false,
       verdict: 'Breaks even before charges; charges make it lose. Early sample (history grows daily). Paper only.',
+    });
+  }
+  // NIFTY dip-buy
+  if (dip || dp) {
+    const ps = dipSum(dp?.trades || []);
+    const t = dip?.test;
+    const p = dip?.portfolio;
+    rows.push({
+      key: 'dip', name: 'NIFTY dip-buy', style: 'Index ETF · 3–4 days · ~3 trades a year',
+      test: dip ? `${dip.from?.slice(0, 4)}–${dip.to?.slice(0, 4)}, NIFTY, ${dip.all.trades} trades (rules chosen on 2010–2018)` : 'not run',
+      backtest: t?.trades ? `2019+: ${pct(t.winRate, 0)} won · ${t.avgRetPct >= 0 ? '+' : ''}${t.avgRetPct.toFixed(2)}% a trade (t ${t.tStat?.toFixed(1)}) · worst ${t.worstPct.toFixed(1)}%` : '–',
+      money: p ? `${pct(p.cagr)}/yr vs NIFTY ${pct(p.niftyCagr)} · after tax ${pct(p.cagrAfter)} vs ${pct(p.niftyAfter)} · in the market ${p.timeInMarketPct.toFixed(0)}% of the time` : '–',
+      paper: ps.trades ? `${ps.trades} closed · ${pct(ps.winRate, 0)} won · total ${rs(ps.totalNetRs)}` : `no closed trades yet (since ${dp?.startedAt || '–'})`,
+      paperVerdict: ps.trades ? `${ps.trades} closed: about 3 a year, so a fair verdict needs several years.` : 'No closed trades yet (about 3 a year).',
+      reliable: false,
+      verdict: 'High win rate (~70–75%) with a small profit per trade, but it sits in cash ~96% of the time, so it trails a NIFTY index fund. Paper only, for learning.',
     });
   }
   return {

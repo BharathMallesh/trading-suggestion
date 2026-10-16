@@ -15,6 +15,7 @@ import { isTradingDay } from './market-calendar.mjs';
 import { PAPER_VARIANTS, summarise, trustMeter } from './vwap-pullback.mjs';
 import { loadAthPaper, summarise as athSummarise } from './ath-swing.mjs';
 import { loadBreakfastPaper, summarise as bfSummarise } from './breakfast.mjs';
+import { loadNiftyDipPaper, summarise as dipSummarise } from './nifty-dip.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const MONITOR_DIR = () => process.env.MONITOR_DIR || join(HERE, 'monitor');
@@ -76,7 +77,8 @@ export function earlyVerdict(n, avg, t, unit) {
 
 /**
  * Paper results of every strategy for one week: the YouTube VWAP versions (₹), the strong-stock
- * swing versions (R, by exit date) and the Breakfast strategy (₹). `papers` overrides the files.
+ * swing versions (R, by exit date), the Breakfast strategy (₹) and the NIFTY dip-buy (₹, by exit date).
+ * `papers` overrides the files.
  */
 export function strategyWeek(paper, week, papers = {}) {
   const rows = [];
@@ -103,6 +105,13 @@ export function strategyWeek(paper, week, papers = {}) {
     const wk = bfSummarise(bf.trades.filter((x) => x.date >= week.from && x.date <= week.to));
     const tot = bfSummarise(bf.trades);
     rows.push({ key: 'breakfast', group: 'Breakfast', label: 'Breakfast strategy (long + short)', unit: '₹', weekTrades: wk.trades, weekResult: wk.totalNetRs ?? 0, weekWinRate: wk.winRate ?? null, totalTrades: tot.trades, totalResult: tot.totalNetRs ?? 0, trust: { verdict: earlyVerdict(tot.trades, tot.avgNetRs, tot.tStat, '₹') } });
+  }
+  const dip = papers.dip !== undefined ? papers.dip : loadNiftyDipPaper();
+  if (dip?.trades) {
+    const closed = dip.trades.filter((x) => !x.open);
+    const wk = dipSummarise(closed.filter((x) => x.exitDate >= week.from && x.exitDate <= week.to));
+    const tot = dipSummarise(closed);
+    rows.push({ key: 'nifty-dip', group: 'NIFTY dip-buy', label: 'NIFTY dip-buy (index ETF)', unit: '₹', weekTrades: wk.trades, weekResult: wk.totalNetRs ?? 0, weekWinRate: wk.winRate ?? null, totalTrades: tot.trades, totalResult: tot.totalNetRs ?? 0, trust: { verdict: tot.trades ? `${tot.trades} closed (about 3 a year: a fair verdict needs several years)` : 'No closed trades yet (about 3 a year).' } });
   }
   return rows.length ? rows : null;
 }

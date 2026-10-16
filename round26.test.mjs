@@ -10,6 +10,7 @@ process.env.NSE_HOLIDAYS_PATH = join(TMP, 'nse-holidays.json');
 process.env.VWAP_PAPER_PATH = join(TMP, 'vwap-paper.json');
 process.env.ATH_PAPER_PATH = join(TMP, 'ath-paper.json');
 process.env.BREAKFAST_PAPER_PATH = join(TMP, 'breakfast-paper.json');
+process.env.NIFTY_DIP_PAPER_PATH = join(TMP, 'nifty-dip-paper.json');
 after(() => rmSync(TMP, { recursive: true, force: true }));
 
 const { dayResults } = await import('./paper-bot/day-results.mjs');

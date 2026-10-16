@@ -9,6 +9,7 @@ import { loadBreakfastPaper } from './breakfast.mjs';
 import { loadAthPaper } from './ath-swing.mjs';
 import { isTradingDay, lastSessionDate } from './market-calendar.mjs';
 import { badRequest } from '../util.mjs';
+import { loadNiftyDipPaper } from './nifty-dip.mjs';
 
 const istDate = (iso) => (iso ? new Date(new Date(iso).getTime() + 19800_000).toISOString().slice(0, 10) : null);
 const sum = (a, f) => a.reduce((x, t) => x + f(t), 0);
@@ -19,7 +20,7 @@ const trade = (t) => ({ symbol: t.symbol, side: t.side, time: t.time || null, en
  * Results for `date` (default: the latest completed NSE session).
  * `scan` = the latest swing scan (its signals are shown only when it is for `date`).
  */
-export function dayResults(date = null, { vwap = loadPaper(), breakfast = loadBreakfastPaper(), swing = loadAthPaper(), scan = null, swingVersion = 'original', now = new Date() } = {}) {
+export function dayResults(date = null, { vwap = loadPaper(), breakfast = loadBreakfastPaper(), swing = loadAthPaper(), dip = loadNiftyDipPaper(), scan = null, swingVersion = 'original', now = new Date() } = {}) {
   const d = date || lastSessionDate(now);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) throw badRequest('Date must be YYYY-MM-DD.');
   const vt = vwap?.trades || [];
@@ -34,8 +35,8 @@ export function dayResults(date = null, { vwap = loadPaper(), breakfast = loadBr
   const bDay = bt.filter((t) => t.date === d);
   const signals = scan && scan.date === d ? scan.triggered || [] : [];
 
-  const dates = [...new Set([...vt.map((t) => t.date), ...bt.map((t) => t.date), ...st.flatMap((t) => [t.entryDate, t.exitDate])].filter(Boolean))].sort().reverse();
-  const updated = [vwap?.updatedAt, breakfast?.updatedAt, swing?.updatedAt].map(istDate).filter(Boolean).sort().pop() || null;
+  const dates = [...new Set([...vt.map((t) => t.date), ...bt.map((t) => t.date), ...st.flatMap((t) => [t.entryDate, t.exitDate]), ...(dip?.trades || []).flatMap((t) => [t.entryDate, t.exitDate])].filter(Boolean))].sort().reverse();
+  const updated = [vwap?.updatedAt, breakfast?.updatedAt, swing?.updatedAt, dip?.updatedAt].map(istDate).filter(Boolean).sort().pop() || null;
   const todayIst = istDate(now.toISOString());
   const pending = isTradingDay(d) && (!updated || updated < d);
 
@@ -67,5 +68,18 @@ export function dayResults(date = null, { vwap = loadPaper(), breakfast = loadBr
       signalsChecked: !!(scan && scan.date === d),
       total: { closed: st.filter((t) => !t.open).length, sumR: sum(st.filter((t) => !t.open), (t) => t.r) },
     },
+    dip: (() => {
+      const dt = dip?.trades || [];
+      const held = dt.find((t) => t.entryDate <= d && (t.open || t.exitDate > d));
+      const closed = dt.filter((t) => !t.open);
+      return {
+        bought: dt.filter((t) => t.entryDate === d).map((t) => ({ entry: t.entry, signalChangePct: t.signalChangePct })),
+        sold: closed.filter((t) => t.exitDate === d).map((t) => ({ entryDate: t.entryDate, entry: t.entry, exit: t.exit, reason: t.reason, net: t.net, retPct: t.retPct, days: t.days })),
+        holding: held ? { entryDate: held.entryDate, entry: held.entry, stillOpen: !!held.open, retPct: held.retPct, net: held.net } : null,
+        status: dip?.status && dip.status.date === d ? dip.status : null,
+        total: { trades: closed.length, net: sum(closed, (t) => t.net), wins: closed.filter((t) => t.net > 0).length },
+        started: !!dip,
+      };
+    })(),
   };
 }

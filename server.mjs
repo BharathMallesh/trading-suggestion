@@ -58,6 +58,7 @@ import { todayScan } from './paper-bot/today-scan.mjs';
 import { loadJournal, saveSettings as saveJournalSettings, planTrade, addTrade, closeTrade, deleteTrade, journalStats, todayStatus, addAlert, deleteAlert, checkAlerts, SETUPS } from './paper-bot/journal.mjs';
 import { loadAthSwing, athSwingScan, loadAthPaper, loadSurvivorship, summarise as athSummarise, activeRules, RULES as ATH_RULES } from './paper-bot/ath-swing.mjs';
 import { dayResults } from './paper-bot/day-results.mjs';
+import { loadNiftyDip, niftyDipTest, saveNiftyDip, loadNiftyDipPaper, niftyDipToday, summarise as dipSummarise } from './paper-bot/nifty-dip.mjs';
 import { loadBreakfast, breakfastTest, saveBreakfast, breakfastToday, loadBreakfastPaper, summarise as bfSummarise } from './paper-bot/breakfast.mjs';
 import { compareStrategies } from './paper-bot/compare.mjs';
 import { lanConfig, saveLan, isLoopback, isPrivate, localUrls, loginAttempt, validSession, logout, loginPage } from './paper-bot/lan.mjs';
@@ -77,6 +78,7 @@ let fundsCache = null; // /api/index-funds (daily)
 let vwapTodayCache = null; // /api/vwap-today (1 minute)
 let todayScanCache = null; // /api/today-scan (2 minutes)
 let athScanCache = null; // /api/ath-swing/scan (10 minutes)
+let dipTodayCache = null; // /api/nifty-dip status (10 minutes)
 let bfTodayCache = null; // /api/breakfast/today (1 minute)
 const monthlyCache = {}; // goal planner: index → { at, data }
 // Bind to loopback only — this is a local tool holding a server-side API key,
@@ -657,6 +659,24 @@ const server = http.createServer(async (req, res) => {
       const paper = loadAthPaper();
       const byVersion = paper ? Object.fromEntries([...new Set(paper.trades.map((t) => t.version || 'original'))].map((v) => [v, athSummarise(paper.trades.filter((t) => (t.version || 'original') === v))])) : {};
       return json(res, 200, { backtest: loadAthSwing(), survivorship: loadSurvivorship(), paper: paper ? { startedAt: paper.startedAt, updatedAt: paper.updatedAt, summary: athSummarise(paper.trades), byVersion, open: paper.trades.filter((t) => t.open), recent: paper.trades.filter((t) => !t.open).slice(-15).reverse() } : null });
+    }
+    if (req.method === 'GET' && url.pathname === '/api/nifty-dip') {
+      // NIFTY dip-buy: backtest, paper record and where NIFTY stands against the rules
+      const paper = loadNiftyDipPaper();
+      let today = null;
+      try {
+        if (!dipTodayCache || Date.now() - dipTodayCache.at > 600_000) dipTodayCache = { at: Date.now(), data: await niftyDipToday({}) };
+        today = dipTodayCache.data;
+      } catch {
+        today = paper?.status || null;
+      }
+      return json(res, 200, { backtest: loadNiftyDip(), paper: paper ? { startedAt: paper.startedAt, updatedAt: paper.updatedAt, summary: dipSummarise(paper.trades), trades: paper.trades.slice(-20).reverse() } : null, today });
+    }
+    if (req.method === 'POST' && url.pathname === '/api/nifty-dip') {
+      await readJson(req);
+      const r = await niftyDipTest({});
+      saveNiftyDip(r);
+      return json(res, 200, { backtest: r });
     }
     if (req.method === 'GET' && url.pathname === '/api/day-results') {
       // Home → "Today's results": one day's paper trades across all three strategies

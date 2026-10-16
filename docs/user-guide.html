@@ -164,6 +164,7 @@ details.faq p { margin-top: 8px; color: var(--muted); }
       <li><a href="#lab">Trading strategies &amp; Research lab tabs</a></li>
       <li class="sub"><a href="#t-ath">Strong-stock swing strategy</a></li>
       <li class="sub"><a href="#t-bf">Breakfast strategy</a></li>
+      <li class="sub"><a href="#t-dip">NIFTY dip-buy</a></li>
       <li class="sub"><a href="#t-vwap">YouTube strategy: where it is</a></li>
       <li class="sub"><a href="#t-vwap-how">YouTube strategy: how it works</a></li>
       <li class="sub"><a href="#t-labothers">All other lab cards</a></li>
@@ -493,7 +494,7 @@ details.faq p { margin-top: 8px; color: var(--muted); }
     <!-- LAB -->
     <section class="part" id="lab">
       <h2>Trading strategies and Research lab tabs</h2>
-      <div class="prose"><p>The <b>Trading strategies</b> tab holds three strategies. A row of sub-tabs under the main tabs (<span class="btn">Compare all</span> <span class="btn">Strong-stock swing</span> <span class="btn">YouTube intraday (VWAP)</span> <span class="btn">Breakfast strategy</span>) shows one at a time; the app remembers your choice. <b>Compare all</b> puts the three side by side: style, backtest after costs, money, paper record and a plain verdict. The <b>Research lab</b> tab holds every other experiment. Most found that the idea does <b>not</b> work after costs, and the app says so; cards with a grey “Tested: no reliable edge” note are listed last.</p></div>
+      <div class="prose"><p>The <b>Trading strategies</b> tab holds four strategies. A row of sub-tabs under the main tabs (<span class="btn">Compare all</span> <span class="btn">Strong-stock swing</span> <span class="btn">YouTube intraday (VWAP)</span> <span class="btn">Breakfast strategy</span> <span class="btn">NIFTY dip-buy</span>) shows one at a time; the app remembers your choice. <b>Compare all</b> puts the four side by side: style, backtest after costs, money, paper record and a plain verdict. The <b>Research lab</b> tab holds every other experiment. Most found that the idea does <b>not</b> work after costs, and the app says so; cards with a grey “Tested: no reliable edge” note are listed last.</p></div>
       <div class="cards">
         <article class="tool" id="t-ath">
           <div class="eyebrow">Tab: Trading strategies</div>
@@ -548,6 +549,27 @@ details.faq p { margin-top: 8px; color: var(--muted); }
             </ul></div>
           </div>
           <div class="example"><b>Example, 14 October 2026:</b> IT was the strongest sector at 9:20, so the long pick was TCS (up 2.7% in five minutes). NIFTY was slightly down, so the target was only 0.5%. TCS fell and hit its 1% stop. The short pick, Meesho from the weakest sector, was closed at 9:45 for a small loss.</div>
+        </article>
+
+        <article class="tool" id="t-dip">
+          <div class="eyebrow">Tab: Trading strategies → NIFTY dip-buy</div>
+          <header><h3>NIFTY dip-buy</h3><span class="badge b-exp">Experiment: paper only</span></header>
+          <p class="what">A high-win-rate strategy on the whole market instead of single stocks: buy a NIFTY ETF after a sharp fall while the market is still in an uptrend, and sell on the first bounce.</p>
+          <div class="cols">
+            <div><h4>The rules</h4><ol>
+              <li>Every evening, check two things: is NIFTY <b>above its 200-day average</b> (a rising market), and has it <b>fallen 3% or more in the last 5 sessions</b>?</li>
+              <li>If both are true, the paper record <b>buys a NIFTY ETF (NIFTYBEES) at the next morning’s open</b> with ₹1 lakh.</li>
+              <li>It <b>sells at the next open</b> after the first close above the 5-day average (the bounce), or after <b>10 sessions</b>, whichever comes first.</li>
+              <li>No stop-loss: the rising-market rule and the 10-day limit are the protection.</li>
+            </ol></div>
+            <div><h4>How to read the card</h4><ul>
+              <li><b>Status box:</b> NIFTY’s close, its 200-day average, the 5-session change, and what the rules say: no signal, buy tomorrow, or holding.</li>
+              <li><b>Backtest:</b> 2010–2018 is where the rules were chosen; <b>2019 onward is the honest test</b>: about 73% of 22 trades won, +0.92% a trade on average, worst trade −3.6%.</li>
+              <li><b>Verdict:</b> it was in the market only about 4% of the time, so it made about 6% a year after tax against about 9% for simply holding a NIFTY index fund.</li>
+              <li><b>Paper record:</b> every trade since 16 Oct 2026. Expect only about 3 a year.</li>
+            </ul></div>
+          </div>
+          <div class="example"><b>Good to know:</b> a high win rate is not the same as a high return. Most trades win a little, and the money sits idle the rest of the time, so an index fund did better. It is here to show that clearly, not as a way to beat the market.</div>
         </article>
 
         <article class="tool" id="t-vwap">
@@ -730,9 +752,9 @@ details.faq p { margin-top: 8px; color: var(--muted); }
       <div class="schedule">
         <div><span class="when">Always</span><span>The app itself runs in the background whenever the Mac is logged in.</span></div>
         <div><span class="when">10:00 · 13:00 · 15:00</span><span>On trading days: checks your watchlist and portfolio, data health and alerts. The 3 PM Friday run writes the weekly scorecard.</span></div>
-        <div><span class="when">16:05</span><span>On trading days: saves the day’s 5-minute price history (NIFTY 200), records the paper trades of all three strategies, sets price alerts at the swing strategy’s trailing stops, and sends <b>one</b> Mac notification summarising all three strategies (including new swing signals).</span></div>
+        <div><span class="when">16:05</span><span>On trading days: saves the day’s 5-minute price history (NIFTY 200), records the paper trades of all four strategies, sets price alerts at the swing strategy’s trailing stops, and sends <b>one</b> Mac notification summarising all four strategies (including new swing signals and any NIFTY dip-buy signal).</span></div>
         <div><span class="when">18:30 daily</span><span>Backs up all the app’s data to a backup folder and iCloud.</span></div>
-        <div><span class="when">Saturday 10:00</span><span>Re-tests the models and all three strategies on the newest data, adds the week’s NSE daily files and re-runs the survivorship check, refreshes the NSE holiday list and the Market tilts table.</span></div>
+        <div><span class="when">Saturday 10:00</span><span>Re-tests the models and all four strategies on the newest data, adds the week’s NSE daily files and re-runs the survivorship check, refreshes the NSE holiday list and the Market tilts table.</span></div>
       </div>
       <div class="callout">
         <h3>Keep the Mac awake at 4 PM</h3>

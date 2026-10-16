@@ -29,15 +29,16 @@
         <button type="button" data-view="portfolio" title="Your shares, tax and whether your trading beat NIFTY">My portfolio</button>
         <button type="button" data-view="invest" title="SIP, goals, index funds, market tilts">Investing</button>
         <button type="button" data-view="options" title="Call / Put odds and prediction, big moves, volatility">Options &amp; risk</button>
-        <button type="button" data-view="intraday" title="The YouTube intraday strategy and the strong-stock swing strategy, live and on paper">Trading strategies</button>
+        <button type="button" data-view="intraday" title="Four rule-based strategies (swing, YouTube intraday, Breakfast, NIFTY dip-buy), live and on paper">Trading strategies</button>
         <button type="button" data-view="lab" title="Every experiment, including the ones that found no edge">Research lab</button>
         <a class="help" href="/guide" target="_blank" rel="noopener" title="Step-by-step guide to every card, for beginners">? Help &amp; guide</a>
       </div>
       <div class="tabs" id="subTabs" hidden>
-        <button type="button" data-sub="compare" title="All three strategies side by side">Compare all</button>
+        <button type="button" data-sub="compare" title="All four strategies side by side">Compare all</button>
         <button type="button" data-sub="ath" title="Swing trades in strong stocks: base and flag breakouts, ATR trailing stop">Strong-stock swing</button>
         <button type="button" data-sub="vwap" title="YouTube intraday strategy: VWAP + 20 MA pullback in 4 stocks">YouTube intraday (VWAP)</button>
         <button type="button" data-sub="breakfast" title="Strongest sector's strongest stock at 9:20, out by 9:45">Breakfast strategy</button>
+        <button type="button" data-sub="dip" title="Buy a NIFTY ETF after a sharp dip in a rising market, sell on the bounce">NIFTY dip-buy</button>
       </div>
     </nav>
     <div class="note" id="viewNote"></div>
@@ -45,9 +46,9 @@
     <main>
       <!-- Daily results: what each strategy did on one day (paper records) -->
       <section class="card span2" id="dayCard">
-        <h2>Daily results <span style="font-size:12px;color:var(--warn);font-weight:500">ALL THREE STRATEGIES · PAPER ONLY</span></h2>
-        <p class="hint">One click shows what every strategy did today on paper: each YouTube intraday trade, the Breakfast trades, and the strong-stock swing strategy's buys,
-          exits, open positions and new signals, with profit or loss after charges. Filled in after the market closes (the 4:05 PM run). Pick an earlier date to look back.</p>
+        <h2>Daily results <span style="font-size:12px;color:var(--warn);font-weight:500">ALL FOUR STRATEGIES · PAPER ONLY</span></h2>
+        <p class="hint">One click shows what every strategy did today on paper: each YouTube intraday trade, the Breakfast trades, the strong-stock swing strategy's buys,
+          exits, open positions and new signals, and the NIFTY dip-buy, with profit or loss after charges. Filled in after the market closes (the 4:05 PM run). Pick an earlier date to look back.</p>
         <div class="row" style="gap:8px;align-items:flex-end">
           <div style="flex:0 0 auto"><button id="dayBtn" type="button" style="margin-top:0">Show today's results</button></div>
           <div style="flex:0 1 200px"><label>Or another day</label><select id="dayPick"><option value="">Latest trading day</option></select></div>
@@ -610,6 +611,19 @@
         <div id="bfOut" style="margin-top:12px">Loading…</div>
       </section>
 
+      <!-- NIFTY dip-buy (high win rate, index ETF) -->
+      <section class="card span2" id="dipCard">
+        <h2>NIFTY dip-buy <span style="font-size:12px;color:var(--warn);font-weight:500">HIGH WIN RATE · INDEX ETF · ~3 TRADES A YEAR · DAILY CLOSES</span></h2>
+        <p class="hint">Buy a NIFTY ETF (NIFTYBEES) at the next open when NIFTY is <b>above its 200-day average</b> but has <b>fallen 3% or more in 5 sessions</b>; sell at the next open after
+          the first close <b>above the 5-day average</b>, or after <b>10 sessions</b>. No stop: the rising-market filter and the 10-day limit are the protection. About 7 in 10 trades win,
+          but each gain is small and it is in the market only ~4% of the time, so over the years it <b>earns less than simply holding a NIFTY index fund</b>. Paper only, for learning — not investment advice.</p>
+        <div class="row" style="gap:8px">
+          <div style="flex:0 0 auto"><button id="dipRunBtn" type="button" style="margin-top:0;background:var(--soft);color:var(--ink);border:1px solid var(--line)">Re-run backtest (~5 s)</button></div>
+        </div>
+        <div id="dipToday" style="margin-top:10px"></div>
+        <div id="dipOut" style="margin-top:12px">Loading…</div>
+      </section>
+
       <!-- Strong-stock swing strategy (trader interview) -->
       <section class="card span2" id="athCard">
         <h2>Strong-stock swing <span style="font-size:12px;color:var(--warn);font-weight:500">ALL-TIME-HIGH STOCKS · BASE &amp; FLAG BREAKOUTS · ATR TRAILING STOP · DAILY CHARTS</span></h2>
@@ -800,5 +814,6 @@
     <script src="/static/js/09-options-risk.js"></script>
     <script src="/static/js/10-lab.js"></script>
     <script src="/static/js/11-day-results.js"></script>
+    <script src="/static/js/12-nifty-dip.js"></script>
   </body>
 </html>

@@ -1,4 +1,4 @@
-// 11-day-results.js — Home → Daily results: one day's paper trades across all three strategies.
+// 11-day-results.js — Home → Daily results: one day's paper trades across all four strategies.
 // Classic script (not a module): loaded in order by index.html after 01-core.js; top-level names are shared across these files.
 const drRs = (v) => (v == null ? '–' : (v < 0 ? '−₹' : v > 0 ? '+₹' : '₹') + Math.abs(Math.round(v)).toLocaleString('en-IN'));
 const drCol = (v) => (v > 0 ? 'var(--up)' : v < 0 ? 'var(--down)' : 'var(--muted)');
@@ -27,6 +27,7 @@ function drRender(r) {
     ${box('YouTube intraday (video rules)', v.trades.length ? drRs(v.dayNet) : 'No trade', drCol(v.dayNet), `${nV} trade${nV === 1 ? '' : 's'} across the 3 versions`)}
     ${box('Breakfast', r.breakfast.trades.length ? drRs(r.breakfast.dayNet) : 'No trade', drCol(r.breakfast.dayNet), `${r.breakfast.trades.length} trade${r.breakfast.trades.length === 1 ? '' : 's'} · since start ${drRs(r.breakfast.total.net)}`)}
     ${box('Strong-stock swing', `${sw.open.length} open`, drCol(swOpenR), `${sw.bought.length} bought · ${sw.exited.length} exited · ${sw.newSignals.length} new signal${sw.newSignals.length === 1 ? '' : 's'}`)}
+    ${r.dip?.started ? box('NIFTY dip-buy', r.dip.bought.length ? 'Bought' : r.dip.sold.length ? drRs(r.dip.sold.reduce((a, t) => a + t.net, 0)) : r.dip.holding?.stillOpen ? 'Holding' : 'No signal', r.dip.sold.length ? drCol(r.dip.sold.reduce((a, t) => a + t.net, 0)) : 'var(--muted)', `${r.dip.total.trades} closed since start`) : ''}
   </div>`;
 
   // YouTube intraday
@@ -57,6 +58,17 @@ function drRender(r) {
     html += `<div style="font-size:13px;margin-top:8px"><b>Positions held at the end of this day (${sw.open.length})</b> <span class="note" style="display:inline">· prices and R as of the latest close</span></div><div style="overflow-x:auto"><table style="font-size:12px"><thead><tr><th style="text-align:left">Stock</th><th>Bought</th><th>Buy price</th><th>Latest price</th><th>Change after costs</th><th>In R</th><th>Trailing stop</th><th>Days held</th></tr></thead><tbody>${sw.open.map((t) =>
       `<tr><td style="text-align:left"><b>${drSym(t.symbol)}</b>${t.stillOpen ? '' : ' <span class="note" style="display:inline">(sold since)</span>'}</td><td>${esc(t.entryDate)}</td><td>${drPx(t.entry)}</td><td>${drPx(t.last)}</td><td style="color:${drCol(t.retPct)}">${t.retPct >= 0 ? '+' : ''}${(t.retPct * 100).toFixed(1)}%</td><td style="color:${drCol(t.r)}">${t.r >= 0 ? '+' : ''}${t.r.toFixed(2)}</td><td>${drPx(t.trail)}</td><td>${t.days}</td></tr>`).join('')}</tbody></table></div>
       <div class="note">R = the profit or loss measured in units of the risk taken (entry minus first stop). A price alert sits at each trailing stop (My trades → Price alerts).</div>`;
+  }
+  // NIFTY dip-buy
+  const dp = r.dip;
+  if (dp?.started) {
+    html += '<div style="font-size:15px;margin-top:16px"><b>NIFTY dip-buy</b> <span class="note" style="display:inline">(index ETF, about 3 trades a year)</span></div>';
+    const dl = [];
+    for (const t of dp.bought) dl.push(`<li><b>Bought the NIFTY ETF</b> at the open, NIFTY ≈ ${Math.round(t.entry)} (after a ${t.signalChangePct.toFixed(1)}% fall in 5 sessions)</li>`);
+    for (const t of dp.sold) dl.push(`<li><b>Sold</b> after ${t.days} days (${t.reason === 'bounce' ? 'bounce above the 5-day average' : '10-day limit'}) · <b style="color:${drCol(t.net)}">${t.retPct >= 0 ? '+' : ''}${t.retPct.toFixed(2)}% (${drRs(t.net)})</b></li>`);
+    if (dp.holding && !dp.bought.length) dl.push(`<li>Holding since ${esc(dp.holding.entryDate)}${dp.holding.stillOpen ? ` · now ${dp.holding.retPct >= 0 ? '+' : ''}${dp.holding.retPct.toFixed(2)}% (${drRs(dp.holding.net)})` : ' (sold since)'}</li>`);
+    if (!dl.length) dl.push(`<li>${esc(dp.status?.message || 'No signal on this day.')}</li>`);
+    html += `<ul style="margin:6px 0 0 18px;padding:0;font-size:13px;line-height:1.6">${dl.join('')}</ul><div class="note">Since start: ${dp.total.trades} closed trade${dp.total.trades === 1 ? '' : 's'}${dp.total.trades ? `, ${dp.total.wins} won, ${drRs(dp.total.net)}` : ''}.</div>`;
   }
   html += `<div class="note" style="margin-top:12px">Paper trades only, recorded up to ${esc(r.recordedUpTo || '–')}, ₹1,000 risk per intraday trade after all charges. A few days say nothing about whether a strategy works: see Trading strategies → Strategy comparison for the full record. Not investment advice.</div>`;
   $('dayOut').innerHTML = html;

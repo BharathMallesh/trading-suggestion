@@ -11,6 +11,8 @@ process.env.LAN_PATH = join(TMP, 'lan.json');
 process.env.VWAP_PAPER_PATH = join(TMP, 'vwap-paper.json');
 process.env.ATH_PAPER_PATH = join(TMP, 'ath-paper.json');
 process.env.BREAKFAST_PAPER_PATH = join(TMP, 'breakfast-paper.json');
+process.env.NIFTY_DIP_PAPER_PATH = join(TMP, 'nifty-dip-paper.json');
+process.env.NIFTY_DIP_PATH = join(TMP, 'nifty-dip.json');
 after(() => rmSync(TMP, { recursive: true, force: true }));
 
 test('weekly scorecard: YouTube (₹), swing (R, by exit date) and Breakfast (₹) rows', async () => {
@@ -49,7 +51,7 @@ test('evening summary: one short line per strategy', async () => {
     scan: { triggered: [{ symbol: 'LT.NS', setup: 'flag breakout', stop: 3500 }] },
     swingVersion: 'improved',
   });
-  assert.equal(lines.length, 3);
+  assert.equal(lines.length, 4);
   assert.equal(lines[0].short, 'YouTube −₹1,200');
   assert.equal(lines[1].short, 'Breakfast −₹5,360');
   assert.equal(lines[2].short, 'Swing: 1 new signal (LT), exits BHEL +3.2R');
@@ -59,7 +61,7 @@ test('evening summary: one short line per strategy', async () => {
   assert.match(again.detail, /HDFCBANK oversold base breakout · buy at the next open on paper/);
   assert.match(again.detail, /TATACONSUM oversold base breakout again · already held on paper, no new buy/);
   assert.doesNotMatch(again.detail, /TATACONSUM[^·]*buy at the next open/);
-  assert.equal(eveningLines('2026-10-15', { vwap: { trades: [] }, breakfast: null, swing: null }).map((l) => l.short).join(' · '), 'YouTube: no trade · Breakfast: no trade · Swing: no signals');
+  assert.equal(eveningLines('2026-10-15', { vwap: { trades: [] }, breakfast: null, swing: null, dip: null }).map((l) => l.short).join(' · '), 'YouTube: no trade · Breakfast: no trade · Swing: no signals · Dip-buy: no signal');
 });
 
 test('strategy comparison: three rows, only a passed test is marked reliable', async () => {
@@ -71,6 +73,8 @@ test('strategy comparison: three rows, only a passed test is marked reliable', a
     ap: { startedAt: '2026-10-14', trades: [] },
     bf: { sessions: 40, stocks: 200, both: { trades: 74, avgNetRs: -216, tStat: -0.5 }, beforeCosts: { avgNetRs: 7 }, rules: { capital: 100000, leverage: 5, stopPct: 1 } },
     bp: { startedAt: '2026-10-14', trades: [] },
+    dip: null,
+    dp: null,
   });
   assert.deepEqual(r.rows.map((x) => x.key), ['ath', 'vwap', 'breakfast']);
   assert.equal(r.rows[0].reliable, true);
