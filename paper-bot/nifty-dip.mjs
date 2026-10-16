@@ -18,6 +18,11 @@
 // in the market ~4% of the time, so it is expected to TRAIL a NIFTY index fund.
 // Kept as a paper experiment for learning. Research only — not investment advice.
 //
+// Two versions are recorded side by side (same entry/exit rules otherwise):
+//   standard  down 3% or more over 5 sessions (the rules above)
+//   deep      down 5% or more over 10 sessions: ~80–85% winners in both periods,
+//             but only ~1 trade a year, so a LOWER yearly return than standard
+//
 //   node paper-bot/nifty-dip.mjs           # backtest (saved for the app)
 //   node paper-bot/nifty-dip.mjs --paper   # update the forward paper record
 
@@ -34,6 +39,12 @@ const SAVED = () => process.env.NIFTY_DIP_PATH || join(HERE, 'data', 'nifty-dip.
 const PAPER = () => process.env.NIFTY_DIP_PAPER_PATH || join(HERE, 'data', 'nifty-dip-paper.json');
 
 export const RULES = { trendMa: 200, lookback: 5, dropPct: -3, exitMa: 5, maxDays: 10, capital: 100000, slippagePct: 0.05, cashYieldPct: 6, testFrom: '2019-01-01' };
+const DEEP = { dropPct: -5, lookback: 10 };
+export const VERSIONS = { standard: RULES, deep: { ...RULES, ...DEEP } };
+export const VERSION_LABELS = { standard: 'Standard: −3% in 5 days', deep: 'Deep dip: −5% in 10 days (about 1 trade a year)' };
+/** Version of a paper trade (old trades without one are standard). */
+export const versionOf = (t) => t.version || 'standard';
+export const ofVersion = (trades, v) => (trades || []).filter((t) => versionOf(t) === v);
 
 const sma = (rows, i, n) => {
   if (i < n - 1) return null;
@@ -169,18 +180,28 @@ async function loadNifty(loadCandles, now) {
   return completedOnly(rows, now);
 }
 
-export async function niftyDipTest({ loadCandles = candles, now = new Date(), r = RULES } = {}) {
-  const rows = await loadNifty(loadCandles, now);
+/** One rule set's backtest on the loaded rows. */
+function testRules(rows, r) {
   const trades = simulate(rows, r);
   const done = trades.filter((t) => !t.open);
   const before = done.filter((t) => t.entryDate < r.testFrom && t.entryDate >= '2010-01-01');
   const test = done.filter((t) => t.entryDate >= r.testFrom);
   return {
-    at: new Date().toISOString(), from: rows[r.trendMa]?.date, to: rows[rows.length - 1]?.date, rules: r,
-    all: summarise(done), train: summarise(before), test: summarise(test),
+    rules: r, all: summarise(done), train: summarise(before), test: summarise(test),
     portfolio: portfolio(rows, trades, r.testFrom, r),
     perYear: test.length ? +(test.length / ((Date.parse(rows[rows.length - 1].date) - Date.parse(r.testFrom)) / (365.25 * 86400000))).toFixed(1) : 0,
     recent: done.slice(-12).reverse(),
+  };
+}
+
+/** Backtest of both versions; the top-level fields are the standard version (as before). */
+export async function niftyDipTest({ loadCandles = candles, now = new Date(), r = RULES } = {}) {
+  const rows = await loadNifty(loadCandles, now);
+  const standard = { label: VERSION_LABELS.standard, ...testRules(rows, r) };
+  const deep = { label: VERSION_LABELS.deep, ...testRules(rows, { ...r, ...DEEP }) };
+  return {
+    at: new Date().toISOString(), from: rows[r.trendMa]?.date, to: rows[rows.length - 1]?.date,
+    ...standard, versions: { standard, deep },
     note: '^NSEI daily candles stand in for NIFTYBEES; ₹1 lakh per trade with ETF charges and 0.05% slippage per fill. Rules were chosen on 2010–2018 and the 2019+ period is the honest test. Idle cash assumed in a liquid fund at 6% (taxed at a 30% slab); trading gains taxed as short-term (15%, 20% from 23 Jul 2024, +4% cess); NIFTY held throughout pays 12.5% long-term tax once at the end (the ₹1.25 lakh exemption is ignored). Price index only: dividends would add about 1.3% a year to NIFTY. Research only.',
   };
 }
@@ -206,40 +227,58 @@ export function statusFrom(rows, trades, r = RULES) {
   const pos = trades.find((t) => t.open && !t.pending) || null;
   const pending = trades.find((t) => t.pending) || null;
   const exitMa = sma(rows, i, r.exitMa);
-  // NIFTY level that would trigger tomorrow-evening's check (close ≤ close 5 sessions before tomorrow × 0.97)
+  // NIFTY level that would trigger tomorrow-evening's check (close ≤ close `lookback` sessions before tomorrow × (1 + dropPct))
   const triggerLevel = rows[i + 1 - r.lookback].close * (1 + r.dropPct / 100);
   return {
     date: s.date, close: s.close, ma200: s.ma200, aboveMa: s.aboveMa, changePct: s.changePct, fired: s.fired,
-    exitMa, triggerLevel, triggerFallPct: (triggerLevel / s.close - 1) * 100,
+    lookback: r.lookback, dropPct: r.dropPct, exitMa, triggerLevel, triggerFallPct: (triggerLevel / s.close - 1) * 100,
     position: pos ? { entryDate: pos.entryDate, entry: pos.entry, last: rows[i].close, netRs: pos.net, retPct: pos.retPct, days: pos.days, exitDue: pos.exitDue } : null,
     pendingBuy: !!pending,
     message: pos
       ? (pos.exitDue ? 'Exit rule met at today\'s close: the paper record sells at the next open.' : `Holding: sells at the first close above the 5-day average (${exitMa.toFixed(0)}) or after day ${r.maxDays}.`)
-      : pending ? `Signal today: NIFTY fell ${s.changePct.toFixed(1)}% in 5 sessions while above its 200-day average. The paper record buys at the next open.`
+      : pending ? `Signal today: NIFTY fell ${s.changePct.toFixed(1)}% in ${r.lookback} sessions while above its 200-day average. The paper record buys at the next open.`
         : !s.aboveMa ? 'No signal possible: NIFTY is below its 200-day average (the rule only buys dips in a rising market).'
           : `No signal. A close at or below about ${triggerLevel.toFixed(0)} next session (${((triggerLevel / s.close - 1) * 100).toFixed(1)}% from here) would trigger it.`,
   };
 }
 
+/** Status of every version: { standard, deep } (trades since `startedAt`, or all when null). */
+function statusesFrom(rows, startedAt) {
+  return Object.fromEntries(Object.entries(VERSIONS).map(([v, r]) => [v, statusFrom(rows, simulate(rows, r).filter((t) => !startedAt || t.pending || t.entryDate >= startedAt), r)]));
+}
+
+/** Standard status (as before) with `versions: { standard, deep }` attached. */
 export async function niftyDipToday({ loadCandles = candles, now = new Date() } = {}) {
   const rows = await loadNifty(loadCandles, now);
   const st = loadNiftyDipPaper();
-  const trades = simulate(rows).filter((t) => !st || t.pending || t.entryDate >= st.startedAt);
-  return statusFrom(rows, trades);
+  const versions = statusesFrom(rows, st?.startedAt);
+  return versions.standard ? { ...versions.standard, versions } : null;
 }
 
-/** Forward paper record: trades entered on or after the start date; re-valued daily. */
+/** Forward paper record of both versions (each trade has `version`): trades entered on or after the start date; re-valued daily. */
 export async function niftyDipPaperUpdate({ loadCandles = candles, now = new Date() } = {}) {
   const st = loadNiftyDipPaper() || { startedAt: new Date(now.getTime() + 19800_000).toISOString().slice(0, 10), trades: [] };
   const rows = await loadNifty(loadCandles, now);
-  const all = simulate(rows);
-  const before = new Set(st.trades.map((t) => t.entryDate));
-  st.trades = all.filter((t) => !t.pending && t.entryDate >= st.startedAt);
-  st.status = statusFrom(rows, all.filter((t) => t.pending || t.entryDate >= st.startedAt));
+  const key = (t) => `${versionOf(t)}|${t.entryDate}`;
+  const before = new Set(st.trades.map(key));
+  st.trades = Object.entries(VERSIONS).flatMap(([v, r]) => simulate(rows, r).filter((t) => !t.pending && t.entryDate >= st.startedAt).map((t) => ({ ...t, version: v })));
+  st.statuses = statusesFrom(rows, st.startedAt);
+  st.status = st.statuses.standard; // kept for older readers
   st.updatedAt = now.toISOString();
   writeJsonAtomic(PAPER(), st);
   const today = new Date(now.getTime() + 19800_000).toISOString().slice(0, 10);
-  return { startedAt: st.startedAt, summary: summarise(st.trades), status: st.status, bought: st.trades.filter((t) => !before.has(t.entryDate)), sold: st.trades.filter((t) => !t.open && t.exitDate === today) };
+  return {
+    startedAt: st.startedAt, summary: summarise(ofVersion(st.trades, 'standard')), status: st.status,
+    versions: Object.fromEntries(Object.keys(VERSIONS).map((v) => [v, { summary: summarise(ofVersion(st.trades, v)), status: st.statuses[v] }])),
+    bought: st.trades.filter((t) => !before.has(key(t))), sold: st.trades.filter((t) => !t.open && t.exitDate === today),
+  };
+}
+
+/** What /api/nifty-dip shows of the paper file: standard summary (as before), per-version summaries and status, recent trades. */
+export function paperView(paper) {
+  if (!paper) return null;
+  const byVersion = Object.fromEntries(Object.keys(VERSIONS).map((v) => [v, { label: VERSION_LABELS[v], summary: summarise(ofVersion(paper.trades, v)), status: paper.statuses?.[v] || (v === 'standard' ? paper.status || null : null) }]));
+  return { startedAt: paper.startedAt, updatedAt: paper.updatedAt, summary: byVersion.standard.summary, byVersion, trades: paper.trades.slice(-20).reverse().map((t) => ({ ...t, version: versionOf(t) })) };
 }
 
 // CLI
@@ -247,7 +286,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const pc = (x, d = 1) => (x == null ? '–' : `${x.toFixed(d)}%`);
   if (process.argv.includes('--paper')) {
     niftyDipPaperUpdate()
-      .then((r) => console.log(`NIFTY dip-buy paper: since ${r.startedAt} · ${r.summary.trades} closed trades · ${r.status?.message || ''}`))
+      .then((r) => {
+        for (const [v, x] of Object.entries(r.versions)) console.log(`NIFTY dip-buy paper (${VERSION_LABELS[v]}): since ${r.startedAt} · ${x.summary.trades} closed trades · ${x.status?.message || ''}`);
+      })
       .catch((err) => {
         console.error('Error:', err.message);
         process.exit(1);
@@ -258,10 +299,13 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
         saveNiftyDip(r);
         const line = (n, x) => console.log(`${n.padEnd(18)} ${String(x.trades).padStart(3)} trades · win ${x.winRate != null ? Math.round(x.winRate * 100) : '–'}% · avg ${pc(x.avgRetPct, 2)} · worst ${pc(x.worstPct)} · PF ${x.profitFactor?.toFixed(2) ?? '–'} · DD ${pc(x.maxDrawdownPct)} · t ${x.tStat?.toFixed(2) ?? '–'}`);
         console.log(`\nNIFTY DIP-BUY · ${r.from} → ${r.to}`);
-        line('2010–2018 (chosen)', r.train);
-        line('2019+ (test)', r.test);
-        const p = r.portfolio;
-        console.log(`Test period: ${r.perYear} trades/yr · in the market ${pc(p.timeInMarketPct)} of the time · ${pc(p.cagr * 100)}/yr (after tax ${pc(p.cagrAfter * 100)}) vs NIFTY ${pc(p.niftyCagr * 100)} (after tax ${pc(p.niftyAfter * 100)})`);
+        for (const x of Object.values(r.versions)) {
+          console.log(`\n${x.label}`);
+          line('2010–2018 (chosen)', x.train);
+          line('2019+ (test)', x.test);
+          const p = x.portfolio;
+          if (p) console.log(`Test period: ${x.perYear} trades/yr · in the market ${pc(p.timeInMarketPct)} of the time · ${pc(p.cagr * 100)}/yr (after tax ${pc(p.cagrAfter * 100)}) vs NIFTY ${pc(p.niftyCagr * 100)} (after tax ${pc(p.niftyAfter * 100)})`);
+        }
         console.log(`\n${r.note}`);
       })
       .catch((err) => {

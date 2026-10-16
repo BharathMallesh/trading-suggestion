@@ -36,7 +36,9 @@ case "${1:-}" in
     node paper-bot/breakfast.mjs --paper
     node paper-bot/nifty-dip.mjs --paper
     # one evening notification for all strategies + this week's scorecard refreshed
-    node paper-bot/evening.mjs --notify ;;
+    node paper-bot/evening.mjs --notify
+    # watchdog: did everything above happen? (one notification only if something failed)
+    node paper-bot/watchdog.mjs --notify ;;
   monitor)
     # Weekdays only, and only if the server is up.
     if ! curl -s -o /dev/null --max-time 5 http://127.0.0.1:3000/; then
@@ -73,7 +75,9 @@ case "${1:-}" in
     node paper-bot/nifty-dip.mjs >/dev/null ;;
   backup)
     caffeinate -i -w $$ & # keep the Mac awake until this job finishes
-    echo "$(date '+%F %T') backup"; node paper-bot/backup.mjs ;;
+    echo "$(date '+%F %T') backup"; node paper-bot/backup.mjs
+    # watchdog again with the fresh backup (also catches a collect job that never ran)
+    node paper-bot/watchdog.mjs --notify ;;
   *)
     echo "usage: scripts/run.sh server|collect|monitor|refit|backup"; exit 2 ;;
 esac

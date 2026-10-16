@@ -36,6 +36,7 @@ import * as portfolio from './paper-bot/portfolio.mjs';
 import { evaluateRanking, liveRanking } from './paper-bot/ranking.mjs';
 import { volCheck, evaluateVolForecasts } from './paper-bot/volatility.mjs';
 import { healthChecks } from './paper-bot/health.mjs';
+import { runWatchdog, loadWatchdog, watchdogFresh } from './paper-bot/watchdog.mjs';
 import { scanEvents, updateEventReturns, eventStats, loadEvents } from './paper-bot/events.mjs';
 import { runMonitor, latestReport, notify } from './paper-bot/monitor.mjs';
 import { latestWeekly } from './paper-bot/weekly.mjs';
@@ -58,7 +59,7 @@ import { todayScan } from './paper-bot/today-scan.mjs';
 import { loadJournal, saveSettings as saveJournalSettings, planTrade, addTrade, closeTrade, deleteTrade, journalStats, todayStatus, addAlert, deleteAlert, checkAlerts, SETUPS } from './paper-bot/journal.mjs';
 import { loadAthSwing, athSwingScan, loadAthPaper, loadSurvivorship, summarise as athSummarise, activeRules, RULES as ATH_RULES } from './paper-bot/ath-swing.mjs';
 import { dayResults } from './paper-bot/day-results.mjs';
-import { loadNiftyDip, niftyDipTest, saveNiftyDip, loadNiftyDipPaper, niftyDipToday, summarise as dipSummarise } from './paper-bot/nifty-dip.mjs';
+import { loadNiftyDip, niftyDipTest, saveNiftyDip, loadNiftyDipPaper, niftyDipToday, paperView as dipPaperView } from './paper-bot/nifty-dip.mjs';
 import { loadBreakfast, breakfastTest, saveBreakfast, breakfastToday, loadBreakfastPaper, summarise as bfSummarise } from './paper-bot/breakfast.mjs';
 import { compareStrategies } from './paper-bot/compare.mjs';
 import { lanConfig, saveLan, isLoopback, isPrivate, localUrls, loginAttempt, validSession, logout, loginPage } from './paper-bot/lan.mjs';
@@ -668,9 +669,9 @@ const server = http.createServer(async (req, res) => {
         if (!dipTodayCache || Date.now() - dipTodayCache.at > 600_000) dipTodayCache = { at: Date.now(), data: await niftyDipToday({}) };
         today = dipTodayCache.data;
       } catch {
-        today = paper?.status || null;
+        today = paper?.status ? { ...paper.status, versions: paper.statuses } : null;
       }
-      return json(res, 200, { backtest: loadNiftyDip(), paper: paper ? { startedAt: paper.startedAt, updatedAt: paper.updatedAt, summary: dipSummarise(paper.trades), trades: paper.trades.slice(-20).reverse() } : null, today });
+      return json(res, 200, { backtest: loadNiftyDip(), paper: dipPaperView(paper), today });
     }
     if (req.method === 'POST' && url.pathname === '/api/nifty-dip') {
       await readJson(req);
@@ -878,6 +879,13 @@ const server = http.createServer(async (req, res) => {
     // --- Health, events, Today ---
     if (req.method === 'GET' && url.pathname === '/api/health') {
       return json(res, 200, await healthChecks());
+    }
+    if (url.pathname === '/api/watchdog' && (req.method === 'GET' || req.method === 'POST')) {
+      // Home → System check: the saved watchdog result (written after the evening run and the
+      // backup), re-run only if missing / about an older run, or on "Check now" (POST)
+      if (req.method === 'POST') await readJson(req);
+      const saved = req.method === 'GET' ? loadWatchdog() : null;
+      return json(res, 200, saved && watchdogFresh(saved) ? saved : await runWatchdog());
     }
     if (req.method === 'POST' && url.pathname === '/api/events/scan') {
       const body = await readJson(req);

@@ -42,7 +42,7 @@ $('scanBtn').addEventListener('click', scanRun);
 
 // --- Views (tabs): each card goes to the first tab whose pattern matches its title ---
 const VIEWS = [
-  { key: 'home', match: /^(Daily results|Ask the app|Analyse today|Today)/, note: 'Home: see what each strategy did today, ask a question in plain English, analyse today’s market, and see alerts and data health.' },
+  { key: 'home', match: /^(Daily results|System check|Ask the app|Analyse today|Today)/, note: 'Home: see what each strategy did today, ask a question in plain English, analyse today’s market, and see alerts and data health.' },
   { key: 'trades', match: /^(Plan a trade|Trade journal|Price alerts)/, note: 'My trades: plan every trade before you place it (size, charges, rules), record it in your journal, get alerts at your stop and target, and stop for the day at your loss limit. The app never places orders.' },
   { key: 'portfolio', match: /^My portfolio/, note: 'My portfolio: the shares you own, tax if you sold today, tax harvesting, risk, and whether your trading beat NIFTY. Stored only on this Mac.' },
   { key: 'invest', match: /^(What to expect|Goal planner|Market tilts|Index-fund picker|Strategies)/, note: 'Investing: long-term money — what SIPs and lump sums have done, what to invest for a goal, which index fund kept the most, and market tilts.' },
@@ -53,7 +53,7 @@ const VIEWS = [
 const OLD_VIEW = { money: 'home' }; // tab names before the split
 const SUBS = { compare: /^Strategy comparison/, ath: /^Strong-stock swing/, vwap: /^Same stocks every day/, breakfast: /^Breakfast strategy/, dip: /^NIFTY dip-buy/ };
 // order inside a tab (cards not listed keep page order, after these; "no edge" cards go last)
-const ORDER = ['Daily results', 'Ask the app', 'Analyse today', 'Today', 'Plan a trade', 'Trade journal', 'Price alerts', 'Call / Put payoff odds', 'Live candles', 'Big-move odds', 'Volatility check', 'Option calculator', 'Selling volatility', 'Strategy comparison', 'Strong-stock swing', 'Same stocks every day', 'Breakfast strategy', 'NIFTY dip-buy',
+const ORDER = ['Daily results', 'System check', 'Ask the app', 'Analyse today', 'Today', 'Plan a trade', 'Trade journal', 'Price alerts', 'Call / Put payoff odds', 'Live candles', 'Big-move odds', 'Volatility check', 'Option calculator', 'Selling volatility', 'Strategy comparison', 'Strong-stock swing', 'Same stocks every day', 'Breakfast strategy', 'NIFTY dip-buy',
   'What to expect', 'Goal planner', 'Index-fund picker', 'Market tilts', 'Strategies', 'Market data', 'Ask (research', 'Prediction hit-rate', 'Stock ranking', 'Earnings', 'Paper portfolio', 'Model evaluation', 'Settings', 'Phone access'];
 // Tools whose direction calls were tested and found no edge: labelled, and (except the Call/Put card) moved to the end of their view.
 const NO_EDGE = /^(Paper-Bot|Candle AI read|Live candles|Foundation models|Direction over months|Options positioning|Same stocks every day|Breakfast strategy)/;

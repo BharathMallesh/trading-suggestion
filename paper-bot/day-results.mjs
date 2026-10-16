@@ -9,7 +9,7 @@ import { loadBreakfastPaper } from './breakfast.mjs';
 import { loadAthPaper } from './ath-swing.mjs';
 import { isTradingDay, lastSessionDate } from './market-calendar.mjs';
 import { badRequest } from '../util.mjs';
-import { loadNiftyDipPaper } from './nifty-dip.mjs';
+import { loadNiftyDipPaper, ofVersion, VERSION_LABELS } from './nifty-dip.mjs';
 
 const istDate = (iso) => (iso ? new Date(new Date(iso).getTime() + 19800_000).toISOString().slice(0, 10) : null);
 const sum = (a, f) => a.reduce((x, t) => x + f(t), 0);
@@ -68,18 +68,23 @@ export function dayResults(date = null, { vwap = loadPaper(), breakfast = loadBr
       signalsChecked: !!(scan && scan.date === d),
       total: { closed: st.filter((t) => !t.open).length, sumR: sum(st.filter((t) => !t.open), (t) => t.r) },
     },
+    // standard version at the top level (as before), the deep-dip version under `deep`
     dip: (() => {
-      const dt = dip?.trades || [];
-      const held = dt.find((t) => t.entryDate <= d && (t.open || t.exitDate > d));
-      const closed = dt.filter((t) => !t.open);
-      return {
-        bought: dt.filter((t) => t.entryDate === d).map((t) => ({ entry: t.entry, signalChangePct: t.signalChangePct })),
-        sold: closed.filter((t) => t.exitDate === d).map((t) => ({ entryDate: t.entryDate, entry: t.entry, exit: t.exit, reason: t.reason, net: t.net, retPct: t.retPct, days: t.days })),
-        holding: held ? { entryDate: held.entryDate, entry: held.entry, stillOpen: !!held.open, retPct: held.retPct, net: held.net } : null,
-        status: dip?.status && dip.status.date === d ? dip.status : null,
-        total: { trades: closed.length, net: sum(closed, (t) => t.net), wins: closed.filter((t) => t.net > 0).length },
-        started: !!dip,
+      const one = (v, status) => {
+        const dt = ofVersion(dip?.trades, v);
+        const held = dt.find((t) => t.entryDate <= d && (t.open || t.exitDate > d));
+        const closed = dt.filter((t) => !t.open);
+        return {
+          label: VERSION_LABELS[v],
+          bought: dt.filter((t) => t.entryDate === d).map((t) => ({ entry: t.entry, signalChangePct: t.signalChangePct })),
+          sold: closed.filter((t) => t.exitDate === d).map((t) => ({ entryDate: t.entryDate, entry: t.entry, exit: t.exit, reason: t.reason, net: t.net, retPct: t.retPct, days: t.days })),
+          holding: held ? { entryDate: held.entryDate, entry: held.entry, stillOpen: !!held.open, retPct: held.retPct, net: held.net } : null,
+          status: status && status.date === d ? status : null,
+          total: { trades: closed.length, net: sum(closed, (t) => t.net), wins: closed.filter((t) => t.net > 0).length },
+          started: !!dip,
+        };
       };
+      return { ...one('standard', dip?.status), deep: one('deep', dip?.statuses?.deep) };
     })(),
   };
 }

@@ -7,7 +7,7 @@ import { loadVwapPullback, paperSummary as vwapPaper } from './vwap-pullback.mjs
 import { loadAthSwing, loadAthPaper, loadSurvivorship, summarise as athSum } from './ath-swing.mjs';
 import { loadBreakfast, loadBreakfastPaper, summarise as bfSum } from './breakfast.mjs';
 import { earlyVerdict } from './weekly.mjs';
-import { loadNiftyDip, loadNiftyDipPaper, summarise as dipSum } from './nifty-dip.mjs';
+import { loadNiftyDip, loadNiftyDipPaper, summarise as dipSum, ofVersion } from './nifty-dip.mjs';
 
 const pct = (x, d = 1) => (x == null ? '–' : `${(x * 100).toFixed(d)}%`);
 const rs = (v) => (v == null ? '–' : `${v < 0 ? '−' : '+'}₹${Math.abs(Math.round(v)).toLocaleString('en-IN')}`);
@@ -66,15 +66,20 @@ export function compareStrategies({ vwap = loadVwapPullback(), vp = vwapPaper(),
   }
   // NIFTY dip-buy
   if (dip || dp) {
-    const ps = dipSum(dp?.trades || []);
+    const ps = dipSum(ofVersion(dp?.trades, 'standard'));
     const t = dip?.test;
     const p = dip?.portfolio;
+    // deep-dip version (−5% in 10 days): a short mention next to the standard numbers
+    const dv = dip?.versions?.deep;
+    const dps = dipSum(ofVersion(dp?.trades, 'deep'));
+    const deepBt = dv?.test?.trades ? ` · Deep dip (−5% in 10 days): ${pct(dv.test.winRate, 0)} won · ${dv.test.avgRetPct >= 0 ? '+' : ''}${dv.test.avgRetPct.toFixed(2)}% a trade, ~${dv.perYear} a year` : '';
+    const deepMoney = dv?.portfolio ? ` · deep dip ${pct(dv.portfolio.cagrAfter)} after tax` : '';
     rows.push({
       key: 'dip', name: 'NIFTY dip-buy', style: 'Index ETF · 3–4 days · ~3 trades a year',
       test: dip ? `${dip.from?.slice(0, 4)}–${dip.to?.slice(0, 4)}, NIFTY, ${dip.all.trades} trades (rules chosen on 2010–2018)` : 'not run',
-      backtest: t?.trades ? `2019+: ${pct(t.winRate, 0)} won · ${t.avgRetPct >= 0 ? '+' : ''}${t.avgRetPct.toFixed(2)}% a trade (t ${t.tStat?.toFixed(1)}) · worst ${t.worstPct.toFixed(1)}%` : '–',
-      money: p ? `${pct(p.cagr)}/yr vs NIFTY ${pct(p.niftyCagr)} · after tax ${pct(p.cagrAfter)} vs ${pct(p.niftyAfter)} · in the market ${p.timeInMarketPct.toFixed(0)}% of the time` : '–',
-      paper: ps.trades ? `${ps.trades} closed · ${pct(ps.winRate, 0)} won · total ${rs(ps.totalNetRs)}` : `no closed trades yet (since ${dp?.startedAt || '–'})`,
+      backtest: t?.trades ? `2019+: ${pct(t.winRate, 0)} won · ${t.avgRetPct >= 0 ? '+' : ''}${t.avgRetPct.toFixed(2)}% a trade (t ${t.tStat?.toFixed(1)}) · worst ${t.worstPct.toFixed(1)}%${deepBt}` : '–',
+      money: p ? `${pct(p.cagr)}/yr vs NIFTY ${pct(p.niftyCagr)} · after tax ${pct(p.cagrAfter)} vs ${pct(p.niftyAfter)}${deepMoney} · in the market ${p.timeInMarketPct.toFixed(0)}% of the time` : '–',
+      paper: (ps.trades ? `${ps.trades} closed · ${pct(ps.winRate, 0)} won · total ${rs(ps.totalNetRs)}` : `no closed trades yet (since ${dp?.startedAt || '–'})`) + (dps.trades ? ` · deep dip ${dps.trades} closed, ${pct(dps.winRate, 0)} won, ${rs(dps.totalNetRs)}` : ''),
       paperVerdict: ps.trades ? `${ps.trades} closed: about 3 a year, so a fair verdict needs several years.` : 'No closed trades yet (about 3 a year).',
       reliable: false,
       verdict: 'High win rate (~70–75%) with a small profit per trade, but it sits in cash ~96% of the time, so it trails a NIFTY index fund. Paper only, for learning.',

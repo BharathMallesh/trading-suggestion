@@ -27,7 +27,7 @@ function drRender(r) {
     ${box('YouTube intraday (video rules)', v.trades.length ? drRs(v.dayNet) : 'No trade', drCol(v.dayNet), `${nV} trade${nV === 1 ? '' : 's'} across the 3 versions`)}
     ${box('Breakfast', r.breakfast.trades.length ? drRs(r.breakfast.dayNet) : 'No trade', drCol(r.breakfast.dayNet), `${r.breakfast.trades.length} trade${r.breakfast.trades.length === 1 ? '' : 's'} · since start ${drRs(r.breakfast.total.net)}`)}
     ${box('Strong-stock swing', `${sw.open.length} open`, drCol(swOpenR), `${sw.bought.length} bought · ${sw.exited.length} exited · ${sw.newSignals.length} new signal${sw.newSignals.length === 1 ? '' : 's'}`)}
-    ${r.dip?.started ? box('NIFTY dip-buy', r.dip.bought.length ? 'Bought' : r.dip.sold.length ? drRs(r.dip.sold.reduce((a, t) => a + t.net, 0)) : r.dip.holding?.stillOpen ? 'Holding' : 'No signal', r.dip.sold.length ? drCol(r.dip.sold.reduce((a, t) => a + t.net, 0)) : 'var(--muted)', `${r.dip.total.trades} closed since start`) : ''}
+    ${r.dip?.started ? box('NIFTY dip-buy', r.dip.bought.length ? 'Bought' : r.dip.sold.length ? drRs(r.dip.sold.reduce((a, t) => a + t.net, 0)) : r.dip.holding?.stillOpen ? 'Holding' : 'No signal', r.dip.sold.length ? drCol(r.dip.sold.reduce((a, t) => a + t.net, 0)) : 'var(--muted)', `${r.dip.total.trades} closed since start${r.dip.deep && (r.dip.deep.bought.length || r.dip.deep.sold.length) ? ` · deep dip ${r.dip.deep.bought.length ? 'bought' : 'sold'} today` : ''}`) : ''}
   </div>`;
 
   // YouTube intraday
@@ -59,16 +59,20 @@ function drRender(r) {
       `<tr><td style="text-align:left"><b>${drSym(t.symbol)}</b>${t.stillOpen ? '' : ' <span class="note" style="display:inline">(sold since)</span>'}</td><td>${esc(t.entryDate)}</td><td>${drPx(t.entry)}</td><td>${drPx(t.last)}</td><td style="color:${drCol(t.retPct)}">${t.retPct >= 0 ? '+' : ''}${(t.retPct * 100).toFixed(1)}%</td><td style="color:${drCol(t.r)}">${t.r >= 0 ? '+' : ''}${t.r.toFixed(2)}</td><td>${drPx(t.trail)}</td><td>${t.days}</td></tr>`).join('')}</tbody></table></div>
       <div class="note">R = the profit or loss measured in units of the risk taken (entry minus first stop). A price alert sits at each trailing stop (My trades → Price alerts).</div>`;
   }
-  // NIFTY dip-buy
+  // NIFTY dip-buy: standard version, then the deep-dip version (−5% in 10 days)
   const dp = r.dip;
   if (dp?.started) {
-    html += '<div style="font-size:15px;margin-top:16px"><b>NIFTY dip-buy</b> <span class="note" style="display:inline">(index ETF, about 3 trades a year)</span></div>';
-    const dl = [];
-    for (const t of dp.bought) dl.push(`<li><b>Bought the NIFTY ETF</b> at the open, NIFTY ≈ ${Math.round(t.entry)} (after a ${t.signalChangePct.toFixed(1)}% fall in 5 sessions)</li>`);
-    for (const t of dp.sold) dl.push(`<li><b>Sold</b> after ${t.days} days (${t.reason === 'bounce' ? 'bounce above the 5-day average' : '10-day limit'}) · <b style="color:${drCol(t.net)}">${t.retPct >= 0 ? '+' : ''}${t.retPct.toFixed(2)}% (${drRs(t.net)})</b></li>`);
-    if (dp.holding && !dp.bought.length) dl.push(`<li>Holding since ${esc(dp.holding.entryDate)}${dp.holding.stillOpen ? ` · now ${dp.holding.retPct >= 0 ? '+' : ''}${dp.holding.retPct.toFixed(2)}% (${drRs(dp.holding.net)})` : ' (sold since)'}</li>`);
-    if (!dl.length) dl.push(`<li>${esc(dp.status?.message || 'No signal on this day.')}</li>`);
-    html += `<ul style="margin:6px 0 0 18px;padding:0;font-size:13px;line-height:1.6">${dl.join('')}</ul><div class="note">Since start: ${dp.total.trades} closed trade${dp.total.trades === 1 ? '' : 's'}${dp.total.trades ? `, ${dp.total.wins} won, ${drRs(dp.total.net)}` : ''}.</div>`;
+    html += '<div style="font-size:15px;margin-top:16px"><b>NIFTY dip-buy</b> <span class="note" style="display:inline">(index ETF, two versions on paper)</span></div>';
+    const dipLines = (x, n) => {
+      const dl = [];
+      for (const t of x.bought) dl.push(`<li><b>Bought the NIFTY ETF</b> at the open, NIFTY ≈ ${Math.round(t.entry)} (after a ${t.signalChangePct.toFixed(1)}% fall in ${n} sessions)</li>`);
+      for (const t of x.sold) dl.push(`<li><b>Sold</b> after ${t.days} days (${t.reason === 'bounce' ? 'bounce above the 5-day average' : '10-day limit'}) · <b style="color:${drCol(t.net)}">${t.retPct >= 0 ? '+' : ''}${t.retPct.toFixed(2)}% (${drRs(t.net)})</b></li>`);
+      if (x.holding && !x.bought.length) dl.push(`<li>Holding since ${esc(x.holding.entryDate)}${x.holding.stillOpen ? ` · now ${x.holding.retPct >= 0 ? '+' : ''}${x.holding.retPct.toFixed(2)}% (${drRs(x.holding.net)})` : ' (sold since)'}</li>`);
+      if (!dl.length) dl.push(`<li>${esc(x.status?.message || 'No signal on this day.')}</li>`);
+      return `<ul style="margin:6px 0 0 18px;padding:0;font-size:13px;line-height:1.6">${dl.join('')}</ul><div class="note">Since start: ${x.total.trades} closed trade${x.total.trades === 1 ? '' : 's'}${x.total.trades ? `, ${x.total.wins} won, ${drRs(x.total.net)}` : ''}.</div>`;
+    };
+    html += `<div style="font-size:13px;margin-top:8px"><b>${esc(dp.label || 'Standard: −3% in 5 days')}</b></div>${dipLines(dp, 5)}`;
+    if (dp.deep) html += `<div style="font-size:13px;margin-top:8px"><b>${esc(dp.deep.label)}</b></div>${dipLines(dp.deep, 10)}`;
   }
   html += `<div class="note" style="margin-top:12px">Paper trades only, recorded up to ${esc(r.recordedUpTo || '–')}, ₹1,000 risk per intraday trade after all charges. A few days say nothing about whether a strategy works: see Trading strategies → Strategy comparison for the full record. Not investment advice.</div>`;
   $('dayOut').innerHTML = html;

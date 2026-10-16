@@ -149,6 +149,7 @@ details.faq p { margin-top: 8px; color: var(--muted); }
       <li class="label">Screens</li>
       <li><a href="#money">Home, portfolio, investing, options tabs</a></li>
       <li class="sub"><a href="#t-day">Daily results</a></li>
+      <li class="sub"><a href="#t-syscheck">System check</a></li>
       <li class="sub"><a href="#t-scan">Analyse today</a></li>
       <li class="sub"><a href="#t-ask">Ask the app</a></li>
       <li class="sub"><a href="#t-today">Today</a></li>
@@ -314,6 +315,27 @@ details.faq p { margin-top: 8px; color: var(--muted); }
             </ul></div>
           </div>
           <div class="example"><b>Good to know:</b> results appear after the market closes, when the 4:05 PM run updates the paper records. Pressing it during the day says so; for the live view use the Trading strategies tab. A single day says nothing about whether a strategy works.</div>
+        </article>
+
+        <article class="tool" id="t-syscheck">
+          <div class="eyebrow">Tab: Home</div>
+          <header><h3>System check</h3><span class="badge b-care">Runs by itself</span></header>
+          <p class="what">Tells you whether the app’s automatic evening work actually happened, so you don’t have to check the logs.</p>
+          <div class="cols">
+            <div><h4>What it checks</h4><ul>
+              <li>The 4:05 PM run collected the day’s prices with no failures.</li>
+              <li>All four strategies’ paper records were updated.</li>
+              <li>The dashboard server is running, the latest backup is recent and storage is fine.</li>
+              <li>The Saturday re-tests ran in the last 8 days, and the scheduled jobs are still set up.</li>
+            </ul></div>
+            <div><h4>How to read it</h4><ul>
+              <li><b>Green “All systems OK”</b>: nothing to do.</li>
+              <li><b>A red item</b>: what went wrong and a plain-English fix (for example “the Mac was asleep at 4:05 PM”).</li>
+              <li><span class="btn">Check now</span> re-runs every check immediately.</li>
+              <li>You also get <b>one Mac notification</b> in the evening, <b>only if something failed</b>.</li>
+            </ul></div>
+          </div>
+          <div class="example"><b>Good to know:</b> weekends, NSE holidays and the hours before 4:05 PM are not errors. On those days it checks the last trading day’s run instead, so a missed Friday run still shows up on Saturday.</div>
         </article>
 
         <article class="tool" id="t-scan">
@@ -570,6 +592,7 @@ details.faq p { margin-top: 8px; color: var(--muted); }
             </ul></div>
           </div>
           <div class="example"><b>Good to know:</b> a high win rate is not the same as a high return. Most trades win a little, and the money sits idle the rest of the time, so an index fund did better. It is here to show that clearly, not as a way to beat the market.</div>
+                  <div class="example"><b>Two versions:</b> the card also records a <b>deep-dip</b> version on paper, which buys only after a fall of 5% or more in 10 sessions. It won 83% of trades in 2010–2018 and 86% since 2019, but it trades only about once a year and made less per year (about 5.4% after tax, against 6.1% for the standard version and about 9% for a NIFTY index fund). Higher win rate, fewer trades, lower yearly return.</div>
         </article>
 
         <article class="tool" id="t-vwap">
@@ -752,7 +775,7 @@ details.faq p { margin-top: 8px; color: var(--muted); }
       <div class="schedule">
         <div><span class="when">Always</span><span>The app itself runs in the background whenever the Mac is logged in.</span></div>
         <div><span class="when">10:00 · 13:00 · 15:00</span><span>On trading days: checks your watchlist and portfolio, data health and alerts. The 3 PM Friday run writes the weekly scorecard.</span></div>
-        <div><span class="when">16:05</span><span>On trading days: saves the day’s 5-minute price history (NIFTY 200), records the paper trades of all four strategies, sets price alerts at the swing strategy’s trailing stops, and sends <b>one</b> Mac notification summarising all four strategies (including new swing signals and any NIFTY dip-buy signal).</span></div>
+        <div><span class="when">16:05</span><span>On trading days: saves the day’s 5-minute price history (NIFTY 200), records the paper trades of all four strategies, sets price alerts at the swing strategy’s trailing stops, and sends <b>one</b> Mac notification summarising all four strategies (including new swing signals and any NIFTY dip-buy signal). Then the <b>System check</b> confirms everything ran and notifies you only if something failed.</span></div>
         <div><span class="when">18:30 daily</span><span>Backs up all the app’s data to a backup folder and iCloud.</span></div>
         <div><span class="when">Saturday 10:00</span><span>Re-tests the models and all four strategies on the newest data, adds the week’s NSE daily files and re-runs the survivorship check, refreshes the NSE holiday list and the Market tilts table.</span></div>
       </div>
