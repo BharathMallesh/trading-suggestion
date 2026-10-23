@@ -11,6 +11,9 @@ process.env.VWAP_PAPER_PATH = join(TMP, 'vwap-paper.json');
 process.env.ATH_PAPER_PATH = join(TMP, 'ath-paper.json');
 process.env.BREAKFAST_PAPER_PATH = join(TMP, 'breakfast-paper.json');
 process.env.NIFTY_DIP_PAPER_PATH = join(TMP, 'nifty-dip-paper.json');
+process.env.FO_STRANGLE_PATH = join(TMP, 'fo-strangle.json');
+process.env.FO_STRANGLE_PAPER_PATH = join(TMP, 'fo-strangle-paper.json');
+process.env.FNO_SPREADS_PATH = join(TMP, 'fno-spreads.json');
 after(() => rmSync(TMP, { recursive: true, force: true }));
 
 const { dayResults } = await import('./paper-bot/day-results.mjs');

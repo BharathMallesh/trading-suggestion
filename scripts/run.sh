@@ -41,11 +41,12 @@ case "${1:-}" in
   collect)
     caffeinate -i -w $$ & # keep the Mac awake until this job finishes
     echo "$(date '+%F %T') collect"; wait_online; node paper-bot/collector.mjs --notify
-    # paper records of all four strategies (after the close)
+    # paper records of all the strategies (after the close)
     node paper-bot/vwap-pullback.mjs --paper
     node paper-bot/ath-swing.mjs --paper --alerts   # also: trailing-stop price alerts for open swing positions
     node paper-bot/breakfast.mjs --paper
     node paper-bot/nifty-dip.mjs --paper
+    node paper-bot/fo-strangle.mjs --paper   # F&O: NSE files arrive in the evening, so this records up to yesterday
     # one evening notification for all strategies + this week's scorecard refreshed
     node paper-bot/evening.mjs --notify
     # watchdog: did everything above happen? (one notification only if something failed)
@@ -83,7 +84,11 @@ case "${1:-}" in
     # breakfast strategy: re-run on the growing 5-minute history
     node paper-bot/breakfast.mjs >/dev/null
     # NIFTY dip-buy: re-run the backtest with the week's closes
-    node paper-bot/nifty-dip.mjs >/dev/null ;;
+    node paper-bot/nifty-dip.mjs >/dev/null
+    # NIFTY weekly short strangle: re-run on the cached NSE option weeks
+    node paper-bot/fo-strangle.mjs >/dev/null
+    # F&O spreads (specification document): backtests + the real-NSE-price check
+    node paper-bot/fno-spreads.mjs >/dev/null ;;
   backup)
     caffeinate -i -w $$ & # keep the Mac awake until this job finishes
     echo "$(date '+%F %T') backup"; node paper-bot/backup.mjs

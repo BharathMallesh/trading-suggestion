@@ -59,6 +59,8 @@ import { todayScan } from './paper-bot/today-scan.mjs';
 import { loadJournal, saveSettings as saveJournalSettings, planTrade, addTrade, closeTrade, deleteTrade, journalStats, todayStatus, addAlert, deleteAlert, checkAlerts, SETUPS } from './paper-bot/journal.mjs';
 import { loadAthSwing, athSwingScan, loadAthPaper, loadSurvivorship, summarise as athSummarise, activeRules, RULES as ATH_RULES } from './paper-bot/ath-swing.mjs';
 import { dayResults } from './paper-bot/day-results.mjs';
+import { loadFnoSpreads, fnoSpreadsTest, saveFnoSpreads } from './paper-bot/fno-spreads.mjs';
+import { loadFoStrangle, loadFoStranglePaper, foStrangleTest, saveFoStrangle, summarise as foSummarise } from './paper-bot/fo-strangle.mjs';
 import { loadNiftyDip, niftyDipTest, saveNiftyDip, loadNiftyDipPaper, niftyDipToday, paperView as dipPaperView } from './paper-bot/nifty-dip.mjs';
 import { loadBreakfast, breakfastTest, saveBreakfast, breakfastToday, loadBreakfastPaper, summarise as bfSummarise } from './paper-bot/breakfast.mjs';
 import { compareStrategies } from './paper-bot/compare.mjs';
@@ -660,6 +662,27 @@ const server = http.createServer(async (req, res) => {
       const paper = loadAthPaper();
       const byVersion = paper ? Object.fromEntries([...new Set(paper.trades.map((t) => t.version || 'original'))].map((v) => [v, athSummarise(paper.trades.filter((t) => (t.version || 'original') === v))])) : {};
       return json(res, 200, { backtest: loadAthSwing(), survivorship: loadSurvivorship(), paper: paper ? { startedAt: paper.startedAt, updatedAt: paper.updatedAt, summary: athSummarise(paper.trades), byVersion, open: paper.trades.filter((t) => t.open), recent: paper.trades.filter((t) => !t.open).slice(-15).reverse() } : null });
+    }
+    if (req.method === 'GET' && url.pathname === '/api/fno-spreads') {
+      // F&O spreads from the specification document (Black-Scholes priced) + real-NSE-price check
+      return json(res, 200, { backtest: loadFnoSpreads() });
+    }
+    if (req.method === 'POST' && url.pathname === '/api/fno-spreads') {
+      await readJson(req);
+      const r = await fnoSpreadsTest({});
+      saveFnoSpreads(r);
+      return json(res, 200, { backtest: r });
+    }
+    if (req.method === 'GET' && url.pathname === '/api/fo-strangle') {
+      // NIFTY weekly short strangle (F&O, paper only): backtest on real NSE option prices + paper record
+      const paper = loadFoStranglePaper();
+      return json(res, 200, { backtest: loadFoStrangle(), paper: paper ? { startedAt: paper.startedAt, updatedAt: paper.updatedAt, lastDataDate: paper.lastDataDate, summary: foSummarise(paper.trades), status: paper.status, trades: paper.trades.slice(-20).reverse() } : null });
+    }
+    if (req.method === 'POST' && url.pathname === '/api/fo-strangle') {
+      await readJson(req);
+      const r = await foStrangleTest({});
+      saveFoStrangle(r);
+      return json(res, 200, { backtest: r });
     }
     if (req.method === 'GET' && url.pathname === '/api/nifty-dip') {
       // NIFTY dip-buy: backtest, paper record and where NIFTY stands against the rules

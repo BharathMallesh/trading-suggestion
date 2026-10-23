@@ -14,11 +14,12 @@ import { loadBreakfastPaper } from './breakfast.mjs';
 import { loadAthPaper, athSwingScan, activeRules, RULES } from './ath-swing.mjs';
 import { isTradingDay } from './market-calendar.mjs';
 import { loadNiftyDipPaper, ofVersion } from './nifty-dip.mjs';
+import { loadFoStranglePaper } from './fo-strangle.mjs';
 
 const rs = (v) => `${v < 0 ? '−' : '+'}₹${Math.abs(Math.round(v)).toLocaleString('en-IN')}`;
 
 /** Lines for one date: [{ title, short, detail }] per strategy. `scan` = today's swing scan (or null). */
-export function eveningLines(date, { vwap = loadPaper(), breakfast = loadBreakfastPaper(), swing = loadAthPaper(), scan = null, swingVersion = 'original', dip = loadNiftyDipPaper() } = {}) {
+export function eveningLines(date, { vwap = loadPaper(), breakfast = loadBreakfastPaper(), swing = loadAthPaper(), scan = null, swingVersion = 'original', dip = loadNiftyDipPaper(), fo = loadFoStranglePaper() } = {}) {
   const out = [];
   const v = (vwap?.trades || []).filter((t) => t.date === date && (t.variant || 'video') === 'video');
   out.push({ title: 'YouTube intraday', short: v.length ? `YouTube ${rs(v.reduce((a, t) => a + t.net, 0))}` : 'YouTube: no trade', detail: closeSummary(vwap, date).join(' · ') });
@@ -42,6 +43,10 @@ export function eveningLines(date, { vwap = loadPaper(), breakfast = loadBreakfa
   const deepParts = dipParts(ofVersion(dip?.trades, 'deep'), dip?.statuses?.deep);
   if (deepParts.length) dParts.push(`deep dip (−5% in 10 days) ${deepParts.join(', ')}`);
   out.push({ title: 'NIFTY dip-buy', short: dParts.length ? `Dip-buy: ${dParts.join(', ')}` : 'Dip-buy: no signal', detail: dParts.length ? dParts.join(' · ') : ds?.message || 'no signal' });
+  // NIFTY short strangle (F&O): weeks settled today, else the open position (data lags a day)
+  const foDone = (fo?.trades || []).filter((t) => !t.open && t.expiry === date);
+  const foOpen = (fo?.trades || []).find((t) => t.open);
+  if (fo) out.push({ title: 'NIFTY short strangle', short: foDone.length ? `Strangle: week ${rs(foDone.reduce((a, t) => a + t.rupees, 0))}` : foOpen ? 'Strangle: holding' : 'Strangle: no position', detail: foDone.length ? foDone.map((t) => `settled ${t.putStrike}/${t.callStrike}: ${rs(t.rupees)} a lot${t.breached ? ` (${t.breached} side breached)` : ''}`).join(' · ') : fo.status?.message || 'no position' });
   return out;
 }
 

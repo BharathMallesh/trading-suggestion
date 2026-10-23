@@ -74,6 +74,17 @@ function drRender(r) {
     html += `<div style="font-size:13px;margin-top:8px"><b>${esc(dp.label || 'Standard: −3% in 5 days')}</b></div>${dipLines(dp, 5)}`;
     if (dp.deep) html += `<div style="font-size:13px;margin-top:8px"><b>${esc(dp.deep.label)}</b></div>${dipLines(dp.deep, 10)}`;
   }
+  // NIFTY short strangle (F&O)
+  const fo = r.fo;
+  if (fo) {
+    html += '<div style="font-size:15px;margin-top:16px"><b>NIFTY short strangle (F&amp;O)</b> <span class="note" style="display:inline">(weekly options, 1 lot, paper only)</span></div>';
+    const fl = [];
+    for (const t of fo.opened) fl.push(`<li><b>Sold</b> the ${t.putStrike} put and ${t.callStrike} call (expiry ${esc(t.expiry)}) for ${t.credit.toFixed(1)} points, NIFTY at ${Math.round(t.spot)}</li>`);
+    for (const t of fo.settled) fl.push(`<li><b>Expired</b>: NIFTY settled at ${Math.round(t.settle)} · <b style="color:${drCol(t.rupees)}">${drRs(t.rupees)}</b> a lot${t.breached ? ` (${esc(t.breached)} side hit)` : ' (both expired worthless)'}</li>`);
+    for (const t of fo.holding.filter((x) => !fo.opened.length)) fl.push(`<li>Holding ${t.putStrike} / ${t.callStrike} to ${esc(t.expiry)}${t.markDate ? ` · ${drRs(t.rupees)} a lot on ${esc(t.markDate)}'s prices` : ''}</li>`);
+    if (!fl.length) fl.push('<li>No position on this day.</li>');
+    html += `<ul style="margin:6px 0 0 18px;padding:0;font-size:13px;line-height:1.6">${fl.join('')}</ul><div class="note">Since start: ${fo.total.weeks} week${fo.total.weeks === 1 ? '' : 's'} settled${fo.total.weeks ? `, ${drRs(fo.total.rupees)}` : ''}. NSE option prices arrive in the evening, so this runs one session behind (latest: ${esc(fo.lastDataDate || 'none yet')}).</div>`;
+  }
   html += `<div class="note" style="margin-top:12px">Paper trades only, recorded up to ${esc(r.recordedUpTo || '–')}, ₹1,000 risk per intraday trade after all charges. A few days say nothing about whether a strategy works: see Trading strategies → Strategy comparison for the full record. Not investment advice.</div>`;
   $('dayOut').innerHTML = html;
 }

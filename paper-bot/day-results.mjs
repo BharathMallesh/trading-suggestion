@@ -9,6 +9,7 @@ import { loadBreakfastPaper } from './breakfast.mjs';
 import { loadAthPaper } from './ath-swing.mjs';
 import { isTradingDay, lastSessionDate } from './market-calendar.mjs';
 import { badRequest } from '../util.mjs';
+import { loadFoStranglePaper } from './fo-strangle.mjs';
 import { loadNiftyDipPaper, ofVersion, VERSION_LABELS } from './nifty-dip.mjs';
 
 const istDate = (iso) => (iso ? new Date(new Date(iso).getTime() + 19800_000).toISOString().slice(0, 10) : null);
@@ -20,7 +21,7 @@ const trade = (t) => ({ symbol: t.symbol, side: t.side, time: t.time || null, en
  * Results for `date` (default: the latest completed NSE session).
  * `scan` = the latest swing scan (its signals are shown only when it is for `date`).
  */
-export function dayResults(date = null, { vwap = loadPaper(), breakfast = loadBreakfastPaper(), swing = loadAthPaper(), dip = loadNiftyDipPaper(), scan = null, swingVersion = 'original', now = new Date() } = {}) {
+export function dayResults(date = null, { vwap = loadPaper(), breakfast = loadBreakfastPaper(), swing = loadAthPaper(), dip = loadNiftyDipPaper(), fo = loadFoStranglePaper(), scan = null, swingVersion = 'original', now = new Date() } = {}) {
   const d = date || lastSessionDate(now);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) throw badRequest('Date must be YYYY-MM-DD.');
   const vt = vwap?.trades || [];
@@ -69,6 +70,13 @@ export function dayResults(date = null, { vwap = loadPaper(), breakfast = loadBr
       total: { closed: st.filter((t) => !t.open).length, sumR: sum(st.filter((t) => !t.open), (t) => t.r) },
     },
     // standard version at the top level (as before), the deep-dip version under `deep`
+    fo: fo ? {
+      opened: (fo.trades || []).filter((t) => t.entryDate === d).map((t) => ({ callStrike: t.callStrike, putStrike: t.putStrike, credit: t.credit, expiry: t.expiry, spot: t.spot })),
+      settled: (fo.trades || []).filter((t) => !t.open && t.expiry === d).map((t) => ({ callStrike: t.callStrike, putStrike: t.putStrike, settle: t.settle, rupees: t.rupees, retOnMargin: t.retOnMargin, breached: t.breached })),
+      holding: (fo.trades || []).filter((t) => t.entryDate <= d && t.expiry > d).map((t) => ({ callStrike: t.callStrike, putStrike: t.putStrike, expiry: t.expiry, rupees: t.rupees, markDate: t.markDate || null, open: !!t.open })),
+      lastDataDate: fo.lastDataDate || null,
+      total: { weeks: (fo.trades || []).filter((t) => !t.open).length, rupees: sum((fo.trades || []).filter((t) => !t.open), (t) => t.rupees) },
+    } : null,
     dip: (() => {
       const one = (v, status) => {
         const dt = ofVersion(dip?.trades, v);

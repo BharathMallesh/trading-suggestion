@@ -8,6 +8,9 @@ import { join } from 'node:path';
 const TMP = mkdtempSync(join(tmpdir(), 'trading-r29-'));
 process.env.NIFTY_DIP_PATH = join(TMP, 'nifty-dip.json');
 process.env.NIFTY_DIP_PAPER_PATH = join(TMP, 'nifty-dip-paper.json');
+process.env.FO_STRANGLE_PATH = join(TMP, 'fo-strangle.json');
+process.env.FO_STRANGLE_PAPER_PATH = join(TMP, 'fo-strangle-paper.json');
+process.env.FNO_SPREADS_PATH = join(TMP, 'fno-spreads.json');
 process.env.NSE_HOLIDAYS_PATH = join(TMP, 'nse-holidays.json');
 after(() => rmSync(TMP, { recursive: true, force: true }));
 

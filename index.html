@@ -29,7 +29,7 @@
         <button type="button" data-view="portfolio" title="Your shares, tax and whether your trading beat NIFTY">My portfolio</button>
         <button type="button" data-view="invest" title="SIP, goals, index funds, market tilts">Investing</button>
         <button type="button" data-view="options" title="Call / Put odds and prediction, big moves, volatility">Options &amp; risk</button>
-        <button type="button" data-view="intraday" title="Four rule-based strategies (swing, YouTube intraday, Breakfast, NIFTY dip-buy), live and on paper">Trading strategies</button>
+        <button type="button" data-view="intraday" title="Rule-based strategies (swing, YouTube intraday, Breakfast, NIFTY dip-buy, F&amp;O strangle), live and on paper">Trading strategies</button>
         <button type="button" data-view="lab" title="Every experiment, including the ones that found no edge">Research lab</button>
         <a class="help" href="/guide" target="_blank" rel="noopener" title="Step-by-step guide to every card, for beginners">? Help &amp; guide</a>
       </div>
@@ -39,6 +39,8 @@
         <button type="button" data-sub="vwap" title="YouTube intraday strategy: VWAP + 20 MA pullback in 4 stocks">YouTube intraday (VWAP)</button>
         <button type="button" data-sub="breakfast" title="Strongest sector's strongest stock at 9:20, out by 9:45">Breakfast strategy</button>
         <button type="button" data-sub="dip" title="Buy a NIFTY ETF after a sharp dip in a rising market, sell on the bounce">NIFTY dip-buy</button>
+        <button type="button" data-sub="fo" title="F&amp;O: sell a weekly NIFTY call and put 2% away, held to expiry (paper only)">F&amp;O strangle</button>
+        <button type="button" data-sub="fno" title="F&amp;O spreads from the strategy specification document: momentum debit spreads and IV-rank credit spreads">F&amp;O spreads</button>
       </div>
     </nav>
     <div class="note" id="viewNote"></div>
@@ -634,6 +636,34 @@
         <div id="dipOut" style="margin-top:12px">Loading…</div>
       </section>
 
+      <!-- NIFTY weekly short strangle (F&O, paper only) -->
+      <section class="card span2" id="foCard">
+        <h2>NIFTY short strangle <span style="font-size:12px;color:var(--warn);font-weight:500">F&amp;O · WEEKLY OPTIONS · PAPER ONLY · RARE BIG LOSSES</span></h2>
+        <p class="hint">Every week, at the close of the first session after expiry, <b>sell</b> one lot of the NIFTY call about <b>2% above</b> NIFTY and the put about <b>2% below</b>, and hold
+          both to expiry. If NIFTY stays between the two strikes, both expire worthless and you keep the premium; if it moves past one of them, the loss grows with every point.
+          This was the best-looking of 14 futures &amp; options strategies tested on real NSE prices, and it <b>still did not beat simply holding a NIFTY index fund</b>:
+          it wins most weeks, then one crash week (March 2020) lost about three-quarters of the margin. SEBI found about <b>9 in 10 individual F&amp;O traders lose money</b>.
+          Recorded on paper only, to watch how it behaves — not investment advice.</p>
+        <div class="row" style="gap:8px">
+          <div style="flex:0 0 auto"><button id="foRunBtn" type="button" style="margin-top:0;background:var(--soft);color:var(--ink);border:1px solid var(--line)">Re-run backtest (~5 s)</button></div>
+        </div>
+        <div id="foStatus" style="margin-top:10px"></div>
+        <div id="foOut" style="margin-top:12px">Loading…</div>
+      </section>
+
+      <!-- F&O spreads from the specification document (model-priced, paper only) -->
+      <section class="card span2" id="fnoCard">
+        <h2>F&amp;O spreads (specification) <span style="font-size:12px;color:var(--warn);font-weight:500">STOCK OPTIONS · DEBIT &amp; CREDIT SPREADS · MODEL-PRICED · RESEARCH ONLY</span></h2>
+        <p class="hint">The two logics from the <i>F&amp;O Paper Trading Strategy Specification</i>, built as written on its 8 stocks (RELIANCE, HDFCBANK, TCS, INFY, ICICIBANK, SBIN, BHARTIARTL, ITC):
+          <b>momentum-debit</b> buys a bull call or bear put debit spread when 5- and 20-day momentum, the moving-average trend, RSI and volume all agree;
+          <b>ivrank-credit</b> sells a put or call credit spread when volatility is high against its own last 60 readings. Exits: +1.3R target, −0.55R stop, or 3 days before expiry.
+          Option prices come from the Black-Scholes model (no real stock option prices are available), so the card also checks the credit logic against <b>real NSE NIFTY option prices</b>. Research result only (not tracked on paper) — not investment advice.</p>
+        <div class="row" style="gap:8px">
+          <div style="flex:0 0 auto"><button id="fnoRunBtn" type="button" style="margin-top:0;background:var(--soft);color:var(--ink);border:1px solid var(--line)">Re-run backtests (~5 s)</button></div>
+        </div>
+        <div id="fnoOut" style="margin-top:12px">Loading…</div>
+      </section>
+
       <!-- Strong-stock swing strategy (trader interview) -->
       <section class="card span2" id="athCard">
         <h2>Strong-stock swing <span style="font-size:12px;color:var(--warn);font-weight:500">ALL-TIME-HIGH STOCKS · BASE &amp; FLAG BREAKOUTS · ATR TRAILING STOP · DAILY CHARTS</span></h2>
@@ -826,5 +856,7 @@
     <script src="/static/js/11-day-results.js"></script>
     <script src="/static/js/12-nifty-dip.js"></script>
     <script src="/static/js/13-watchdog.js"></script>
+    <script src="/static/js/14-fo-strangle.js"></script>
+    <script src="/static/js/15-fno-spreads.js"></script>
   </body>
 </html>

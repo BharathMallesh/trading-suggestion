@@ -166,6 +166,8 @@ details.faq p { margin-top: 8px; color: var(--muted); }
       <li class="sub"><a href="#t-ath">Strong-stock swing strategy</a></li>
       <li class="sub"><a href="#t-bf">Breakfast strategy</a></li>
       <li class="sub"><a href="#t-dip">NIFTY dip-buy</a></li>
+      <li class="sub"><a href="#t-fo">NIFTY short strangle (F&amp;O)</a></li>
+      <li class="sub"><a href="#t-fno">F&amp;O spreads (specification)</a></li>
       <li class="sub"><a href="#t-vwap">YouTube strategy: where it is</a></li>
       <li class="sub"><a href="#t-vwap-how">YouTube strategy: how it works</a></li>
       <li class="sub"><a href="#t-labothers">All other lab cards</a></li>
@@ -516,7 +518,7 @@ details.faq p { margin-top: 8px; color: var(--muted); }
     <!-- LAB -->
     <section class="part" id="lab">
       <h2>Trading strategies and Research lab tabs</h2>
-      <div class="prose"><p>The <b>Trading strategies</b> tab holds four strategies. A row of sub-tabs under the main tabs (<span class="btn">Compare all</span> <span class="btn">Strong-stock swing</span> <span class="btn">YouTube intraday (VWAP)</span> <span class="btn">Breakfast strategy</span> <span class="btn">NIFTY dip-buy</span>) shows one at a time; the app remembers your choice. <b>Compare all</b> puts the four side by side: style, backtest after costs, money, paper record and a plain verdict. The <b>Research lab</b> tab holds every other experiment. Most found that the idea does <b>not</b> work after costs, and the app says so; cards with a grey “Tested: no reliable edge” note are listed last.</p></div>
+      <div class="prose"><p>The <b>Trading strategies</b> tab holds six strategies. A row of sub-tabs under the main tabs (<span class="btn">Compare all</span> <span class="btn">Strong-stock swing</span> <span class="btn">YouTube intraday (VWAP)</span> <span class="btn">Breakfast strategy</span> <span class="btn">NIFTY dip-buy</span> <span class="btn">F&amp;O strangle</span> <span class="btn">F&amp;O spreads</span>) shows one at a time; the app remembers your choice. <b>Compare all</b> puts them side by side: style, backtest after costs, money, paper record and a plain verdict. The <b>Research lab</b> tab holds every other experiment. Most found that the idea does <b>not</b> work after costs, and the app says so; cards with a grey “Tested: no reliable edge” note are listed last.</p></div>
       <div class="cards">
         <article class="tool" id="t-ath">
           <div class="eyebrow">Tab: Trading strategies</div>
@@ -594,6 +596,47 @@ details.faq p { margin-top: 8px; color: var(--muted); }
           </div>
           <div class="example"><b>Good to know:</b> a high win rate is not the same as a high return. Most trades win a little, and the money sits idle the rest of the time, so an index fund did better. It is here to show that clearly, not as a way to beat the market.</div>
                   <div class="example"><b>Two versions:</b> the card also records a <b>deep-dip</b> version on paper, which buys only after a fall of 5% or more in 10 sessions. It won 83% of trades in 2010–2018 and 86% since 2019, but it trades only about once a year and made less per year (about 5.4% after tax, against 6.1% for the standard version and about 9% for a NIFTY index fund). Higher win rate, fewer trades, lower yearly return.</div>
+        </article>
+
+        <article class="tool" id="t-fo">
+          <div class="eyebrow">Tab: Trading strategies → F&amp;O strangle</div>
+          <header><h3>NIFTY short strangle (F&amp;O)</h3><span class="badge b-exp">Experiment: paper only</span></header>
+          <p class="what">A weekly options strategy, recorded on paper only: sell a NIFTY call about 2% above the market and a put about 2% below, and hold both to expiry. It was the best-looking of 14 futures &amp; options strategies tested, and it still did not beat simply holding a NIFTY index fund.</p>
+          <div class="cols">
+            <div><h4>The rules</h4><ol>
+              <li>At the close of the first session after each weekly expiry, <b>sell 1 lot</b> (65 units) of the call nearest 2% above NIFTY and the put nearest 2% below.</li>
+              <li>Hold both until expiry. If NIFTY ends between the two strikes, both expire worthless and the premium is kept.</li>
+              <li>If NIFTY ends beyond a strike, the loss grows with every point. There is no stop-loss, because only end-of-day option prices are available.</li>
+              <li>One lot blocks about ₹2.2 lakh of margin; the test assumes about ₹6.6 lakh in the account per lot.</li>
+            </ol></div>
+            <div><h4>How to read the card</h4><ul>
+              <li><b>Status box:</b> the strikes sold, the premium received, what the position is worth now, and the “safe zone” for expiry.</li>
+              <li><b>Backtest (real NSE option prices, 2019–2026):</b> it won about 84% of weeks, but the account made about 8.9% a year with a 44% fall, against about 11.7% for holding NIFTY. 2019–2022 was no better than chance.</li>
+              <li><b>Worst weeks:</b> in March 2020 one week lost about 77% of the margin — about ₹1.7 lakh a lot at today’s size.</li>
+              <li><b>Paper record:</b> every week from 23 Oct 2026. NSE publishes option prices in the evening, so it runs one session behind.</li>
+            </ul></div>
+          </div>
+          <div class="example"><b>Good to know:</b> SEBI found that about 9 in 10 individual F&amp;O traders lose money, and that experience does not help. Option selling wins small amounts most weeks and loses big amounts rarely; this card exists to show that, not as a way to trade.</div>
+        </article>
+
+        <article class="tool" id="t-fno">
+          <div class="eyebrow">Tab: Trading strategies → F&amp;O spreads</div>
+          <header><h3>F&amp;O spreads (specification document)</h3><span class="badge b-exp">Experiment: paper only</span></header>
+          <p class="what">The two option-spread logics from the <i>F&amp;O Paper Trading Strategy Specification</i>, built as written on 8 large NSE stocks, with honest checks added.</p>
+          <div class="cols">
+            <div><h4>The two logics</h4><ul>
+              <li><b>Momentum debit spreads:</b> when a stock’s 5- and 20-day moves, its moving-average trend, RSI and volume all point the same way, buy a debit spread in that direction (about 12 days to expiry).</li>
+              <li><b>IV-rank credit spreads:</b> when the stock’s volatility is high compared with its own last 60 readings, sell a put or call credit spread (about 10 days to expiry), leaning against the recent move.</li>
+              <li><b>Exits:</b> profit at +1.3× the risk, stop at −0.55×, or close 3 days before expiry. Risk 1–1.25% of the account per trade, at most 3 open.</li>
+            </ul></div>
+            <div><h4>What the checks found</h4><ul>
+              <li><b>Momentum debit:</b> about break-even in the last 2 years and a large loss over earlier years.</li>
+              <li><b>IV-rank credit:</b> profitable <i>inside the Black-Scholes model</i>, because the model assumes options are priced from recent realised volatility.</li>
+              <li><b>Real NSE prices (NIFTY):</b> when volatility was high, real options were about 12% cheaper than the model, the real credit was about 72% of the model’s, and the same credit logic lost money.</li>
+              <li><b>Real lot sizes:</b> ₹1 lakh cannot hold even one lot at 1% risk; at ₹10 lakh both logics lost after charges.</li>
+            </ul></div>
+          </div>
+          <div class="example"><b>Good to know:</b> this card is a research result only. It is not tracked on paper, because a record priced by the same model could only repeat what the model already says. Neither logic is a trading edge.</div>
         </article>
 
         <article class="tool" id="t-vwap">
@@ -776,9 +819,9 @@ details.faq p { margin-top: 8px; color: var(--muted); }
       <div class="schedule">
         <div><span class="when">Always</span><span>The app itself runs in the background whenever the Mac is logged in.</span></div>
         <div><span class="when">10:00 · 13:00 · 15:00</span><span>On trading days: checks your watchlist and portfolio, data health and alerts. The 3 PM Friday run writes the weekly scorecard.</span></div>
-        <div><span class="when">16:05</span><span>On trading days: saves the day’s 5-minute price history (NIFTY 200), records the paper trades of all four strategies, sets price alerts at the swing strategy’s trailing stops, and sends <b>one</b> Mac notification summarising all four strategies (including new swing signals and any NIFTY dip-buy signal). Then the <b>System check</b> confirms everything ran and notifies you only if something failed.</span></div>
+        <div><span class="when">16:05</span><span>On trading days: saves the day’s 5-minute price history (NIFTY 200), records the paper trades of all the strategies, sets price alerts at the swing strategy’s trailing stops, and sends <b>one</b> Mac notification summarising all the strategies (including new swing signals and any NIFTY dip-buy signal). Then the <b>System check</b> confirms everything ran and notifies you only if something failed.</span></div>
         <div><span class="when">18:30 daily</span><span>Backs up all the app’s data to a backup folder and iCloud.</span></div>
-        <div><span class="when">Saturday 10:00</span><span>Re-tests the models and all four strategies on the newest data, adds the week’s NSE daily files and re-runs the survivorship check, refreshes the NSE holiday list and the Market tilts table.</span></div>
+        <div><span class="when">Saturday 10:00</span><span>Re-tests the models and all the strategies on the newest data, adds the week’s NSE daily files and re-runs the survivorship check, refreshes the NSE holiday list and the Market tilts table.</span></div>
       </div>
       <div class="callout">
         <h3>Keep the Mac awake at 4 PM</h3>

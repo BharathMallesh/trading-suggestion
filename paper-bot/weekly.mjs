@@ -15,6 +15,7 @@ import { isTradingDay } from './market-calendar.mjs';
 import { PAPER_VARIANTS, summarise, trustMeter } from './vwap-pullback.mjs';
 import { loadAthPaper, summarise as athSummarise } from './ath-swing.mjs';
 import { loadBreakfastPaper, summarise as bfSummarise } from './breakfast.mjs';
+import { loadFoStranglePaper, summarise as foSummarise } from './fo-strangle.mjs';
 import { loadNiftyDipPaper, summarise as dipSummarise, ofVersion } from './nifty-dip.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -115,6 +116,13 @@ export function strategyWeek(paper, week, papers = {}) {
       const tot = dipSummarise(closed);
       rows.push({ key, group: 'NIFTY dip-buy', label, unit: '₹', weekTrades: wk.trades, weekResult: wk.totalNetRs ?? 0, weekWinRate: wk.winRate ?? null, totalTrades: tot.trades, totalResult: tot.totalNetRs ?? 0, trust: { verdict: tot.trades ? `${tot.trades} closed (${often}: a fair verdict needs several years)` : `No closed trades yet (${often}).` } });
     }
+  }
+  const fo = papers.fo !== undefined ? papers.fo : loadFoStranglePaper();
+  if (fo?.trades) {
+    const closed = fo.trades.filter((x) => !x.open);
+    const wkT = closed.filter((x) => x.expiry >= week.from && x.expiry <= week.to);
+    const tot = foSummarise(closed);
+    rows.push({ key: 'fo-strangle', group: 'F&O', label: 'NIFTY weekly short strangle (1 lot)', unit: '₹', weekTrades: wkT.length, weekResult: wkT.reduce((a, t) => a + t.rupees, 0), weekWinRate: wkT.length ? wkT.filter((t) => t.pts > 0).length / wkT.length : null, totalTrades: tot.trades, totalResult: tot.totalRs ?? 0, trust: { verdict: tot.trades ? `${tot.trades} weeks: needs years, including a crash, to judge` : 'No closed weeks yet.' } });
   }
   return rows.length ? rows : null;
 }
