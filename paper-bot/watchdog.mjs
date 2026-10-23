@@ -156,16 +156,28 @@ export function checkStorage(sizes) {
     'Old download caches in paper-bot/data (mf, fo-bhav folders) can be deleted — they re-download when needed. Old backups are in ~/trading-research-backups (the newest 30 are kept automatically).');
 }
 
-/** refit.log: last "YYYY-MM-DD HH:MM:SS refit" line within 8 days. */
+/** refit.log: last "YYYY-MM-DD HH:MM:SS refit" line within 8 days, and no "Error:" lines in that run's output. */
 export function checkRefit(now) {
   const fix = 'Run: cd ~/trading-research && scripts/run.sh refit (takes several minutes). It runs every Saturday at 10:00 — the Mac must be awake then.';
   const lines = readLog('refit');
-  const last = (lines || []).map((l) => l.match(HEADER)).filter((m) => m && m[3] === 'refit').pop();
-  if (!last) return check('weekly refit', false, lines ? 'refit.log has no run yet' : 'no refit log found', fix);
+  let start = -1;
+  for (let i = (lines || []).length - 1; i >= 0; i--) {
+    const m = lines[i].match(HEADER);
+    if (m && m[3] === 'refit') { start = i; break; }
+  }
+  if (start < 0) return check('weekly refit', false, lines ? 'refit.log has no run yet' : 'no refit log found', fix);
+  const last = lines[start].match(HEADER);
   const age = daysAgo(new Date(`${last[1]}T${last[2]}+05:30`), now);
-  return age <= REFIT_MAX_DAYS
-    ? check('weekly refit', true, `last ran ${last[1]} (${age.toFixed(1)} days ago)`)
-    : check('weekly refit', false, `last ran ${last[1]} (${age.toFixed(1)} days ago, more than ${REFIT_MAX_DAYS})`, fix);
+  if (age > REFIT_MAX_DAYS) return check('weekly refit', false, `last ran ${last[1]} (${age.toFixed(1)} days ago, more than ${REFIT_MAX_DAYS})`, fix);
+  let end = lines.length;
+  for (let i = start + 1; i < lines.length; i++) if (HEADER.test(lines[i])) { end = i; break; }
+  const errors = lines.slice(start + 1, end).filter((l) => /^\w*Error:/.test(l));
+  if (errors.length) {
+    const offline = errors.filter((l) => /fetch failed|ENOTFOUND|ETIMEDOUT|EAI_AGAIN/.test(l)).length;
+    return check('weekly refit', false, `ran ${last[1]} but ${errors.length} step${errors.length > 1 ? 's' : ''} failed${offline ? ` (${offline} could not download: no internet?)` : ''}: ${errors[0].trim().slice(0, 120)}`,
+      `${offline ? 'The Mac was probably offline (Wi-Fi not connected after waking). ' : ''}${fix}`);
+  }
+  return check('weekly refit', true, `last ran ${last[1]} (${age.toFixed(1)} days ago)`);
 }
 
 const run = promisify(execFile);

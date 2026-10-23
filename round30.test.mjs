@@ -184,4 +184,14 @@ test('saved result counts as fresh while today’s collect is probably still run
   assert.equal(wd.watchdogFresh(null), false);
 });
 
+test('refit that ran offline (download errors) is flagged, a clean one passes', () => {
+  writeFileSync(join(LOGS, 'refit.log'), '2026-10-10 10:14:43 refit\nok\n2026-10-17 10:11:26 refit\nError: Not enough history. RELIANCE.NS: fetch failed\nError: fetch failed\nError: Cannot read properties of null (reading \'toFixed\')\n');
+  const bad = wd.checkRefit(new Date('2026-10-19T04:30:00Z'));
+  assert.equal(bad.ok, false);
+  assert.match(bad.detail, /3 steps failed \(2 could not download: no internet\?\)/);
+  assert.match(bad.fix, /offline/);
+  writeFileSync(join(LOGS, 'refit.log'), '2026-10-17 10:11:26 refit\nError: fetch failed\n2026-10-19 10:30:00 refit\nall fine\n');
+  assert.equal(wd.checkRefit(new Date('2026-10-19T06:00:00Z')).ok, true, 'only the latest run counts');
+});
+
 test.after(() => rmSync(TMP, { recursive: true, force: true }));

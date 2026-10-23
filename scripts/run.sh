@@ -15,6 +15,17 @@ export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
 
 key() { security find-generic-password -a "$USER" -s "$1" -w 2>/dev/null; }
 
+# After waking from sleep, Wi-Fi can take a while to reconnect: wait up to ~10 minutes
+# for Yahoo to answer before downloading (a refit once ran offline and failed every step).
+wait_online() {
+  for _ in $(seq 1 20); do
+    curl -s -o /dev/null --max-time 10 https://query1.finance.yahoo.com/ && return 0
+    sleep 30
+  done
+  echo "Error: no internet connection after 10 minutes (fetch failed)"
+  return 1
+}
+
 case "${1:-}" in
   server)
     OPENROUTER_API_KEY="$(key trading-research-openrouter)"
@@ -29,7 +40,7 @@ case "${1:-}" in
     ;;
   collect)
     caffeinate -i -w $$ & # keep the Mac awake until this job finishes
-    echo "$(date '+%F %T') collect"; node paper-bot/collector.mjs --notify
+    echo "$(date '+%F %T') collect"; wait_online; node paper-bot/collector.mjs --notify
     # paper records of all four strategies (after the close)
     node paper-bot/vwap-pullback.mjs --paper
     node paper-bot/ath-swing.mjs --paper --alerts   # also: trailing-stop price alerts for open swing positions
@@ -49,7 +60,7 @@ case "${1:-}" in
     echo "$(date '+%F %T') monitor"; exec node paper-bot/monitor.mjs --notify ;;
   refit)
     caffeinate -i -w $$ & # keep the Mac awake until this job finishes
-    echo "$(date '+%F %T') refit"; node paper-bot/evaluate.mjs --interval 1d --save && node paper-bot/evaluate.mjs --interval 60m --save \
+    echo "$(date '+%F %T') refit"; wait_online; node paper-bot/evaluate.mjs --interval 1d --save && node paper-bot/evaluate.mjs --interval 60m --save \
       && node paper-bot/evaluate.mjs --interval 15m --save && node paper-bot/evaluate.mjs --interval 5m --save
     # Weekly NIFTY option IV vs VIX from new NSE days (independent of the refits above).
     node paper-bot/vol-premium.mjs --save
