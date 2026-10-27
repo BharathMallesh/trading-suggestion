@@ -159,7 +159,7 @@ lazy('Strong-stock swing', async () => {
         <div class="note">${esc(sv.note)}</div></div>`;
     }
     const p = d.paper;
-    if (p) html += `<div style="font-size:14px;margin-top:10px"><b>Paper record</b> since ${esc(p.startedAt)} (original, improved, wide-trail and no-Monday-buys rules side by side): ${Object.entries(p.byVersion || {}).map(([v, x]) => `${esc(v)}: ${x.trades ? `${x.trades} closed · won ${pc(x.winRate)} · ${R(x.avgR)}` : 'no closed trades yet'}`).join(' · ') || 'no trades yet'}${p.open.length ? ` · open: ${p.open.map((t) => `${esc(t.symbol.replace('.NS', ''))} (${esc(t.version || 'original')}, trailing stop ${t.trail?.toFixed(1) ?? '–'})`).join(', ')}` : ''}. Updated after each close; a Mac notification lists new signals and exits, and the open positions' trailing stops are set as price alerts in My trades.</div>`;
+    if (p) html += `<div style="font-size:14px;margin-top:10px"><b>Paper record</b> since ${esc(p.startedAt)} (original, improved, wide-trail and Monday-buys-on-Tuesday rules side by side): ${Object.entries(p.byVersion || {}).map(([v, x]) => `${esc(v)}: ${x.trades ? `${x.trades} closed · won ${pc(x.winRate)} · ${R(x.avgR)}` : 'no closed trades yet'}`).join(' · ') || 'no trades yet'}${p.open.length ? ` · open: ${p.open.map((t) => `${esc(t.symbol.replace('.NS', ''))} (${esc(t.version || 'original')}, trailing stop ${t.trail?.toFixed(1) ?? '–'})`).join(', ')}` : ''}. Updated after each close; a Mac notification lists new signals and exits, and the open positions' trailing stops are set as price alerts in My trades.</div>`;
     html += `<div class="note">${esc(b?.note || '')}</div>`;
     $('athOut').innerHTML = html;
   } catch (e) {

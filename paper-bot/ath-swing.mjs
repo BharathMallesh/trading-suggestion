@@ -189,9 +189,16 @@ export function tradesFor(symbol, rows, r = RULES, ctx = {}) {
   for (let i = 30; i + 1 < bars.length; i++) {
     const sig = setupAt(bars, i, r, ctx);
     if (!sig) continue;
-    const e = bars[i + 1];
+    let e = bars[i + 1];
     // optional: no new buys on these weekdays (0 = Sunday … 6 = Saturday); the stock may signal again later
     if (r.skipEntryDays?.length && r.skipEntryDays.includes(new Date(`${e.date}T00:00:00Z`).getUTCDay())) continue;
+    // optional: a buy that would fall on these weekdays waits one session (same stop)
+    let shift = 0;
+    if (r.shiftEntryDays?.length && r.shiftEntryDays.includes(new Date(`${e.date}T00:00:00Z`).getUTCDay())) {
+      if (i + 2 >= bars.length) continue;
+      shift = 1;
+      e = bars[i + 2];
+    }
     const stop0 = sig.pivotLow - r.stopAtr * bars[i].atr;
     const entry = e.open * (1 + slip);
     if (!(entry > stop0)) continue; // opened below the stop
@@ -200,9 +207,9 @@ export function tradesFor(symbol, rows, r = RULES, ctx = {}) {
     let exit = null;
     let exitIdx = null;
     let reason = null;
-    for (let k = i + 1; k < bars.length; k++) {
+    for (let k = i + 1 + shift; k < bars.length; k++) {
       const c = bars[k];
-      if (k > i + 1 && c.open <= trail) {
+      if (k > i + 1 + shift && c.open <= trail) {
         exit = c.open; // gap through the stop
         exitIdx = k;
         reason = 'gap below stop';
@@ -222,7 +229,7 @@ export function tradesFor(symbol, rows, r = RULES, ctx = {}) {
         reason = 'chandelier';
         break;
       }
-      if (k - (i + 1) >= r.maxHold && k + 1 < bars.length) {
+      if (k - (i + 1 + shift) >= r.maxHold && k + 1 < bars.length) {
         exit = bars[k + 1].open;
         exitIdx = k + 1;
         reason = 'max hold';
@@ -242,7 +249,7 @@ export function tradesFor(symbol, rows, r = RULES, ctx = {}) {
     const retPct = exitFill / entry - 1 - costPct;
     out.push({
       symbol, setup: sig.setup, signalDate: bars[i].date, entryDate: e.date, exitDate: bars[exitIdx].date,
-      entry, stop: stop0, exit: exitFill, reason, open, days: exitIdx - (i + 1),
+      entry, stop: stop0, exit: exitFill, reason, open, days: exitIdx - (i + 1 + shift),
       riskPct: riskPerShare / entry, retPct, r: (retPct * entry) / riskPerShare,
       trail, // trailing stop at the exit (for an open trade: the stop to watch now)
     });
@@ -723,7 +730,7 @@ export async function athPaperUpdate({ loadCandles = candles, now = new Date() }
   const act = activeRules();
   if (act !== RULES) versions.improved = act;
   versions.wide = wideRules(act); // 5 ATR trail (paper only, not used for live signals)
-  versions['no-monday'] = { ...act, skipEntryDays: [1] }; // no Monday buys (2026-10-27 weekday study; mixed, paper only)
+  versions['mon-to-tue'] = { ...act, shiftEntryDays: [1] }; // Monday buys wait for Tuesday's open (2026-10-27 study; small gain, paper only)
   const key = (t) => `${t.version}|${t.symbol}|${t.entryDate}`;
   const prev = new Map(st.trades.map((t) => [key({ version: 'original', ...t }), t]));
   const fresh = [];

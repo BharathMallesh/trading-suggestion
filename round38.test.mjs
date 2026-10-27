@@ -20,6 +20,16 @@ test('swing: skipEntryDays leaves out buys on those weekdays (the stock may sign
   const day = (t) => new Date(`${t.entryDate}T00:00:00Z`).getUTCDay();
   assert.ok(noMon.every((t) => day(t) !== 1), 'no Monday entries');
   if (all.some((t) => day(t) === 1)) assert.notDeepEqual(all.map((t) => t.entryDate), noMon.map((t) => t.entryDate));
+  // shiftEntryDays: a Monday buy happens at Tuesday's open instead, with the same stop
+  const shifted = ath.tradesFor('X.NS', rows, { ...ath.RULES, shiftEntryDays: [1] });
+  assert.ok(shifted.every((t) => day(t) !== 1), 'no Monday entries after the shift');
+  for (const t of all.filter((x) => day(x) === 1)) {
+    const s = shifted.find((x) => x.signalDate === t.signalDate);
+    if (s) {
+      assert.equal(day(s), 2, 'bought on the Tuesday');
+      assert.equal(s.stop, t.stop, 'same stop');
+    }
+  }
 });
 
 test('breakfast: flat open = NIFTY within ±0.3% in the first five minutes', () => {
