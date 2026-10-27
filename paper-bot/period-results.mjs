@@ -5,7 +5,7 @@
 // Read-only: built from the paper records the evening run writes. Paper only.
 
 import { loadPaper } from './vwap-pullback.mjs';
-import { loadBreakfastPaper } from './breakfast.mjs';
+import { loadBreakfastPaper, isFlatOpen } from './breakfast.mjs';
 import { loadAthPaper, activeRules, RULES as ATH_RULES } from './ath-swing.mjs';
 import { loadNiftyDipPaper, ofVersion } from './nifty-dip.mjs';
 import { loadFoStranglePaper } from './fo-strangle.mjs';
@@ -86,6 +86,9 @@ export function periodResults(period, { vwap = loadPaper(), breakfast = loadBrea
     const all = breakfast?.trades || [];
     const p = all.filter((t) => inRange(t.date, period));
     for (const t of p) addDay(t.date, 'Breakfast', t.net);
+    const flat = all.filter((t) => isFlatOpen(t));
+    const fp = flat.filter((t) => inRange(t.date, period));
+    rows.push({ label: 'Breakfast · flat opens only (paper version)', unit: '₹', trades: fp.length, wins: fp.filter((t) => t.net > 0).length, result: sumNet(fp), totalTrades: flat.length, total: sumNet(flat), detail: [], version: true });
     rows.push({ label: 'Breakfast', unit: '₹', trades: p.length, wins: p.filter((t) => t.net > 0).length, result: sumNet(p), totalTrades: all.length, total: sumNet(all), detail: p.map((t) => `${t.date.slice(5)} ${t.symbol.replace('.NS', '')} ${t.side} ${t.reason} ${rs(t.net)}`) });
   }
   // Strong-stock swing (R; closed by exit date, plus buys in the period and positions held now)
@@ -115,7 +118,7 @@ export function periodResults(period, { vwap = loadPaper(), breakfast = loadBrea
     for (const t of p) addDay(t.expiry, 'NIFTY short strangle', t.rupees);
     rows.push({ label: 'NIFTY short strangle (1 lot)', unit: '₹', trades: p.length, wins: p.filter((t) => t.pts > 0).length, result: p.reduce((a, t) => a + t.rupees, 0), totalTrades: all.length, total: all.reduce((a, t) => a + t.rupees, 0), detail: p.length ? p.map((t) => `${t.putStrike}/${t.callStrike} expiry ${t.expiry.slice(5)} ${rs(t.rupees)}`) : [fo?.status?.message || 'no position'] });
   }
-  const rupeeRows = rows.filter((r) => r.unit === '₹');
+  const rupeeRows = rows.filter((r) => r.unit === '₹' && !r.version); // versions re-count the same trades
   // the 80/20 paper account: change in value over the period (not a trade count)
   let account = null;
   if (cs?.curve?.length) {
@@ -126,7 +129,7 @@ export function periodResults(period, { vwap = loadPaper(), breakfast = loadBrea
   return {
     period, rows, account,
     totalRs: rupeeRows.reduce((a, r) => a + r.result, 0),
-    tradesInPeriod: rows.reduce((a, r) => a + r.trades, 0),
+    tradesInPeriod: rows.filter((r) => !r.version).reduce((a, r) => a + r.trades, 0),
     days: [...byDay].sort(([a], [b]) => a.localeCompare(b)).map(([date, v]) => ({ date, ...v })),
     recordedUpTo: [vwap?.updatedAt, breakfast?.updatedAt, swing?.updatedAt].filter(Boolean).sort().pop() || null,
   };

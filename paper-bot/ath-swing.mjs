@@ -190,6 +190,8 @@ export function tradesFor(symbol, rows, r = RULES, ctx = {}) {
     const sig = setupAt(bars, i, r, ctx);
     if (!sig) continue;
     const e = bars[i + 1];
+    // optional: no new buys on these weekdays (0 = Sunday … 6 = Saturday); the stock may signal again later
+    if (r.skipEntryDays?.length && r.skipEntryDays.includes(new Date(`${e.date}T00:00:00Z`).getUTCDay())) continue;
     const stop0 = sig.pivotLow - r.stopAtr * bars[i].atr;
     const entry = e.open * (1 + slip);
     if (!(entry > stop0)) continue; // opened below the stop
@@ -721,6 +723,7 @@ export async function athPaperUpdate({ loadCandles = candles, now = new Date() }
   const act = activeRules();
   if (act !== RULES) versions.improved = act;
   versions.wide = wideRules(act); // 5 ATR trail (paper only, not used for live signals)
+  versions['no-monday'] = { ...act, skipEntryDays: [1] }; // no Monday buys (2026-10-27 weekday study; mixed, paper only)
   const key = (t) => `${t.version}|${t.symbol}|${t.entryDate}`;
   const prev = new Map(st.trades.map((t) => [key({ version: 'original', ...t }), t]));
   const fresh = [];

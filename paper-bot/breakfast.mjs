@@ -40,7 +40,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const SAVED = () => process.env.BREAKFAST_PATH || join(HERE, 'data', 'breakfast.json');
 const PAPER = () => process.env.BREAKFAST_PAPER_PATH || join(HERE, 'data', 'breakfast-paper.json');
 
-export const RULES = { maxChasePct: 5, stopPct: 1, targetPct: 1, weakTargetPct: 0.5, exitAt: '09:40', minSectorStocks: 3, capital: 100000, leverage: 5, slippagePct: 0.03, topSectors: 3 };
+export const RULES = { flatOpenPct: 0.3, maxChasePct: 5, stopPct: 1, targetPct: 1, weakTargetPct: 0.5, exitAt: '09:40', minSectorStocks: 3, capital: 100000, leverage: 5, slippagePct: 0.03, topSectors: 3 };
 const COSTS = { brokerageDeliveryPct: 0, brokerageDeliveryCap: 0, brokerageIntradayPct: 0.03, brokerageIntradayCap: 20, dpChargePerSell: 0, slippagePct: 0 };
 
 const hhmm = (r) => String(r.date).slice(11, 16);
@@ -156,6 +156,13 @@ export function simulate(pick, side, session, niftyMove, r = RULES, { live = fal
   };
 }
 
+/**
+ * "Flat opens only" version (2026-10-27 weekday study): trade only when NIFTY's
+ * first five minutes moved ≤ 0.3% either way — on gap days the first move is
+ * often an overreaction. Same trades, filtered by the day. Paper only, unproven.
+ */
+export const isFlatOpen = (t, r = RULES) => t.niftyMovePct != null && Math.abs(t.niftyMovePct) <= r.flatOpenPct;
+
 export function summarise(trades) {
   const done = trades.filter((t) => !t.open);
   if (!done.length) return { trades: 0 };
@@ -229,6 +236,11 @@ export async function breakfastTest({ loadCandles = candles } = {}) {
     rules: RULES,
     longOnly: summarise(longs), shortOnly: summarise(shorts), both: summarise(both),
     halves: { first: summarise(both.filter((t) => t.date < mid)), second: summarise(both.filter((t) => t.date >= mid)) },
+    flatOpen: {
+      all: summarise(both.filter((t) => isFlatOpen(t))), gapDays: summarise(both.filter((t) => !isFlatOpen(t))),
+      first: summarise(both.filter((t) => isFlatOpen(t) && t.date < mid)), second: summarise(both.filter((t) => isFlatOpen(t) && t.date >= mid)),
+      note: 'Flat opens = NIFTY moved ≤ 0.3% either way in the first five minutes (9:15–9:20). Found in a weekday / opening-gap study on the same ~48 sessions, so this result is not an independent test; the paper record decides.',
+    },
     beforeCosts: summarise(both.map((t) => ({ ...t, net: t.gross }))),
     recent: daysOut.slice(-15).reverse(),
     note: 'Equity only (the interview also uses at-the-money options on the same signals). First 5 minutes = yesterday\'s close → close of the 9:15 candle; entry at the 9:20 candle open; stop assumed before target inside one candle; ₹1 lakh at 5× intraday leverage per trade. Only ~40 sessions of 5-minute history are available so far (it grows daily), so treat the result as early. Research only.',
@@ -302,14 +314,14 @@ export async function breakfastPaperUpdate({ loadCandles = candles, now = new Da
   }
   st.updatedAt = now.toISOString();
   writeJsonAtomic(PAPER(), st);
-  return { added, startedAt: st.startedAt, summary: summarise(st.trades) };
+  return { added, startedAt: st.startedAt, summary: summarise(st.trades), flatSummary: summarise(st.trades.filter((t) => isFlatOpen(t))) };
 }
 
 // CLI
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   if (process.argv.includes('--paper')) {
     breakfastPaperUpdate()
-      .then((r) => console.log(`Breakfast paper: +${r.added} trades · since ${r.startedAt} · ${r.summary.trades} trades · total net ₹${Math.round(r.summary.totalNetRs || 0)}`))
+      .then((r) => console.log(`Breakfast paper: +${r.added} trades · since ${r.startedAt} · ${r.summary.trades} trades · total net ₹${Math.round(r.summary.totalNetRs || 0)} · flat opens only: ${r.flatSummary.trades} trades, ₹${Math.round(r.flatSummary.totalNetRs || 0)}`))
       .catch((err) => {
         console.error('Error:', err.message);
         process.exit(1);

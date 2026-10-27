@@ -14,7 +14,7 @@ import { scorecard } from './monitor-score.mjs';
 import { isTradingDay } from './market-calendar.mjs';
 import { PAPER_VARIANTS, summarise, trustMeter } from './vwap-pullback.mjs';
 import { loadAthPaper, summarise as athSummarise } from './ath-swing.mjs';
-import { loadBreakfastPaper, summarise as bfSummarise } from './breakfast.mjs';
+import { loadBreakfastPaper, summarise as bfSummarise, isFlatOpen } from './breakfast.mjs';
 import { loadFoStranglePaper, summarise as foSummarise } from './fo-strangle.mjs';
 import { loadNiftyDipPaper, summarise as dipSummarise, ofVersion } from './nifty-dip.mjs';
 
@@ -105,6 +105,10 @@ export function strategyWeek(paper, week, papers = {}) {
   if (bf?.trades) {
     const wk = bfSummarise(bf.trades.filter((x) => x.date >= week.from && x.date <= week.to));
     const tot = bfSummarise(bf.trades);
+    const flat = bf.trades.filter((x) => isFlatOpen(x));
+    const fw = bfSummarise(flat.filter((x) => x.date >= week.from && x.date <= week.to));
+    const ft = bfSummarise(flat);
+    rows.push({ key: 'breakfast-flat', group: 'Breakfast', label: 'Breakfast, flat opens only (paper version)', unit: '₹', weekTrades: fw.trades, weekResult: fw.totalNetRs ?? 0, weekWinRate: fw.winRate ?? null, totalTrades: ft.trades, totalResult: ft.totalNetRs ?? 0, trust: { verdict: earlyVerdict(ft.trades, ft.avgNetRs, ft.tStat, '₹') } });
     rows.push({ key: 'breakfast', group: 'Breakfast', label: 'Breakfast strategy (long + short)', unit: '₹', weekTrades: wk.trades, weekResult: wk.totalNetRs ?? 0, weekWinRate: wk.winRate ?? null, totalTrades: tot.trades, totalResult: tot.totalNetRs ?? 0, trust: { verdict: earlyVerdict(tot.trades, tot.avgNetRs, tot.tStat, '₹') } });
   }
   const dip = papers.dip !== undefined ? papers.dip : loadNiftyDipPaper();

@@ -63,7 +63,7 @@ import { loadFnoSpreads, fnoSpreadsTest, saveFnoSpreads } from './paper-bot/fno-
 import { loadCoreSatellite, coreSatellite, saveCoreSatellite } from './paper-bot/core-satellite.mjs';
 import { loadFoStrangle, loadFoStranglePaper, foStrangleTest, saveFoStrangle, summarise as foSummarise } from './paper-bot/fo-strangle.mjs';
 import { loadNiftyDip, niftyDipTest, saveNiftyDip, loadNiftyDipPaper, niftyDipToday, paperView as dipPaperView } from './paper-bot/nifty-dip.mjs';
-import { loadBreakfast, breakfastTest, saveBreakfast, breakfastToday, loadBreakfastPaper, summarise as bfSummarise } from './paper-bot/breakfast.mjs';
+import { loadBreakfast, breakfastTest, saveBreakfast, breakfastToday, loadBreakfastPaper, summarise as bfSummarise, isFlatOpen } from './paper-bot/breakfast.mjs';
 import { compareStrategies } from './paper-bot/compare.mjs';
 import { lanConfig, saveLan, isLoopback, isPrivate, localUrls, loginAttempt, validSession, logout, loginPage } from './paper-bot/lan.mjs';
 import { vwapPullbackTest, saveVwapPullback, loadVwapPullback, paperSummary, paperUpdate, loadImprove, todaySignals, parseSizing, sizeTrade, noteLiveSeen } from './paper-bot/vwap-pullback.mjs';
@@ -647,7 +647,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/api/strategies/compare') return json(res, 200, compareStrategies());
     if (req.method === 'GET' && url.pathname === '/api/breakfast') {
       const paper = loadBreakfastPaper();
-      return json(res, 200, { backtest: loadBreakfast(), paper: paper ? { startedAt: paper.startedAt, updatedAt: paper.updatedAt, summary: bfSummarise(paper.trades), trades: paper.trades.slice(-20).reverse() } : null });
+      return json(res, 200, { backtest: loadBreakfast(), paper: paper ? { startedAt: paper.startedAt, updatedAt: paper.updatedAt, summary: bfSummarise(paper.trades), flatSummary: bfSummarise(paper.trades.filter((t) => isFlatOpen(t))), trades: paper.trades.slice(-20).reverse() } : null });
     }
     if (req.method === 'POST' && url.pathname === '/api/breakfast') {
       await readJson(req);
