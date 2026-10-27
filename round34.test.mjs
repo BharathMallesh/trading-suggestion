@@ -57,6 +57,11 @@ test('live-first day: seen trades kept (rebuilt if gone), revised-only signals l
   assert.equal(r.trades[0].reason, 'target');
   assert.equal(r.trades[1].net, -1166, 'the after-close version is used when it still exists');
   assert.deepEqual(r.revisedOnly.map((t) => t.symbol), ['TITAN.NS']);
+  // a live trade already recorded is kept when it is in neither the revised list nor rebuildable
+  const kept = v.liveFirstDay({ date: d, variant: 'video', recomputed: [], recorded: [{ symbol: 'MARUTI.NS', side: 'short', date: d, time: '09:45', net: -1166 }], seen, rowsBySymbol: new Map() });
+  assert.deepEqual(kept.trades.map((t) => [t.symbol, t.net]), [['MARUTI.NS', -1166]]);
+  const stable = v.liveFirstDay({ date: d, variant: 'video', recomputed: [{ symbol: 'MARUTI.NS', side: 'short', date: d, time: '09:45', net: -900 }], recorded: [{ symbol: 'MARUTI.NS', side: 'short', date: d, time: '09:45', net: -1166 }], seen, rowsBySymbol: new Map() });
+  assert.equal(stable.trades.find((t) => t.symbol === 'MARUTI.NS').net, -1166, 'a recorded trade is not re-valued');
   // a day without live snapshots keeps the after-close list
   const none = v.liveFirstDay({ date: '2026-10-12', variant: 'video', recomputed, seen, rowsBySymbol: rows });
   assert.equal(none.trades.length, 2);

@@ -568,7 +568,8 @@ export async function paperUpdate({ loadCandles = candles, now = new Date() } = 
     const days = [...new Set([...allPerDay.map((x) => x.date), ...Object.keys(seen.days || {}).filter((d) => d >= st.startedAt && (d < t.date || d === lastComplete) && rowsBySymbol.size && [...rowsBySymbol.values()].some((rows) => rows.some((r) => String(r.date).startsWith(d))))])].sort();
     for (const d of days) {
       const recomputed = accountTrades(all.filter((x) => x.date === d), v.rules.maxPerDay);
-      const { trades, revisedOnly } = liveFirstDay({ date: d, variant: key, recomputed, seen, rowsBySymbol: new Map([...rowsBySymbol].filter(([s]) => list.includes(s))), rules: v.rules });
+      const before0 = st.trades.filter((y) => (y.variant || 'video') === key && y.date === d);
+      const { trades, revisedOnly } = liveFirstDay({ date: d, variant: key, recomputed, recorded: before0, seen, rowsBySymbol: new Map([...rowsBySymbol].filter(([s]) => list.includes(s))), rules: v.rules });
       const before = st.trades.filter((y) => (y.variant || 'video') === key && y.date === d);
       // a recorded day is rebuilt only when it had live snapshots; others stay as recorded
       if (before.length && !seen.days?.[d]) continue;
@@ -802,8 +803,9 @@ export function rebuildFromLive(detail, rows, date, rules = RULES) {
  * first, up to the daily limit), using the after-close version when it still
  * exists and rebuilding it otherwise; signals that only appear in the revised
  * candles go to `revisedOnly`. Days without snapshots keep the after-close list.
+ * A trade already in the record (`recorded`) that was seen live is never dropped.
  */
-export function liveFirstDay({ date, variant, recomputed, seen = loadSeen(), rowsBySymbol = new Map(), rules = RULES }) {
+export function liveFirstDay({ date, variant, recomputed, recorded = [], seen = loadSeen(), rowsBySymbol = new Map(), rules = RULES }) {
   if (!seen.days?.[date]) return { trades: recomputed.map((x) => ({ ...x, seenLive: null })), revisedOnly: [] };
   const prefix = `${date}|${variant}|`;
   const live = Object.entries(seen.keys || {}).filter(([k]) => k.startsWith(prefix)).map(([k, v]) => {
@@ -813,8 +815,11 @@ export function liveFirstDay({ date, variant, recomputed, seen = loadSeen(), row
   const trades = [];
   for (const l of live) {
     if (trades.length >= rules.maxPerDay) break;
+    // a live trade comes from: the version already recorded (never changed) → the after-close version → a rebuild
     const same = recomputed.find((x) => x.symbol === l.symbol && x.side === l.side);
-    if (same) trades.push({ ...same, seenLive: true });
+    const kept = recorded.find((x) => x.symbol === l.symbol && x.side === l.side);
+    if (kept) trades.push({ ...kept, seenLive: true });
+    else if (same) trades.push({ ...same, seenLive: true });
     else if (l.detail) {
       const t = rowsBySymbol.get(l.symbol) && rebuildFromLive(l.detail, rowsBySymbol.get(l.symbol), date, rules);
       if (t) trades.push({ ...t, seenLive: true });
