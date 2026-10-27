@@ -80,9 +80,10 @@ test('today’s signals: per-stock position and each version’s trades; forming
 
 test('Ask the app: strategy questions are recognised and answered', async () => {
   const a = await import('./paper-bot/assistant.mjs');
-  for (const q of ['How did the strategy do today?', 'any signal on trent', 'vwap pullback paper record']) {
+  for (const q of ['any signal on trent', 'vwap pullback paper record']) {
     assert.equal(a.detectIntent(q, await a.resolveSymbol(q)), 'strategy', q);
   }
+  assert.equal(a.detectIntent('How did the strategy do today?', null), 'results', 'a "how did it do" question gets the results for the period');
   assert.equal(a.detectIntent('tell me about trent', 'TRENT.NS'), 'stock');
   const signals = async () => ({
     date: '2026-10-12', live: true, lastBar: '11:30',

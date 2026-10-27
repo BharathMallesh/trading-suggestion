@@ -5,11 +5,15 @@
 //   "tell me about reliance" / "what will happen to TCS" → stock report
 //   "nifty call put this week" / "options on infy" → option odds
 //   "which index fund" → index-fund picker summary · "sip for 50 lakh" → goal planner hint
+//   "today's results" / "last week results" / "this month results" → paper results for the period
+//   "which stocks to invest in?" → research check: index funds, the swing screen, risk facts
 // Honesty rule built in: the app has no direction skill (tested from 30 minutes
 // to 3 years), so answers never say buy / sell / Call / Put or "will go up".
 // Research / education only — not investment advice.
 
 import { quote, candles } from '../market-data.mjs';
+import { isResultsQuestion, resultsAnswer } from './period-results.mjs';
+import { investResearch } from './invest-research.mjs';
 import { bigMove } from './big-move.mjs';
 import { volCheck } from './volatility.mjs';
 import { optionOdds } from './option-odds.mjs';
@@ -76,6 +80,8 @@ export async function resolveSymbol(question) {
 /** What is the user asking for? */
 export function detectIntent(question, symbol) {
   const q = String(question).toLowerCase();
+  if (isResultsQuestion(q) && !symbol) return 'results';
+  if (/\b(invest|investing|which (stocks?|shares?)|best (stocks?|shares?)|good (stocks?|shares?)|what (should|to|can) i buy|stocks? to (buy|invest)|where to put|portfolio idea)\b/.test(q) && !/\b(call|put|option|index fund|sip)\b/.test(q)) return 'invest';
   if (/\b(index fund|etf|mutual fund|which fund)\b/.test(q)) return 'funds';
   if (/\b(sip|goal|target|lakh|crore|retire)\b/.test(q) && !symbol) return 'goal';
   if (/\b(strategy|vwap|pullback|signals?|paper (trade|trades|record)|scanner|setup|intraday trade)\b/.test(q)) return 'strategy';
@@ -293,7 +299,7 @@ export async function strategyAnswer(symbol = null, { loadSignals = todaySignals
 export function helpAnswer() {
   return {
     intent: 'help', title: 'What you can ask',
-    summary: ['Try: "Which is the best stock to invest today?", "Tell me about Reliance", "What will happen to TCS?", "NIFTY call put this week", "Options on INFY", "Which index fund?", "How did the strategy do today?", "Any signal on Trent?"', 'New to all this? Open "Help & guide" at the top of the page: it explains every card and word step by step.'],
+    summary: ['Try: "Today\'s results", "This week\'s results", "Last month\'s results", "Which is the best stock to invest today?", "Tell me about Reliance", "What will happen to TCS?", "NIFTY call put this week", "Options on INFY", "Which index fund?", "How did the strategy do today?", "Any signal on Trent?"', 'New to all this? Open "Help & guide" at the top of the page: it explains every card and word step by step.'],
     sections: [], caveat: NO_DIRECTION,
   };
 }
@@ -305,6 +311,8 @@ export async function ask(question, { symbols = [] } = {}) {
   if (q.length > 300) throw badRequest('Please keep the question under 300 characters.');
   const symbol = await resolveSymbol(q);
   const intent = detectIntent(q, symbol);
+  if (intent === 'results') return resultsAnswer(q);
+  if (intent === 'invest') return investResearch();
   if (intent === 'strategy') return strategyAnswer(symbol && symbol !== '^NSEI' ? symbol : null);
   if (intent === 'stock') return stockReport(symbol);
   if (intent === 'options') return optionsAnswer(symbol || '^NSEI');
