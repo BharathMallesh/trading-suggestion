@@ -194,4 +194,34 @@ test('refit that ran offline (download errors) is flagged, a clean one passes', 
   assert.equal(wd.checkRefit(new Date('2026-10-19T06:00:00Z')).ok, true, 'only the latest run counts');
 });
 
+test('catch-up: a failed evening run is reported as needing a re-run, and a later good run covers it', () => {
+  healthyRun('2026-10-26');
+  // Monday's run failed (offline): prices for 26 Oct missing, two records stale
+  writeFileSync(join(LOGS, 'collect.log'), '2026-10-26 16:13:43 collect\nCollected 404 series · +1282 new bars · 378 failed\nError: fetch failed\n');
+  writeFileSync(join(STORE, '5m', '^NSEI.json.gz'), gzipSync(JSON.stringify([{ date: '2026-10-23 15:25', close: 1 }])));
+  for (const f of ['breakfast-paper.json', 'nifty-dip-paper.json']) writeFileSync(join(TMP, f), JSON.stringify({ trades: [], updatedAt: '2026-10-23T10:36:00.000Z' }));
+  const tueMorning = new Date('2026-10-27T03:45:00Z'); // 09:15 IST
+  let n = wd.needsCatchup(tueMorning);
+  assert.equal(n.session, '2026-10-26');
+  assert.equal(n.collect, true);
+  assert.equal(wd.checkCollect('2026-10-26').ok, false);
+  // the catch-up run (logged on the next day) saves the prices and updates the records
+  writeFileSync(join(LOGS, 'collect.log'), '2026-10-26 16:13:43 collect\nCollected 404 series · +1282 new bars · 378 failed\nError: fetch failed\n2026-10-27 09:19:13 collect (catch-up)\nCollected 404 series · +18671 new bars · 0 failed\n');
+  writeFileSync(join(STORE, '5m', '^NSEI.json.gz'), gzipSync(JSON.stringify([{ date: '2026-10-26 15:25', close: 1 }])));
+  for (const f of PAPERS) writeFileSync(join(TMP, f), JSON.stringify({ trades: [], updatedAt: '2026-10-27T03:49:00.000Z' }));
+  n = wd.needsCatchup(tueMorning);
+  assert.equal(n.collect, false);
+  const c = wd.checkCollect('2026-10-26');
+  assert.equal(c.ok, true);
+  assert.match(c.detail, /the 2026-10-26 run failed; caught up 2026-10-27 09:19/);
+});
+
+test('catch-up: a refit that failed (offline) or is overdue needs a re-run', () => {
+  healthyRun('2026-10-26');
+  writeFileSync(join(LOGS, 'refit.log'), '2026-10-24 10:04:12 refit\nError: fetch failed\n');
+  assert.equal(wd.needsCatchup(new Date('2026-10-26T13:00:00Z')).refit, true);
+  writeFileSync(join(LOGS, 'refit.log'), '2026-10-24 10:04:12 refit\nError: fetch failed\n2026-10-24 18:31:00 refit (catch-up)\nall fine\n');
+  assert.equal(wd.needsCatchup(new Date('2026-10-26T13:00:00Z')).refit, false);
+});
+
 test.after(() => rmSync(TMP, { recursive: true, force: true }));

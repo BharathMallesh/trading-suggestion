@@ -60,6 +60,7 @@ import { loadJournal, saveSettings as saveJournalSettings, planTrade, addTrade, 
 import { loadAthSwing, athSwingScan, loadAthPaper, loadSurvivorship, summarise as athSummarise, activeRules, RULES as ATH_RULES } from './paper-bot/ath-swing.mjs';
 import { dayResults } from './paper-bot/day-results.mjs';
 import { loadFnoSpreads, fnoSpreadsTest, saveFnoSpreads } from './paper-bot/fno-spreads.mjs';
+import { loadCoreSatellite, coreSatellite, saveCoreSatellite } from './paper-bot/core-satellite.mjs';
 import { loadFoStrangle, loadFoStranglePaper, foStrangleTest, saveFoStrangle, summarise as foSummarise } from './paper-bot/fo-strangle.mjs';
 import { loadNiftyDip, niftyDipTest, saveNiftyDip, loadNiftyDipPaper, niftyDipToday, paperView as dipPaperView } from './paper-bot/nifty-dip.mjs';
 import { loadBreakfast, breakfastTest, saveBreakfast, breakfastToday, loadBreakfastPaper, summarise as bfSummarise } from './paper-bot/breakfast.mjs';
@@ -672,6 +673,13 @@ const server = http.createServer(async (req, res) => {
       const r = await fnoSpreadsTest({});
       saveFnoSpreads(r);
       return json(res, 200, { backtest: r });
+    }
+    if (req.method === 'GET' && url.pathname === '/api/core-satellite') return json(res, 200, loadCoreSatellite() || {});
+    if (req.method === 'POST' && url.pathname === '/api/core-satellite') {
+      await readJson(req);
+      const r = await coreSatellite({});
+      if (r) saveCoreSatellite(r);
+      return json(res, 200, r || {});
     }
     if (req.method === 'GET' && url.pathname === '/api/fo-strangle') {
       // NIFTY weekly short strangle (F&O, paper only): backtest on real NSE option prices + paper record

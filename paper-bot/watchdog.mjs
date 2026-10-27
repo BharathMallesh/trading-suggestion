@@ -81,6 +81,17 @@ export function checkCollect(session, note = '') {
     const m = lines[i].match(HEADER);
     if (m && m[1] === session && m[3] === 'collect') { start = i; break; }
   }
+  // a run logged on a later day (the automatic catch-up, or one started by hand) covers the session too
+  const okRun = (i) => {
+    let e = lines.length;
+    for (let k = i + 1; k < lines.length; k++) if (HEADER.test(lines[k])) { e = k; break; }
+    const b = lines.slice(i + 1, e);
+    return !b.some((l) => /^\w*Error:/.test(l)) && b.some((l) => /^Collected \d+ series .*\b0 failed\b/.test(l));
+  };
+  for (let i = lines.length - 1; i > start; i--) {
+    const m = lines[i].match(HEADER);
+    if (m && m[3] === 'collect' && m[1] > session && okRun(i)) return check(name, true, `${start < 0 ? `no run on ${session}` : `the ${session} run failed`}; caught up ${m[1]} ${m[2].slice(0, 5)}`);
+  }
   if (start < 0) return check(name, false, `no collect run logged for ${session}`, fix);
   let end = lines.length;
   for (let i = start + 1; i < lines.length; i++) if (HEADER.test(lines[i])) { end = i; break; }
@@ -216,6 +227,18 @@ export async function watchdogChecks({ now = new Date(), fetchFn = fetch, listFn
   return { at: now.toISOString(), date: today, session, note, ok: checks.every((c) => c.ok), checks };
 }
 
+/**
+ * What the automatic catch-up should re-run (scripts/run.sh): the evening job when
+ * the session's prices or a paper record are missing, the weekly refit when it
+ * failed or is overdue. Based on the data, not only the log.
+ */
+export function needsCatchup(now = new Date()) {
+  const { session, note } = sessionToCheck(now);
+  const collect = !checkStore(session).ok || RECORDS.some((r) => !checkRecord(r, session).ok);
+  const refit = !checkRefit(now).ok;
+  return { session, note, collect, refit };
+}
+
 export function loadWatchdog() {
   try {
     return existsSync(WATCHDOG_PATH()) ? JSON.parse(readFileSync(WATCHDOG_PATH(), 'utf8')) : null;
@@ -250,7 +273,12 @@ export async function runWatchdog({ notify = false, notifyFn = osaNotify, save =
 }
 
 // CLI
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href && process.argv.includes('--needs')) {
+  // for scripts/run.sh: prints "collect" and/or "refit" (one per line) when they need re-running
+  const n = needsCatchup();
+  if (n.collect) console.log('collect');
+  if (n.refit) console.log('refit');
+} else if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   runWatchdog({ notify: process.argv.includes('--notify') })
     .then((r) => {
       console.log(`${r.date} watchdog: checking the ${r.session} run${r.note ? ` (${r.note})` : ''}`);

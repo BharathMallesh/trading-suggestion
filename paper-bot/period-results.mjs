@@ -10,6 +10,7 @@ import { loadAthPaper, activeRules, RULES as ATH_RULES } from './ath-swing.mjs';
 import { loadNiftyDipPaper, ofVersion } from './nifty-dip.mjs';
 import { loadFoStranglePaper } from './fo-strangle.mjs';
 import { isTradingDay, lastSessionDate } from './market-calendar.mjs';
+import { loadCoreSatellite } from './core-satellite.mjs';
 
 const MON = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 const iso = (d) => d.toISOString().slice(0, 10);
@@ -65,7 +66,7 @@ const inRange = (d, p) => d && d >= p.from && d <= p.to;
 const sumNet = (a) => a.reduce((x, t) => x + (t.net ?? 0), 0);
 
 /** Every strategy's result over a period. */
-export function periodResults(period, { vwap = loadPaper(), breakfast = loadBreakfastPaper(), swing = loadAthPaper(), dip = loadNiftyDipPaper(), fo = loadFoStranglePaper(), swingVersion = activeRules() !== ATH_RULES ? 'improved' : 'original' } = {}) {
+export function periodResults(period, { vwap = loadPaper(), breakfast = loadBreakfastPaper(), swing = loadAthPaper(), dip = loadNiftyDipPaper(), fo = loadFoStranglePaper(), cs = loadCoreSatellite(), swingVersion = activeRules() !== ATH_RULES ? 'improved' : 'original' } = {}) {
   const rows = [];
   const byDay = new Map(); // date → { strategy → ₹ }
   const addDay = (d, k, v) => {
@@ -115,8 +116,15 @@ export function periodResults(period, { vwap = loadPaper(), breakfast = loadBrea
     rows.push({ label: 'NIFTY short strangle (1 lot)', unit: '₹', trades: p.length, wins: p.filter((t) => t.pts > 0).length, result: p.reduce((a, t) => a + t.rupees, 0), totalTrades: all.length, total: all.reduce((a, t) => a + t.rupees, 0), detail: p.length ? p.map((t) => `${t.putStrike}/${t.callStrike} expiry ${t.expiry.slice(5)} ${rs(t.rupees)}`) : [fo?.status?.message || 'no position'] });
   }
   const rupeeRows = rows.filter((r) => r.unit === '₹');
+  // the 80/20 paper account: change in value over the period (not a trade count)
+  let account = null;
+  if (cs?.curve?.length) {
+    const before = cs.curve.filter((d) => d.date < period.from).pop() || { m80: cs.capital, nifty: cs.capital };
+    const end = cs.curve.filter((d) => d.date <= period.to).pop();
+    if (end && end.date >= period.from) account = { m80: end.m80 - before.m80, nifty: end.nifty - before.nifty, value: end.m80, capital: cs.capital };
+  }
   return {
-    period, rows,
+    period, rows, account,
     totalRs: rupeeRows.reduce((a, r) => a + r.result, 0),
     tradesInPeriod: rows.reduce((a, r) => a + r.trades, 0),
     days: [...byDay].sort(([a], [b]) => a.localeCompare(b)).map(([date, v]) => ({ date, ...v })),
@@ -136,6 +144,7 @@ export function resultsAnswer(question, { now = new Date(), ...papers } = {}) {
       : 'No paper trades closed in this period.',
     ...active.map((x) => `${x.label}: ${x.trades} trade${x.trades === 1 ? '' : 's'}, ${x.wins} won, ${fmt(x, x.result)}`),
   ];
+  if (r.account) summary.push(`80/20 paper account (index fund + swing): ${rs(r.account.m80)} over the period (now ${'₹' + Math.round(r.account.value).toLocaleString('en-IN')}); 100% NIFTY: ${rs(r.account.nifty)}.`);
   if (period.notYet) summary.push(`Today's trades are recorded after the 4:05 PM run; this shows ${period.label}. For today's live trades see Trading strategies.`);
   if (!isTradingDay(period.from) && period.kind === 'day') summary.unshift(`${period.label}: NSE was closed (weekend or holiday).`);
   const sections = [{

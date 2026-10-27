@@ -26,6 +26,80 @@ wait_online() {
   return 1
 }
 
+# The evening job (after the close): prices, then every paper record, then the evening note.
+do_collect() {
+  wait_online; node paper-bot/collector.mjs --notify
+  # paper records of all the strategies (after the close)
+  node paper-bot/vwap-pullback.mjs --paper
+  node paper-bot/ath-swing.mjs --paper --alerts   # also: trailing-stop price alerts for open swing positions
+  node paper-bot/breakfast.mjs --paper
+  node paper-bot/nifty-dip.mjs --paper
+  node paper-bot/fo-strangle.mjs --paper   # F&O: NSE files arrive in the evening, so this records up to yesterday
+  node paper-bot/core-satellite.mjs --update   # the 80/20 index fund + swing paper account
+  # one evening notification for all strategies + this week's scorecard refreshed
+  node paper-bot/evening.mjs --notify
+}
+
+# The weekly re-tests (Saturday 10:00).
+do_refit() {
+  wait_online; node paper-bot/evaluate.mjs --interval 1d --save && node paper-bot/evaluate.mjs --interval 60m --save \
+    && node paper-bot/evaluate.mjs --interval 15m --save && node paper-bot/evaluate.mjs --interval 5m --save
+  # Weekly NIFTY option IV vs VIX from new NSE days (independent of the refits above).
+  node paper-bot/vol-premium.mjs --save
+  # Re-test the probability improvements (adopted only if they still pass out of sample).
+  node paper-bot/prob-improve.mjs
+  # Re-run the VWAP strategy improvement test on the (growing) saved 5-minute history.
+  node paper-bot/vwap-pullback.mjs --improve >/dev/null
+  # Re-test the per-signal odds (shown adjusted only if they beat the plain win rate out of sample)
+  node paper-bot/vwap-odds.mjs >/dev/null
+  # NSE holiday list (exchange calendar for health checks, alerts and market-open status)
+  node paper-bot/market-calendar.mjs --refresh >/dev/null
+  # Factor lab: NSE momentum / quality / low-vol / value indices vs NIFTY (adds each new month-end)
+  node paper-bot/factor-lab.mjs >/dev/null
+  # "Analyse today": how often trends kept going, by time of day and alignment
+  node paper-bot/today-scan.mjs >/dev/null
+  # strong-stock swing strategy: re-run the backtest on the newest data
+  node paper-bot/ath-swing.mjs >/dev/null
+  # survivorship-free check: add the week's NSE daily files, re-run on the point-in-time top 200
+  node paper-bot/bhav-history.mjs >/dev/null && node paper-bot/ath-swing.mjs --survivorship >/dev/null
+  # breakfast strategy: re-run on the growing 5-minute history
+  node paper-bot/breakfast.mjs >/dev/null
+  # NIFTY dip-buy: re-run the backtest with the week's closes
+  node paper-bot/nifty-dip.mjs >/dev/null
+  # NIFTY weekly short strangle: re-run on the cached NSE option weeks
+  node paper-bot/fo-strangle.mjs >/dev/null
+  # F&O spreads (specification document): backtests + the real-NSE-price check
+  node paper-bot/fno-spreads.mjs >/dev/null
+}
+
+# One job at a time: the scheduled runs and the catch-up share a lock (a stale one,
+# older than 3 hours, is removed).
+LOGS="$HOME/Library/Logs/trading-research"
+LOCK="$LOGS/.run.lock"
+take_lock() {
+  mkdir -p "$LOGS"
+  if [ -d "$LOCK" ] && [ -n "$(find "$LOCK" -maxdepth 0 -mmin +180 2>/dev/null)" ]; then rmdir "$LOCK" 2>/dev/null; fi
+  mkdir "$LOCK" 2>/dev/null || return 1
+  trap 'rmdir "$LOCK" 2>/dev/null' EXIT
+}
+
+# Automatic catch-up (from the 18:30 backup and the weekday monitor): if the last
+# evening run did not save the day's prices / paper records, or the weekly refit
+# failed, run it again now. A notification comes only if it still fails.
+catchup() {
+  need="$(node paper-bot/watchdog.mjs --needs 2>/dev/null)"
+  [ -z "$need" ] && return 0
+  take_lock || { echo "catch-up skipped: another run is in progress"; return 0; }
+  case "$need" in *collect*)
+    echo "$(date '+%F %T') catch-up: re-running the evening job"
+    { echo "$(date '+%F %T') collect (catch-up)"; do_collect; node paper-bot/watchdog.mjs --notify; } >> "$LOGS/collect.log" 2>&1 ;;
+  esac
+  case "$need" in *refit*)
+    echo "$(date '+%F %T') catch-up: re-running the weekly refit"
+    { echo "$(date '+%F %T') refit (catch-up)"; do_refit; } >> "$LOGS/refit.log" 2>&1 ;;
+  esac
+}
+
 case "${1:-}" in
   server)
     OPENROUTER_API_KEY="$(key trading-research-openrouter)"
@@ -40,16 +114,8 @@ case "${1:-}" in
     ;;
   collect)
     caffeinate -i -w $$ & # keep the Mac awake until this job finishes
-    echo "$(date '+%F %T') collect"; wait_online; node paper-bot/collector.mjs --notify
-    # paper records of all the strategies (after the close)
-    node paper-bot/vwap-pullback.mjs --paper
-    node paper-bot/ath-swing.mjs --paper --alerts   # also: trailing-stop price alerts for open swing positions
-    node paper-bot/breakfast.mjs --paper
-    node paper-bot/nifty-dip.mjs --paper
-    node paper-bot/fo-strangle.mjs --paper   # F&O: NSE files arrive in the evening, so this records up to yesterday
-    # one evening notification for all strategies + this week's scorecard refreshed
-    node paper-bot/evening.mjs --notify
-    # watchdog: did everything above happen? (one notification only if something failed)
+    take_lock || { echo "$(date '+%F %T') collect skipped: another run is in progress"; exit 0; }
+    echo "$(date '+%F %T') collect"; do_collect
     node paper-bot/watchdog.mjs --notify ;;
   monitor)
     # Weekdays only, and only if the server is up.
@@ -58,41 +124,19 @@ case "${1:-}" in
       osascript -e 'display notification "Dashboard server is not running" with title "Trading research monitor"' 2>/dev/null
       exit 1
     fi
-    echo "$(date '+%F %T') monitor"; exec node paper-bot/monitor.mjs --notify ;;
+    echo "$(date '+%F %T') monitor"; node paper-bot/monitor.mjs --notify
+    # a missed evening run / refit is caught up here (no-op when everything is fine)
+    caffeinate -i -w $$ &
+    catchup ;;
   refit)
     caffeinate -i -w $$ & # keep the Mac awake until this job finishes
-    echo "$(date '+%F %T') refit"; wait_online; node paper-bot/evaluate.mjs --interval 1d --save && node paper-bot/evaluate.mjs --interval 60m --save \
-      && node paper-bot/evaluate.mjs --interval 15m --save && node paper-bot/evaluate.mjs --interval 5m --save
-    # Weekly NIFTY option IV vs VIX from new NSE days (independent of the refits above).
-    node paper-bot/vol-premium.mjs --save
-    # Re-test the probability improvements (adopted only if they still pass out of sample).
-    node paper-bot/prob-improve.mjs
-    # Re-run the VWAP strategy improvement test on the (growing) saved 5-minute history.
-    node paper-bot/vwap-pullback.mjs --improve >/dev/null
-    # Re-test the per-signal odds (shown adjusted only if they beat the plain win rate out of sample)
-    node paper-bot/vwap-odds.mjs >/dev/null
-    # NSE holiday list (exchange calendar for health checks, alerts and market-open status)
-    node paper-bot/market-calendar.mjs --refresh >/dev/null
-    # Factor lab: NSE momentum / quality / low-vol / value indices vs NIFTY (adds each new month-end)
-    node paper-bot/factor-lab.mjs >/dev/null
-    # "Analyse today": how often trends kept going, by time of day and alignment
-    node paper-bot/today-scan.mjs >/dev/null
-    # strong-stock swing strategy: re-run the backtest on the newest data
-    node paper-bot/ath-swing.mjs >/dev/null
-    # survivorship-free check: add the week's NSE daily files, re-run on the point-in-time top 200
-    node paper-bot/bhav-history.mjs >/dev/null && node paper-bot/ath-swing.mjs --survivorship >/dev/null
-    # breakfast strategy: re-run on the growing 5-minute history
-    node paper-bot/breakfast.mjs >/dev/null
-    # NIFTY dip-buy: re-run the backtest with the week's closes
-    node paper-bot/nifty-dip.mjs >/dev/null
-    # NIFTY weekly short strangle: re-run on the cached NSE option weeks
-    node paper-bot/fo-strangle.mjs >/dev/null
-    # F&O spreads (specification document): backtests + the real-NSE-price check
-    node paper-bot/fno-spreads.mjs >/dev/null ;;
+    take_lock || { echo "$(date '+%F %T') refit skipped: another run is in progress"; exit 0; }
+    echo "$(date '+%F %T') refit"; do_refit ;;
   backup)
     caffeinate -i -w $$ & # keep the Mac awake until this job finishes
     echo "$(date '+%F %T') backup"; node paper-bot/backup.mjs
-    # watchdog again with the fresh backup (also catches a collect job that never ran)
+    # catch up a failed evening run / weekly refit, then the watchdog with the fresh backup
+    catchup
     node paper-bot/watchdog.mjs --notify ;;
   *)
     echo "usage: scripts/run.sh server|collect|monitor|refit|backup"; exit 2 ;;
