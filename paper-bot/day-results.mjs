@@ -15,7 +15,7 @@ import { loadNiftyDipPaper, ofVersion, VERSION_LABELS } from './nifty-dip.mjs';
 const istDate = (iso) => (iso ? new Date(new Date(iso).getTime() + 19800_000).toISOString().slice(0, 10) : null);
 const sum = (a, f) => a.reduce((x, t) => x + f(t), 0);
 const LABELS = { video: 'Video rules', improved: 'Improved (daily trend + 3×ATR stop)', scanner: 'Morning scanner (20 stocks)' };
-const trade = (t) => ({ symbol: t.symbol, side: t.side, time: t.time || null, entry: t.entry, stop: t.stop, target: t.target, exit: t.exit, qty: t.qty, reason: t.reason, gross: t.gross, charges: t.charges, net: t.net, seenLive: t.seenLive ?? null });
+const trade = (t) => ({ symbol: t.symbol, side: t.side, time: t.time || null, entry: t.entry, stop: t.stop, target: t.target, exit: t.exit, qty: t.qty, reason: t.reason, gross: t.gross, charges: t.charges, net: t.net, seenLive: t.seenLive ?? null, rebuiltFromLive: !!t.rebuiltFromLive });
 
 /**
  * Results for `date` (default: the latest completed NSE session).

@@ -545,7 +545,7 @@ export async function paperUpdate({ loadCandles = candles, now = new Date() } = 
   st.variants = Object.fromEntries(Object.entries(PAPER_VARIANTS).map(([k, v]) => [k, { label: v.label, rules: v.rules }]));
   const t = istNow(now);
   const lastComplete = t.mins >= 15 * 60 + 35 ? t.date : null; // today counts only after the close
-  const p1 = Math.floor(now.getTime() / 1000) - 8 * 86400;
+  const p1 = Math.floor(now.getTime() / 1000) - 14 * 86400;
   const data = [];
   const symbols = [...new Set([...st.stocks, ...Object.values(PAPER_VARIANTS).flatMap((v) => v.stocks || [])])];
   for (const s of symbols) {
@@ -557,21 +557,29 @@ export async function paperUpdate({ loadCandles = candles, now = new Date() } = 
     }
   }
   let added = 0;
+  const seen = loadSeen();
+  const rowsBySymbol = new Map(data.map((x) => [x.s, x.rows]));
+  st.revisedOnly ||= []; // signals that appeared only in candles Yahoo revised after the close
   for (const [key, v] of Object.entries(PAPER_VARIANTS)) {
     const list = v.stocks || st.stocks;
     const all = data.filter((x) => list.includes(x.s)).flatMap(({ s, rows, daily }) => backtestStock(s, rows, v.rules, { daily }));
-    const mine = st.trades.filter((x) => (x.variant || 'video') === key);
-    const have = new Set(mine.map((x) => `${x.symbol}|${x.date}`));
-    const fresh = accountTrades(all, v.rules.maxPerDay)
-      .filter((x) => x.date >= st.startedAt && (x.date < t.date || x.date === lastComplete) && !have.has(`${x.symbol}|${x.date}`));
-    for (const x of fresh) {
-      const already = st.trades.filter((y) => (y.variant || 'video') === key && y.date === x.date).length;
-      if (already < v.rules.maxPerDay) {
-        st.trades.push({ ...x, variant: key, seenLive: seenLiveFor({ ...x, variant: key }) });
-        added++;
-      }
+    const allPerDay = all.filter((x) => x.date >= st.startedAt && (x.date < t.date || x.date === lastComplete));
+    // every completed day in the data window is (re)built under the live-first rule
+    const days = [...new Set([...allPerDay.map((x) => x.date), ...Object.keys(seen.days || {}).filter((d) => d >= st.startedAt && (d < t.date || d === lastComplete) && rowsBySymbol.size && [...rowsBySymbol.values()].some((rows) => rows.some((r) => String(r.date).startsWith(d))))])].sort();
+    for (const d of days) {
+      const recomputed = accountTrades(all.filter((x) => x.date === d), v.rules.maxPerDay);
+      const { trades, revisedOnly } = liveFirstDay({ date: d, variant: key, recomputed, seen, rowsBySymbol: new Map([...rowsBySymbol].filter(([s]) => list.includes(s))), rules: v.rules });
+      const before = st.trades.filter((y) => (y.variant || 'video') === key && y.date === d);
+      // a recorded day is rebuilt only when it had live snapshots; others stay as recorded
+      if (before.length && !seen.days?.[d]) continue;
+      if (!trades.length && before.length && !recomputed.length) continue; // candles no longer available
+      st.trades = st.trades.filter((y) => !((y.variant || 'video') === key && y.date === d));
+      st.trades.push(...trades.map((x) => ({ ...x, variant: key })));
+      added += Math.max(0, trades.length - before.length);
+      st.revisedOnly = st.revisedOnly.filter((y) => !(y.variant === key && y.date === d)).concat(revisedOnly);
     }
   }
+  st.trades.sort((a, b) => a.date.localeCompare(b.date) || String(a.time).localeCompare(String(b.time)));
   st.updatedAt = now.toISOString();
   writeJsonAtomic(PAPER(), st);
   return { added, ...paperSummary(st) };
@@ -735,6 +743,9 @@ export function noteLiveSeen(sig, now = new Date()) {
         st.keys[key] = { firstSeen: now.toISOString(), time: t.time };
         added++;
       }
+      // the trade as it looked when first seen (entry / stop / target / size), to rebuild it
+      // if Yahoo later revises the candles and the signal disappears
+      if (!st.keys[key].trade && t.entry > 0 && t.stop > 0) st.keys[key].trade = { symbol: t.symbol, side: t.side, time: t.time, entry: t.entry, stop: t.stop, target: t.target, qty: t.qty };
     }
   }
   const cutoff = new Date(now.getTime() - 120 * 86400000).toISOString().slice(0, 10);
@@ -743,6 +754,76 @@ export function noteLiveSeen(sig, now = new Date()) {
   writeJsonAtomic(SEEN(), st);
   return added;
 }
+/**
+ * Rebuild a trade that was seen live from its stored entry / stop / target,
+ * replaying that day's (possibly revised) candles from the entry candle on:
+ * stop first if both are inside one candle, target, or the 15:00 close.
+ */
+export function rebuildFromLive(detail, rows, date, rules = RULES) {
+  const day = (r) => String(r.date).slice(0, 10);
+  const bars = rows.filter((r) => day(r) === date && hhmm(r) >= detail.time).sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  if (!bars.length) return null;
+  const { side, entry, stop, target } = detail;
+  const risk = Math.abs(entry - stop);
+  const qty = detail.qty || Math.max(1, Math.floor(Math.min(rules.riskRs / risk, (rules.capital * rules.leverage) / entry)));
+  let exit = null;
+  let reason = null;
+  for (const c of bars) {
+    if (side === 'long' ? c.low <= stop : c.high >= stop) {
+      exit = side === 'long' ? Math.min(stop, c.open) : Math.max(stop, c.open);
+      reason = 'stop';
+      break;
+    }
+    if (side === 'long' ? c.high >= target : c.low <= target) {
+      exit = target;
+      reason = 'target';
+      break;
+    }
+    if (hhmm(c) >= rules.exitAt) {
+      exit = c.close;
+      reason = '15:00';
+      break;
+    }
+  }
+  if (exit == null) {
+    exit = bars[bars.length - 1].close;
+    reason = 'close';
+  }
+  const slip = rules.slippagePct / 100;
+  const exitFill = side === 'long' ? exit * (1 - slip) : exit * (1 + slip);
+  const gross = (side === 'long' ? exitFill - entry : entry - exitFill) * qty;
+  const charges = roundTripCharges(entry, exitFill, qty, side);
+  return { symbol: detail.symbol, date, time: detail.time, side, entry, stop, target, exit: exitFill, qty, reason, gross, charges, net: gross - charges, rNet: (gross - charges) / (risk * qty), rGross: gross / (risk * qty), rebuiltFromLive: true };
+}
+
+/**
+ * One version's trades for one day under the "live first" rule: on a day with
+ * live snapshots, the record holds the trades that were visible live (earliest
+ * first, up to the daily limit), using the after-close version when it still
+ * exists and rebuilding it otherwise; signals that only appear in the revised
+ * candles go to `revisedOnly`. Days without snapshots keep the after-close list.
+ */
+export function liveFirstDay({ date, variant, recomputed, seen = loadSeen(), rowsBySymbol = new Map(), rules = RULES }) {
+  if (!seen.days?.[date]) return { trades: recomputed.map((x) => ({ ...x, seenLive: null })), revisedOnly: [] };
+  const prefix = `${date}|${variant}|`;
+  const live = Object.entries(seen.keys || {}).filter(([k]) => k.startsWith(prefix)).map(([k, v]) => {
+    const [, , symbol, side] = k.split('|');
+    return { symbol, side, time: v.time || v.trade?.time || '', detail: v.trade || null };
+  }).sort((a, b) => a.time.localeCompare(b.time));
+  const trades = [];
+  for (const l of live) {
+    if (trades.length >= rules.maxPerDay) break;
+    const same = recomputed.find((x) => x.symbol === l.symbol && x.side === l.side);
+    if (same) trades.push({ ...same, seenLive: true });
+    else if (l.detail) {
+      const t = rowsBySymbol.get(l.symbol) && rebuildFromLive(l.detail, rowsBySymbol.get(l.symbol), date, rules);
+      if (t) trades.push({ ...t, seenLive: true });
+    }
+  }
+  const revisedOnly = recomputed.filter((x) => !trades.some((y) => y.symbol === x.symbol && y.side === x.side)).map((x) => ({ ...x, seenLive: false, variant }));
+  return { trades, revisedOnly };
+}
+
 /** true = visible live, false = only after the close, null = no live snapshots that day. */
 export function seenLiveFor(t, seen = loadSeen()) {
   if (!seen.days?.[t.date]) return null;
@@ -759,7 +840,8 @@ export function paperSummary(st = loadPaper(), sizing = null) {
     const live = { checked: checked.length, notSeen: checked.filter((x) => x.seenLive === false).length, netNotSeen: checked.filter((x) => x.seenLive === false).reduce((a, x) => a + x.net, 0) };
     return [k, { label: v.label, ...sum, trust: trustMeter(sum), live, ...(sizing ? { yours: summarise(resizeTrades(mine, sizing)) } : {}) }];
   }));
-  return { startedAt: st.startedAt, updatedAt: st.updatedAt, summary: byVariant.video, byVariant, trades: st.trades.slice(-20).reverse() };
+  const rebuilt = st.trades.filter((x) => x.rebuiltFromLive).length;
+  return { startedAt: st.startedAt, updatedAt: st.updatedAt, summary: byVariant.video, byVariant, trades: st.trades.slice(-20).reverse(), revisedOnly: (st.revisedOnly || []).slice(-20).reverse(), rebuilt };
 }
 
 export function loadImprove() {
