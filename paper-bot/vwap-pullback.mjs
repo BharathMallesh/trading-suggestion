@@ -700,13 +700,30 @@ export async function todaySignals({ loadCandles = candles, now = new Date(), si
     };
   }).filter(Boolean);
   const variants = {};
+  const seen = loadSeen();
   for (const [k, v] of Object.entries(PAPER_VARIANTS)) {
     const list = v.stocks || VIDEO_STOCKS;
     const rules = sizing ? { ...v.rules, riskRs: sizing.riskRs, capital: sizing.capital } : v.rules;
     const all = data.filter((x) => list.includes(x.s)).flatMap(({ s, rows, daily }) => backtestStock(s, rows, rules, { daily }));
-    const trades = accountTrades(all, v.rules.maxPerDay).filter((x) => x.date === date)
-      .map((x) => ({ ...x, open: x.reason === 'close' && live, odds: oddsLookup ? oddsLookup(x) : null }));
-    variants[k] = { label: v.label, trades, netRs: trades.reduce((a, x) => a + x.net, 0), slotsLeft: Math.max(0, v.rules.maxPerDay - trades.length), stocks: list.length };
+    const current = accountTrades(all, v.rules.maxPerDay).filter((x) => x.date === date);
+    // live first: trades already seen in a snapshot stay (rebuilt from their levels if Yahoo revised the
+    // candles); a not-yet-seen trade counts as new only if it appeared after the latest snapshot
+    let shown = current;
+    let revisedOnly = [];
+    if (seen.days?.[date]) {
+      const sized = sizing ? { ...seen, keys: Object.fromEntries(Object.entries(seen.keys || {}).map(([key, val]) => [key, val.trade ? { ...val, trade: { ...val.trade, qty: null } } : val])) } : seen;
+      const r = liveFirstDay({ date, variant: k, recomputed: current, seen: sized, rowsBySymbol: new Map(data.filter((x) => list.includes(x.s)).map((x) => [x.s, x.rows])), rules });
+      const lastSnap = seen.lastSnap?.[date] || null;
+      // no snapshot time yet (e.g. right after a restart): everything not yet seen counts as new,
+      // otherwise a fresh trade would never be shown and so never snapshotted
+      // after the close every unseen trade is a revision (the snapshots covered the session)
+      const cutoff = !live ? '99:99' : lastSnap ? addMinutes(lastSnap, -10) : '00:00';
+      const fresh = r.revisedOnly.filter((x) => x.time >= cutoff);
+      shown = [...r.trades, ...fresh].slice(0, v.rules.maxPerDay);
+      revisedOnly = r.revisedOnly.filter((x) => x.time < cutoff).map((x) => ({ symbol: x.symbol, side: x.side, time: x.time, net: x.net, reason: x.reason }));
+    }
+    const trades = shown.map((x) => ({ ...x, open: x.reason === 'close' && live, odds: oddsLookup ? oddsLookup(x) : null }));
+    variants[k] = { label: v.label, trades, revisedOnly, netRs: trades.reduce((a, x) => a + x.net, 0), slotsLeft: Math.max(0, v.rules.maxPerDay - trades.length), stocks: list.length };
   }
   return {
     at: now.toISOString(), date, live,
@@ -716,6 +733,12 @@ export async function todaySignals({ loadCandles = candles, now = new Date(), si
     note: 'Same rules as the paper record, on the 5-minute candles so far. Open trades are valued at the latest candle after charges (as if closed now); they end at the stop, the target or 15:00. The official record is written after the close. Paper only — not a signal to trade.',
   };
 }
+
+const addMinutes = (hm, n) => {
+  const [h, m] = String(hm).split(':').map(Number);
+  const t = h * 60 + m + n;
+  return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
+};
 
 // ---------------------------------------------- seen live vs recorded ---
 // Yahoo sometimes corrects intraday candles after the close, so a trade in the
@@ -736,6 +759,7 @@ export function noteLiveSeen(sig, now = new Date()) {
   if (!sig?.live || !sig.date) return 0;
   const st = loadSeen();
   st.days[sig.date] = (st.days[sig.date] || 0) + 1;
+  st.lastSnap = { ...(st.lastSnap || {}), [sig.date]: sig.lastBar || null }; // latest candle seen in a snapshot
   let added = 0;
   for (const [k, v] of Object.entries(sig.variants || {})) {
     for (const t of v.trades || []) {
@@ -751,6 +775,7 @@ export function noteLiveSeen(sig, now = new Date()) {
   }
   const cutoff = new Date(now.getTime() - 120 * 86400000).toISOString().slice(0, 10);
   for (const d of Object.keys(st.days)) if (d < cutoff) delete st.days[d];
+  for (const d of Object.keys(st.lastSnap || {})) if (d < cutoff) delete st.lastSnap[d];
   for (const key of Object.keys(st.keys)) if (key.slice(0, 10) < cutoff) delete st.keys[key];
   writeJsonAtomic(SEEN(), st);
   return added;

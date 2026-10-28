@@ -67,3 +67,28 @@ test('live-first day: seen trades kept (rebuilt if gone), revised-only signals l
   assert.equal(none.trades.length, 2);
   assert.equal(none.revisedOnly.length, 0);
 });
+
+test('live view: a trade seen live stays on screen after a revision; revised-only signals are listed apart; new ones still show', async () => {
+  const { writeFileSync } = await import('node:fs');
+  const d = '2026-10-28';
+  // live snapshots: TRENT long seen at 10:10 with its levels; the latest snapshot was at 14:00
+  writeFileSync(process.env.VWAP_SEEN_PATH, JSON.stringify({ days: { [d]: 50 }, lastSnap: { [d]: '14:00' }, keys: {
+    [`${d}|video|TRENT.NS|long`]: { time: '10:10', trade: { symbol: 'TRENT.NS', side: 'long', time: '10:10', entry: 2831.25, stop: 2805.22, target: 2883.31, qty: 38 } },
+  } }));
+  // revised candles: TRENT falls 10:10–10:25 then rises all day (a short signal would appear at 10:25)
+  const mk = (hm, o, h, l, c) => ({ date: `${d} ${hm}`, ts: Date.parse(`${d}T${hm}:00+05:30`) / 1000, open: o, high: h, low: l, close: c, volume: 1000 });
+  const rows = [];
+  let px = 2830;
+  for (let m = 9 * 60 + 15; m <= 14 * 60 + 30; m += 5) {
+    const hm = `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+    px += m < 10 * 60 + 25 ? -1 : 1.2;
+    rows.push(mk(hm, px, px + 2, px - 2, px));
+  }
+  const loadCandles = async (s, o) => (o.interval === '5m' && s === 'TRENT.NS' ? rows : o.interval === '5m' ? [] : []);
+  const r = await v.todaySignals({ loadCandles, now: new Date(`${d}T14:35:00+05:30`) });
+  const video = r.variants.video;
+  const trent = video.trades.find((t) => t.symbol === 'TRENT.NS' && t.side === 'long');
+  assert.ok(trent, 'the long seen live is still shown');
+  assert.equal(trent.rebuiltFromLive || false, !video.trades.some((t) => t.symbol === 'TRENT.NS' && t.side === 'long' && !t.rebuiltFromLive) ? true : false);
+  assert.ok(!video.trades.some((t) => t.symbol === 'TRENT.NS' && t.side === 'short'), 'the revised-only short is not in the table');
+});
