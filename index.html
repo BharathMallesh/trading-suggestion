@@ -30,6 +30,7 @@
         <button type="button" data-view="invest" title="SIP, goals, index funds, market tilts">Investing</button>
         <button type="button" data-view="options" title="Call / Put odds and prediction, big moves, volatility">Options &amp; risk</button>
         <button type="button" data-view="intraday" title="Rule-based strategies (swing, YouTube intraday, Breakfast, NIFTY dip-buy, F&amp;O strangle), live and on paper">Trading strategies</button>
+        <button type="button" data-view="days" title="Which strategy did better or worse on which weekday, after a gap or a flat open, and the Monday tests">Day patterns</button>
         <button type="button" data-view="lab" title="Every experiment, including the ones that found no edge">Research lab</button>
         <a class="help" href="/guide" target="_blank" rel="noopener" title="Step-by-step guide to every card, for beginners">? Help &amp; guide</a>
       </div>
@@ -258,6 +259,21 @@
         <p class="hint">The few documented ways to beat the index over long periods are "tilts": owning stocks with strong recent momentum, high quality, low volatility or low valuations.
           This uses NSE's own month-end index values, each only from when NSE started publishing it (no back-filled history), and shows the price you pay: deeper falls and years of lagging NIFTY.</p>
         <div id="flOut">Loading…</div>
+      </section>
+
+      <!-- Day patterns: every strategy by weekday and opening gap, plus the Monday tests -->
+      <section class="card span2" id="dpCard">
+        <h2>Day patterns <span style="font-size:12px;color:var(--warn);font-weight:500">WHICH STRATEGY ON WHICH WEEKDAY · GAP DAYS · MONDAY TESTS</span></h2>
+        <p class="hint">Every strategy's backtest trades, grouped by the weekday they were made (and, for the intraday strategies, by how NIFTY opened). Small groups produce patterns by chance,
+          so each cell shows how many trades it has and a <b>t</b> score (2 or more = unlikely to be luck), and a pattern is called <b>consistent</b> only if it held in both halves of the history.
+          Re-run every Saturday. Research only — not investment advice.</p>
+        <div class="row" style="gap:8px;align-items:flex-end">
+          <div style="flex:0 0 auto"><button id="dpTodayBtn" type="button" style="margin-top:0">What works today?</button></div>
+          <div style="flex:0 1 280px"><label>Logic</label><select id="dpLogic"><option value="">All logics</option></select></div>
+        </div>
+        <div id="dpToday" style="margin-top:10px"></div>
+        <div style="font-size:15px;margin-top:14px"><b>Full study</b></div>
+        <div id="dpOut" style="margin-top:6px">Loading…</div>
       </section>
 
       <!-- Core + satellite paper account (80/20) -->
@@ -873,5 +889,6 @@
     <script src="/static/js/14-fo-strangle.js"></script>
     <script src="/static/js/15-fno-spreads.js"></script>
     <script src="/static/js/16-core-satellite.js"></script>
+    <script src="/static/js/17-day-patterns.js"></script>
   </body>
 </html>

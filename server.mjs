@@ -60,6 +60,8 @@ import { loadJournal, saveSettings as saveJournalSettings, planTrade, addTrade, 
 import { loadAthSwing, athSwingScan, loadAthPaper, loadSurvivorship, summarise as athSummarise, activeRules, RULES as ATH_RULES } from './paper-bot/ath-swing.mjs';
 import { dayResults } from './paper-bot/day-results.mjs';
 import { loadFnoSpreads, fnoSpreadsTest, saveFnoSpreads } from './paper-bot/fno-spreads.mjs';
+import { loadDayPatterns } from './paper-bot/day-patterns.mjs';
+import { whatWorksToday } from './paper-bot/day-today.mjs';
 import { loadCoreSatellite, coreSatellite, saveCoreSatellite } from './paper-bot/core-satellite.mjs';
 import { loadFoStrangle, loadFoStranglePaper, foStrangleTest, saveFoStrangle, summarise as foSummarise } from './paper-bot/fo-strangle.mjs';
 import { loadNiftyDip, niftyDipTest, saveNiftyDip, loadNiftyDipPaper, niftyDipToday, paperView as dipPaperView } from './paper-bot/nifty-dip.mjs';
@@ -673,6 +675,12 @@ const server = http.createServer(async (req, res) => {
       const r = await fnoSpreadsTest({});
       saveFnoSpreads(r);
       return json(res, 200, { backtest: r });
+    }
+    if (req.method === 'GET' && url.pathname === '/api/day-patterns') return json(res, 200, loadDayPatterns() || {});
+    if (req.method === 'GET' && url.pathname === '/api/day-patterns/today') {
+      // "What works today?": logics ranked for today's weekday / opening, with stocks and the last few days
+      const logic = url.searchParams.get('logic') || null;
+      return json(res, 200, await whatWorksToday({ logic: logic && /^[a-z-]{2,30}$/.test(logic) ? logic : null }));
     }
     if (req.method === 'GET' && url.pathname === '/api/core-satellite') return json(res, 200, loadCoreSatellite() || {});
     if (req.method === 'POST' && url.pathname === '/api/core-satellite') {

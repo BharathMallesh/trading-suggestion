@@ -70,6 +70,8 @@ do_refit() {
   node paper-bot/fo-strangle.mjs >/dev/null
   # F&O spreads (specification document): backtests + the real-NSE-price check
   node paper-bot/fno-spreads.mjs >/dev/null
+  # Day patterns: every strategy by weekday / opening gap, and the Monday tests (~2 minutes)
+  node --max-old-space-size=12000 paper-bot/day-patterns.mjs >/dev/null
 }
 
 # One job at a time: the scheduled runs and the catch-up share a lock (a stale one,
