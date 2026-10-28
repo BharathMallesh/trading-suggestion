@@ -15,11 +15,12 @@ import { loadAthPaper, athSwingScan, activeRules, RULES } from './ath-swing.mjs'
 import { isTradingDay } from './market-calendar.mjs';
 import { loadNiftyDipPaper, ofVersion } from './nifty-dip.mjs';
 import { loadFoStranglePaper } from './fo-strangle.mjs';
+import { loadMomentumPaper } from './momentum.mjs';
 
 const rs = (v) => `${v < 0 ? '−' : '+'}₹${Math.abs(Math.round(v)).toLocaleString('en-IN')}`;
 
 /** Lines for one date: [{ title, short, detail }] per strategy. `scan` = today's swing scan (or null). */
-export function eveningLines(date, { vwap = loadPaper(), breakfast = loadBreakfastPaper(), swing = loadAthPaper(), scan = null, swingVersion = 'original', dip = loadNiftyDipPaper(), fo = loadFoStranglePaper() } = {}) {
+export function eveningLines(date, { vwap = loadPaper(), breakfast = loadBreakfastPaper(), swing = loadAthPaper(), scan = null, swingVersion = 'original', dip = loadNiftyDipPaper(), fo = loadFoStranglePaper(), mom = loadMomentumPaper() } = {}) {
   const out = [];
   const v = (vwap?.trades || []).filter((t) => t.date === date && (t.variant || 'video') === 'video');
   out.push({ title: 'YouTube intraday', short: v.length ? `YouTube ${rs(v.reduce((a, t) => a + t.net, 0))}` : 'YouTube: no trade', detail: closeSummary(vwap, date).join(' · ') });
@@ -47,7 +48,56 @@ export function eveningLines(date, { vwap = loadPaper(), breakfast = loadBreakfa
   const foDone = (fo?.trades || []).filter((t) => !t.open && t.expiry === date);
   const foOpen = (fo?.trades || []).find((t) => t.open);
   if (fo) out.push({ title: 'NIFTY short strangle', short: foDone.length ? `Strangle: week ${rs(foDone.reduce((a, t) => a + t.rupees, 0))}` : foOpen ? 'Strangle: holding' : 'Strangle: no position', detail: foDone.length ? foDone.map((t) => `settled ${t.putStrike}/${t.callStrike}: ${rs(t.rupees)} a lot${t.breached ? ` (${t.breached} side breached)` : ''}`).join(' · ') : fo.status?.message || 'no position' });
+  const m = momentumLine(date, mom);
+  if (m) out.push(m);
   return out;
+}
+
+const addDays = (d, n) => new Date(Date.parse(`${d}T00:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
+/** Next trading day after `date`. */
+function nextTradingDay(date) {
+  let d = addDays(date, 1);
+  for (let k = 0; k < 12 && !isTradingDay(d); k++) d = addDays(d, 1);
+  return d;
+}
+/** Names in `b` not in `a`, as short tickers. */
+const added = (a, b) => b.filter((x) => !a.includes(x)).map((x) => x.replace('.NS', ''));
+
+/**
+ * Momentum 20 in the evening note — only on the two days that matter:
+ *   last trading day of the month: the new list is made from today's close (preview of the changes)
+ *   first trading day of the month: the new list, bought at today's open on paper (what came in / went out)
+ */
+export function momentumLine(date, mom) {
+  if (!mom) return null;
+  const rebal = (mom.rebalances || []).filter((r) => r.date === date).pop();
+  if (rebal) {
+    const prev = (mom.rebalances || []).filter((r) => r.date < date).pop();
+    const now = rebal.holdings.map((h) => h.symbol);
+    const before = prev ? prev.holdings.map((h) => h.symbol) : [];
+    const inn = added(before, now);
+    const out = added(now, before);
+    const each = Math.round((rebal.value || mom.capital) / now.length);
+    return {
+      title: 'Momentum 20',
+      short: prev ? `Momentum 20: new list, ${inn.length} in / ${out.length} out` : 'Momentum 20: first list bought',
+      detail: `New list (ranked at the ${rebal.monthEnd} close), bought on paper at today's open, about ₹${each.toLocaleString('en-IN')} each: ${prev ? `in ${inn.join(', ') || 'none'} · out ${out.join(', ') || 'none'} · kept ${now.length - inn.length}` : now.map((x) => x.replace('.NS', '')).join(', ')}.`,
+    };
+  }
+  const isMonthEnd = isTradingDay(date) && nextTradingDay(date).slice(0, 7) !== date.slice(0, 7);
+  if (isMonthEnd && mom.preview?.list?.length) {
+    const cur = (mom.rebalances?.at(-1)?.holdings || []).map((h) => h.symbol);
+    const base = cur.length ? cur : (mom.list || []).map((x) => x.symbol);
+    const next = mom.preview.list.map((x) => x.symbol);
+    const inn = added(base, next);
+    const out = added(next, base);
+    return {
+      title: 'Momentum 20',
+      short: `Momentum 20: month ends today, new list tomorrow (≈${inn.length} changes)`,
+      detail: `The month ends today: the new list is made from today's close and bought at the next open (${nextTradingDay(date)}). Preview from the ${mom.preview.date} prices — likely in: ${inn.join(', ') || 'none'} · likely out: ${out.join(', ') || 'none'}. The final list is shown on the Investing tab.`,
+    };
+  }
+  return null;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

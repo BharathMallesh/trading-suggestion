@@ -61,6 +61,7 @@ import { loadAthSwing, athSwingScan, loadAthPaper, loadSurvivorship, summarise a
 import { dayResults } from './paper-bot/day-results.mjs';
 import { loadFnoSpreads, fnoSpreadsTest, saveFnoSpreads } from './paper-bot/fno-spreads.mjs';
 import { loadDayPatterns } from './paper-bot/day-patterns.mjs';
+import { loadMomentum, loadMomentumPaper } from './paper-bot/momentum.mjs';
 import { whatWorksToday } from './paper-bot/day-today.mjs';
 import { loadCoreSatellite, coreSatellite, saveCoreSatellite } from './paper-bot/core-satellite.mjs';
 import { loadFoStrangle, loadFoStranglePaper, foStrangleTest, saveFoStrangle, summarise as foSummarise } from './paper-bot/fo-strangle.mjs';
@@ -675,6 +676,11 @@ const server = http.createServer(async (req, res) => {
       const r = await fnoSpreadsTest({});
       saveFnoSpreads(r);
       return json(res, 200, { backtest: r });
+    }
+    if (req.method === 'GET' && url.pathname === '/api/momentum') {
+      // Momentum 20: backtest (curves trimmed to month-ends) + this month's list + paper portfolio
+      const b = loadMomentum();
+      return json(res, 200, { backtest: b ? { ...b, methods: Object.fromEntries(Object.entries(b.methods).map(([k, m]) => [k, { ...m, curve: undefined }])) } : null, paper: loadMomentumPaper() });
     }
     if (req.method === 'GET' && url.pathname === '/api/day-patterns') return json(res, 200, loadDayPatterns() || {});
     if (req.method === 'GET' && url.pathname === '/api/day-patterns/today') {

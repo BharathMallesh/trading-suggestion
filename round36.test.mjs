@@ -14,6 +14,7 @@ const deps = (triggered, strong, ratio = 1) => ({
   newsFn: async () => ({ headlines: [{ title: 'Company wins order' }] }),
   sizing: { capital: 200000, riskPct: 1 },
   compare: () => ({ rows: [{ key: 'ath', backtest: '+0.16 R without survivorship bias' }] }),
+  momentum: () => null,
 });
 
 test('invest questions route to the research agent; others keep their answers', () => {
