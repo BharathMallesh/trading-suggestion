@@ -61,6 +61,7 @@ import { loadAthSwing, athSwingScan, loadAthPaper, loadSurvivorship, summarise a
 import { dayResults } from './paper-bot/day-results.mjs';
 import { loadFnoSpreads, fnoSpreadsTest, saveFnoSpreads } from './paper-bot/fno-spreads.mjs';
 import { loadDayPatterns } from './paper-bot/day-patterns.mjs';
+import { myPlan } from './paper-bot/my-plan.mjs';
 import { loadMomentum, loadMomentumPaper } from './paper-bot/momentum.mjs';
 import { whatWorksToday } from './paper-bot/day-today.mjs';
 import { loadCoreSatellite, coreSatellite, saveCoreSatellite } from './paper-bot/core-satellite.mjs';
@@ -85,6 +86,7 @@ let fundsCache = null; // /api/index-funds (daily)
 let vwapTodayCache = null; // /api/vwap-today (1 minute)
 let todayScanCache = null; // /api/today-scan (2 minutes)
 let athScanCache = null; // /api/ath-swing/scan (10 minutes)
+let myPlanCache = null; // /api/my-plan (10 minutes)
 let dipTodayCache = null; // /api/nifty-dip status (10 minutes)
 let bfTodayCache = null; // /api/breakfast/today (1 minute)
 const monthlyCache = {}; // goal planner: index → { at, data }
@@ -676,6 +678,11 @@ const server = http.createServer(async (req, res) => {
       const r = await fnoSpreadsTest({});
       saveFnoSpreads(r);
       return json(res, 200, { backtest: r });
+    }
+    if (req.method === 'GET' && url.pathname === '/api/my-plan') {
+      // Home → My plan: what the tested rules say to do now (cached 10 minutes)
+      if (!myPlanCache || Date.now() - myPlanCache.at > 600_000 || url.searchParams.has('fresh')) myPlanCache = { at: Date.now(), data: await myPlan({}) };
+      return json(res, 200, myPlanCache.data);
     }
     if (req.method === 'GET' && url.pathname === '/api/momentum') {
       // Momentum 20: backtest (curves trimmed to month-ends) + this month's list + paper portfolio

@@ -152,5 +152,14 @@ export async function investResearch({
     summary, sections,
     caveat: 'Facts and rule-based screens from the app\'s tested tools, not advice or a recommendation to buy. Most of your money is best in a low-cost index fund; size any single trade so a stop-out costs about 1% of your capital. Decide yourself — or with a SEBI-registered adviser.',
     rulesInUse: activeRules() !== ATH_RULES ? 'improved' : 'original',
+    // the facts behind the answer, for the "My plan" card
+    raw: {
+      regime: cb.error ? null : { state: cb.state, reading: cb.reading },
+      triggered: triggered.map((t) => ({ ...t, size: sizeFor(t.close, t.stop, { capital, riskPct }) })),
+      held, strong: strong.map((x) => ({ symbol: x.symbol, close: x.close, fromAthPct: x.fromAthPct })),
+      careful: careful.map(sym), capital, riskPct,
+      funds: funds.error || !funds.categories ? [] : Object.values(funds.categories).slice(0, 1).flatMap((c) => c.funds.slice(0, 2).map((f) => ({ index: c.label, name: f.name, type: f.type, r3: f.r3 }))),
+      momentum: mom?.paper ? { monthEnd: mom.paper.monthEnd, list: mom.paper.list, preview: mom.paper.preview, rebalances: (mom.paper.rebalances || []).length, passed: !!mom.test?.passed } : null,
+    },
   };
 }

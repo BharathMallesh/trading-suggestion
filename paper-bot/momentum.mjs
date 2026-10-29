@@ -165,6 +165,9 @@ export function simulate({ idx, universe, refDates, method = 'a', r = RULES, fro
   let fyLT = 0;
   let taxPaid = 0;
   const side = (r.costPct + r.slipPct) / 100;
+  // fill price on a trading day: the open (default) or the midpoint of open and close ("realistic")
+  const fillAt = (p, i) => (r.fill === 'mid' ? (p.open[i] + p.close[i]) / 2 : p.open[i]);
+  const every = r.rebalanceEvery || 1; // months between rebalances (3 = quarterly: after Mar, Jun, Sep, Dec)
   const payTax = (date) => {
     let t = 0;
     if (fyST > 0) t += fyST * stcg(date);
@@ -180,13 +183,14 @@ export function simulate({ idx, universe, refDates, method = 'a', r = RULES, fro
     const exitSignal = ends[k + 1];
     const exitDay = firstAfter(exitSignal) || exitSignal;
     if (!entryDay || entryDay < from) continue;
+    if (every > 1 && holdings.length && Number(signal.slice(5, 7)) % every !== 0) continue; // hold until the next rebalance month
     // 1. value the current holdings at today's open (entryDay) — exits use the open, vanished stocks their last close
     if (holdings.length) {
       let v = 0;
       for (const h of holdings) {
         const p = idx.get(h.symbol);
         const i = at(p, entryDay);
-        const px = i >= 0 && p.dates[i] === entryDay ? p.open[i] : i >= 0 ? p.close[i] : h.entry;
+        const px = i >= 0 && p.dates[i] === entryDay ? fillAt(p, i) : i >= 0 ? p.close[i] : h.entry;
         h.now = px;
         v += h.w * (px / h.entry);
       }
@@ -234,7 +238,7 @@ export function simulate({ idx, universe, refDates, method = 'a', r = RULES, fro
     holdings = pick.map((x) => {
       const p = idx.get(x.symbol);
       const i = at(p, entryDay);
-      const px = p.open[i];
+      const px = fillAt(p, i);
       const old = cur.get(x.symbol);
       const w = 1 / pick.length;
       let basis = px;
@@ -324,6 +328,21 @@ export async function momentumTest({ loadCandles = candles } = {}) {
   }
   // the method chosen on 2010–17 only
   const chosen = (res.a.early ?? -1) >= (res.b.early ?? -1) ? 'a' : 'b';
+  // realistic versions of the chosen method: worse fills (midpoint of the day), 0.3% slippage a side,
+  // and fewer rebalances (quarterly) / more stocks (30, like NSE's index)
+  const since2020 = '2020-08-01';
+  const realistic = {};
+  for (const [key, label, extra] of [
+    ['monthly', 'Realistic: monthly, 20 stocks', { fill: 'mid', slipPct: 0.3 }],
+    ['quarterly', 'Realistic: quarterly, 20 stocks', { fill: 'mid', slipPct: 0.3, rebalanceEvery: 3 }],
+    ['quarterly30', 'Realistic: quarterly, 30 stocks (like NSE Momentum 30)', { fill: 'mid', slipPct: 0.3, rebalanceEvery: 3, top: 30 }],
+  ]) {
+    const rr = { ...r, ...extra };
+    const pre = simulate({ idx, universe, refDates, method: chosen, r: rr });
+    const post = simulate({ idx, universe, refDates, method: chosen, r: rr, tax: true });
+    realistic[key] = { label, cagr: pre.cagr, cagrAfterTax: post.cagr, maxDrawdown: pre.maxDrawdown, turnoverPerYear: pre.turnoverPerYear, early: cagrOf(pre.curve, r.from, r.split), late: cagrOf(pre.curve, r.split, lastBhav), since2020: cagrOf(pre.curve, since2020, lastBhav) };
+  }
+  for (const m of Object.values(res)) m.since2020 = cagrOf(m.curve.map(([date, value]) => ({ date, value })), since2020, lastBhav);
   // NIFTY total return (≈1.2%/yr dividends) over the same dates
   const n = nifty.filter((x) => x.date >= r.from && x.date <= lastBhav);
   const tr = [];
@@ -341,7 +360,7 @@ export async function momentumTest({ loadCandles = candles } = {}) {
     peak = Math.max(peak, c.value);
     dd = Math.max(dd, 1 - c.value / peak);
   }
-  const index = { cagr: tr[tr.length - 1].value ** (1 / yrs) - 1, cagrAfterTax: niftyAfter ** (1 / yrs) - 1, maxDrawdown: dd, early: cagrOf(tr, r.from, r.split), late: cagrOf(tr, r.split, lastBhav), yearly: yearly(tr.filter((c, i, a) => i === a.length - 1 || a[i + 1].date.slice(0, 7) !== c.date.slice(0, 7))) };
+  const index = { since2020: cagrOf(tr, '2020-08-01', lastBhav), cagr: tr[tr.length - 1].value ** (1 / yrs) - 1, cagrAfterTax: niftyAfter ** (1 / yrs) - 1, maxDrawdown: dd, early: cagrOf(tr, r.from, r.split), late: cagrOf(tr, r.split, lastBhav), yearly: yearly(tr.filter((c, i, a) => i === a.length - 1 || a[i + 1].date.slice(0, 7) !== c.date.slice(0, 7))) };
   // NSE's own factor indices (from the Market tilts study), for reference
   let nse = null;
   try {
@@ -353,7 +372,7 @@ export async function momentumTest({ loadCandles = candles } = {}) {
   const c = res[chosen];
   const beats = c.late != null && index.late != null && c.late > index.late && c.early > index.early;
   return {
-    at: new Date().toISOString(), from: r.from, to: lastBhav, rules: r, methods: res, chosen, index, nse,
+    at: new Date().toISOString(), from: r.from, to: lastBhav, rules: r, methods: res, chosen, index, nse, realistic,
     verdict: beats
       ? `The ${methods[chosen]} method (chosen on 2010–17) beat NIFTY in both halves: ${(c.early * 100).toFixed(1)}% / ${(c.late * 100).toFixed(1)}% a year against ${(index.early * 100).toFixed(1)}% / ${(index.late * 100).toFixed(1)}%. After tax ${(c.cagrAfterTax * 100).toFixed(1)}% vs ${(index.cagrAfterTax * 100).toFixed(1)}%. Worst fall ${(c.maxDrawdown * 100).toFixed(0)}% vs ${(index.maxDrawdown * 100).toFixed(0)}%.`
       : `The ${methods[chosen]} method (chosen on 2010–17) did not beat NIFTY in both halves: ${(c.early * 100).toFixed(1)}% / ${(c.late * 100).toFixed(1)}% a year against ${(index.early * 100).toFixed(1)}% / ${(index.late * 100).toFixed(1)}%.`,
@@ -470,6 +489,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
         for (const [k, m] of Object.entries(r.methods)) console.log(`  ${k} ${m.label.padEnd(48)} ${pc(m.cagr)}/yr (after tax ${pc(m.cagrAfterTax)}) · 2010–17 ${pc(m.early)} · 2018 → ${pc(m.late)} · worst fall ${pc(m.maxDrawdown)} · turnover ${(m.turnoverPerYear * 100).toFixed(0)}%/yr${k === r.chosen ? '  ← chosen on 2010–17' : ''}`);
         console.log(`  NIFTY (total return)                                ${pc(r.index.cagr)}/yr (after tax ${pc(r.index.cagrAfterTax)}) · 2010–17 ${pc(r.index.early)} · 2018 → ${pc(r.index.late)} · worst fall ${pc(r.index.maxDrawdown)}`);
         for (const x of r.nse || []) console.log(`  NSE ${x.label} since ${x.from}: ${pc(x.cagr)}/yr vs NIFTY ${pc(x.niftyCagr)}`);
+        console.log('  Realistic versions (chosen method):');
+        for (const x of Object.values(r.realistic)) console.log(`    ${x.label.padEnd(56)} ${pc(x.cagr)}/yr (after tax ${pc(x.cagrAfterTax)}) · 2010–17 ${pc(x.early)} · 2018 → ${pc(x.late)} · since Aug 2020 ${pc(x.since2020)} · worst fall ${pc(x.maxDrawdown)} · turnover ${(x.turnoverPerYear * 100).toFixed(0)}%/yr`);
+        console.log(`    since Aug 2020: as tested ${pc(r.methods[r.chosen].since2020)} · NIFTY ${pc(r.index.since2020)}`);
         console.log(`\n${r.verdict}`);
       })
       .catch((err) => {

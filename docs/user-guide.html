@@ -148,6 +148,7 @@ details.faq p { margin-top: 8px; color: var(--muted); }
       <li><a href="#words">Words you will see</a></li>
       <li class="label">Screens</li>
       <li><a href="#money">Home, portfolio, investing, options tabs</a></li>
+      <li class="sub"><a href="#t-myplan">My plan</a></li>
       <li class="sub"><a href="#t-day">Daily results</a></li>
       <li class="sub"><a href="#t-syscheck">System check</a></li>
       <li class="sub"><a href="#t-scan">Analyse today</a></li>
@@ -211,7 +212,7 @@ details.faq p { margin-top: 8px; color: var(--muted); }
         <li><div>Each box on the page is called a <b>card</b>. Every card has a title, a short grey explanation under it, and its own buttons. Results appear inside the card after you press a button. Some cards fill in by themselves when the page opens.</div></li>
       </ol>
       <div class="views">
-        <div class="view"><h3>Home</h3><p>Start here every day: <b>Daily results</b> (what each strategy did today), <b>Ask the app</b>, the <b>Analyse today</b> button and the <b>Today</b> alerts card.</p></div>
+        <div class="view"><h3>Home</h3><p>Start here every day: <b>My plan</b> (what the tested rules say to do now), <b>Daily results</b> (what each strategy did today), <b>Ask the app</b>, the <b>Analyse today</b> button and the <b>Today</b> alerts card.</p></div>
         <div class="view"><h3>My trades</h3><p>Plan each trade before you place it, keep a journal with your own scorecard, a daily loss limit, and price alerts.</p></div>
         <div class="view"><h3>My portfolio</h3><p>The shares you own: tax if you sold today, tax harvesting, risk, and whether your trading beat NIFTY.</p></div>
         <div class="view"><h3>Investing</h3><p>Long-term money: what SIPs have done, a goal planner, the Momentum 20 screen, the core + satellite paper account, the index-fund picker, market tilts and two slow strategies.</p></div>
@@ -304,6 +305,27 @@ details.faq p { margin-top: 8px; color: var(--muted); }
             <div><h4>Questions it understands</h4><ul><li><b>A stock:</b> “What will happen to TCS?”, “How is SBI doing?”</li><li><b>Which stocks to invest in:</b> “Which stocks to invest in?”, “What should I buy?” — a research check, not a pick: the market regime (crash brake), the index funds that kept investors the most, the stocks that met the tested strong-stock swing rules at the last close (with the stop, the risk and how many shares fit your 1% risk), strong stocks to watch, which names are unusually risky this week, and what the tests and paper records say.</li><li><b>Today’s market:</b> “How is the market today?”</li><li><b>Options:</b> “NIFTY call put this week”, “Options on Infosys”</li><li><b>Funds:</b> “Which index fund?”</li><li><b>Your results:</b> “Today’s results”, “Yesterday’s results”, “This week’s results”, “Last week’s results”, “This month’s results”, “Last month’s results”, or a date such as “Results 23 Oct”: every strategy’s paper result for that period, a day-by-day table for weeks and months, and the totals since the start.</li><li><b>The strategy:</b> “Any signal on Trent?”, “VWAP paper record”</li></ul></div>
           </div>
           <div class="example"><b>Good to know:</b> asking “what will happen” gives facts about risk (how much it usually moves, the chance of a big move, recent news), not a prediction of up or down. The app will say clearly that direction cannot be predicted.</div>
+        </article>
+
+        <article class="tool" id="t-myplan">
+          <div class="eyebrow">Tab: Home (first card)</div>
+          <header><h3>My plan</h3><span class="badge b-care">Updated every evening</span></header>
+          <p class="what">Everything you would act on, in one place, from the app’s tested tools only.</p>
+          <div class="cols">
+            <div><h4>What it shows</h4><ol>
+              <li><b>Market regime</b> (the crash brake): whether NIFTY is above or below its long-term trend.</li>
+              <li><b>Core (about 80%)</b>: a low-cost NIFTY 50 index fund, with the lowest-cost examples.</li>
+              <li><b>Satellite: Momentum 20</b>: this month’s list, the amount a stock for your capital (or for a 20% slice), and what is likely to come in and drop out at the month-end.</li>
+              <li><b>Satellite: strong-stock swing</b>: any breakout at the latest close (stop, shares at 1% risk) and your open swing positions with their trailing stops — red when within 2% of the stop.</li>
+              <li><b>Skip</b>: the strategies that lose, with their paper records.</li>
+              <li><b>Next dates</b>: the month-end, the next Momentum 20 swap, the next swing check.</li>
+            </ol></div>
+            <div><h4>Good to know</h4><ul>
+              <li>Press <span class="btn">Refresh</span> for a fresh check (about 10 seconds); otherwise it updates by itself.</li>
+              <li>It uses your capital from My trades → settings.</li>
+              <li>It shows rule outputs and facts, not advice; nothing here says a stock will go up.</li>
+            </ul></div>
+          </div>
         </article>
 
         <article class="tool" id="t-day">
@@ -461,7 +483,7 @@ details.faq p { margin-top: 8px; color: var(--muted); }
               <li><b>Paper portfolio</b>: ₹1 lakh in equal amounts, rebalanced after each month-end from November 2026.</li>
             </ul></div>
           </div>
-          <div class="example"><b>Good to know:</b> the test is optimistic (every trade filled at the open, no market impact): NSE’s real NIFTY 200 Momentum 30 index made about 16.5% a year since 2020. A momentum <b>index fund</b> does a similar job with far less effort and tax. The stocks on the list have already risen a lot and swing hard; this is a screen with a tested record, not a prediction. “Which stocks to invest in?” in Ask the app also shows this list. The evening Mac notification mentions it only on the two days that matter: on the <b>last trading day of the month</b> (the new list is made from that close; a preview of what will come in and drop out) and on the <b>first trading day of the new month</b> (the new list, with what came in and went out).</div>
+          <div class="example"><b>Good to know:</b> the test is optimistic (every trade filled at the open, no market impact). A realistic re-test (worse fills, 3× the slippage) still gave about 13–15% a year after tax — quarterly swaps halve the trading with a similar result. NSE’s real NIFTY 200 Momentum 30 index made about 16.5% a year since 2020. A momentum <b>index fund</b> does a similar job with far less effort and tax. The stocks on the list have already risen a lot and swing hard; this is a screen with a tested record, not a prediction. “Which stocks to invest in?” in Ask the app also shows this list. The evening Mac notification mentions it only on the two days that matter: on the <b>last trading day of the month</b> (the new list is made from that close; a preview of what will come in and drop out) and on the <b>first trading day of the new month</b> (the new list, with what came in and went out).</div>
         </article>
 
         <article class="tool" id="t-coresat">
