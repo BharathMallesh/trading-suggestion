@@ -20,11 +20,12 @@ import { loadRsiSwingPaper } from './rsi-swing.mjs';
 import { monthLines } from './this-month.mjs';
 import { loadMomentum10Paper } from './momentum10.mjs';
 import { loadSteadyMixPaper } from './steady-mix.mjs';
+import { loadImbalancePaper } from './imbalance-swing.mjs';
 
 const rs = (v) => `${v < 0 ? '−' : '+'}₹${Math.abs(Math.round(v)).toLocaleString('en-IN')}`;
 
 /** Lines for one date: [{ title, short, detail }] per strategy. `scan` = today's swing scan (or null). */
-export function eveningLines(date, { vwap = loadPaper(), breakfast = loadBreakfastPaper(), swing = loadAthPaper(), scan = null, swingVersion = 'original', dip = loadNiftyDipPaper(), fo = loadFoStranglePaper(), mom = loadMomentumPaper(), rsi = loadRsiSwingPaper(), m10 = loadMomentum10Paper(), steady = loadSteadyMixPaper() } = {}) {
+export function eveningLines(date, { vwap = loadPaper(), breakfast = loadBreakfastPaper(), swing = loadAthPaper(), scan = null, swingVersion = 'original', dip = loadNiftyDipPaper(), fo = loadFoStranglePaper(), mom = loadMomentumPaper(), rsi = loadRsiSwingPaper(), m10 = loadMomentum10Paper(), steady = loadSteadyMixPaper(), imb = loadImbalancePaper() } = {}) {
   const out = [];
   const v = (vwap?.trades || []).filter((t) => t.date === date && (t.variant || 'video') === 'video');
   out.push({ title: 'YouTube intraday', short: v.length ? `YouTube ${rs(v.reduce((a, t) => a + t.net, 0))}` : 'YouTube: no trade', detail: closeSummary(vwap, date).join(' · ') });
@@ -56,6 +57,13 @@ export function eveningLines(date, { vwap = loadPaper(), breakfast = loadBreakfa
   if (m) out.push(m);
   // Momentum 10 and the Steady mix: month-end, change day, and a market-filter cross
   out.push(...monthLines(date, { m10, steady }));
+  // Imbalance swing (paper): today's signals, buys and exits
+  if (imb) {
+    const sig = imb.scan?.date === date ? imb.scan.triggered : [];
+    const b = (imb.trades || []).filter((t) => t.entryDate === date);
+    const s = (imb.trades || []).filter((t) => !t.open && t.exitDate === date);
+    if (sig.length || b.length || s.length) out.push({ title: 'Imbalance swing', short: `Imbalance swing: ${sig.length} signal${sig.length === 1 ? '' : 's'}, ${b.length} bought, ${s.length} sold`, detail: [...sig.map((x) => `signal ${x.symbol} (stop ₹${x.stop.toFixed(1)}, buy at the next open)`), ...b.map((t) => `bought ${t.symbol} at ₹${t.entry.toFixed(1)}`), ...s.map((t) => `sold ${t.symbol} ${t.r >= 0 ? '+' : ''}${t.r.toFixed(2)} R (${t.reason})`)].join(' · ') });
+  }
   // RSI swing (paper): buys and sells today, or entry signals at the latest hour
   if (rsi?.trades) {
     const b = rsi.trades.filter((t) => t.entryDate === date);

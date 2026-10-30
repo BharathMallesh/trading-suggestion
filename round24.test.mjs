@@ -20,6 +20,7 @@ process.env.RSI_SWING_PAPER_PATH = join(TMP, 'rsi-swing-paper.json');
 process.env.MOMENTUM10_PAPER_PATH = join(TMP, 'm10-paper.json');
 process.env.STEADY_MIX_PAPER_PATH = join(TMP, 'steady-mix-paper.json');
 process.env.INDIA_MIX_PAPER_PATH = join(TMP, 'india-mix-paper.json');
+process.env.IMBALANCE_SWING_PAPER_PATH = join(TMP, 'imbalance-paper.json');
 process.env.NIFTY_DIP_PATH = join(TMP, 'nifty-dip.json');
 after(() => rmSync(TMP, { recursive: true, force: true }));
 

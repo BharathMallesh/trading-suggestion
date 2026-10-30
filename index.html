@@ -43,6 +43,7 @@
         <button type="button" data-sub="fo" title="F&amp;O: sell a weekly NIFTY call and put 2% away, held to expiry (paper only)">F&amp;O strangle</button>
         <button type="button" data-sub="fno" title="F&amp;O spreads from the strategy specification document: momentum debit spreads and IV-rank credit spreads">F&amp;O spreads</button>
         <button type="button" data-sub="rsi" title="RSI + price action swing (daily RSI below 30, hourly RSI below 25, hourly candle entry), 2–6 day holds">RSI swing</button>
+        <button type="button" data-sub="imb" title="Big move on heavy volume, quiet base, breakout; 1% risk, breakeven at +1R, trailing stop">Imbalance swing</button>
       </div>
     </nav>
     <div class="note" id="viewNote"></div>
@@ -767,6 +768,14 @@
       </section>
 
       <!-- RSI + price-action swing (Rathod interview) -->
+      <section class="card span2" id="imbCard">
+        <h2>Imbalance swing (move → base → breakout) <span style="font-size:12px;color:var(--warn);font-weight:500">30% MOVE ON 3× VOLUME · QUIET BASE · BREAKOUT · 1% RISK · TESTED · PAPER</span></h2>
+        <p class="hint">The three-step setup from a fund-managing trader's interview: a <b>sharp move (30%+ in up to 20 days) on heavy volume</b>, then a <b>quiet base</b> that gives back no more than half of it on lighter volume,
+          then a <b>breakout above the base on rising volume</b> (bought at the next open). Stop at the base low with <b>1% of capital at risk</b>; the stop moves to breakeven at +1R and trails from +2R ("trade to lose").
+          Rules fixed before the test and tested once on 16 years of NSE data. Paper only — not investment advice.</p>
+        <div id="imbOut" style="margin-top:10px">Loading…</div>
+      </section>
+
       <section class="card span2" id="rsiCard">
         <h2>RSI swing (oversold bounce) <span style="font-size:12px;color:var(--warn);font-weight:500">DAILY RSI &lt; 30 + HOURLY RSI &lt; 25 · HOURLY CANDLE ENTRY · 2–6 DAYS · PAPER ONLY</span></h2>
         <p class="hint">The logic from a trader interview: when a stock's <b>daily RSI is below 30</b> and its <b>hourly RSI below 25</b>, wait for an <b>hourly green candle that closes above the high of the last red candle</b> and buy at the next hour's open,
@@ -978,6 +987,7 @@
     <script src="/static/js/24-this-month.js"></script>
     <script src="/static/js/25-india-mix.js"></script>
     <script src="/static/js/26-option-strikes.js"></script>
+    <script src="/static/js/27-imbalance-swing.js"></script>
     <script src="/static/js/19-my-plan.js"></script>
     <script src="/static/js/20-rsi-swing.js"></script>
   </body>

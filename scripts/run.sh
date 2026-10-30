@@ -45,6 +45,8 @@ do_collect() {
   node paper-bot/steady-mix.mjs --paper
   # India mix: ⅓ Nifty Next 50 / ⅓ gold / ⅓ Momentum 10 paper portfolio (uses the Momentum 10 list above)
   node paper-bot/india-mix.mjs --paper
+  # Imbalance swing: paper record + scan from the NSE daily files added above
+  node --max-old-space-size=12000 paper-bot/imbalance-swing.mjs --paper
   # one evening notification for all strategies + this week's scorecard refreshed
   node paper-bot/evening.mjs --notify
 }
@@ -93,6 +95,8 @@ do_refit() {
   node --max-old-space-size=12000 paper-bot/india-mix.mjs >/dev/null
   # Option strike guide: ITM / ATM / OTM weekly buys on the cached NSE option files
   node paper-bot/option-strikes.mjs >/dev/null
+  # Imbalance swing: re-run the 16-year backtest
+  node --max-old-space-size=12000 paper-bot/imbalance-swing.mjs >/dev/null
   # Day patterns: every strategy by weekday / opening gap, and the Monday tests (~2 minutes)
   node --max-old-space-size=12000 paper-bot/day-patterns.mjs >/dev/null
 }
