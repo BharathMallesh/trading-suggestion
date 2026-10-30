@@ -202,6 +202,8 @@ export async function steadyMixPaperUpdate({ loadCandles = candles, now = new Da
     st.marks = marks;
   }
   st.filter = { monthEnd: completed, inMarket: completed ? filterAt(nifty, completed) : null, today: filterAt(nifty, nifty.at(-1).date) };
+  // the latest reading per day (for the "NIFTY crossed its 200-day average" alert)
+  st.filterHistory = [...(st.filterHistory || []).filter((x) => x.date !== nifty.at(-1).date), { date: nifty.at(-1).date, today: st.filter.today }].slice(-60);
   st.updatedAt = now.toISOString();
   writeJsonAtomic(PAPER(), st);
   return st;

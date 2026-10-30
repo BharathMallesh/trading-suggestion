@@ -43,6 +43,8 @@ do_collect() {
   node --max-old-space-size=12000 paper-bot/momentum10.mjs --paper
   # Steady mix: 30% Momentum 10 (with the NIFTY filter) / 10% gold / 60% liquid paper portfolio (uses the list above)
   node paper-bot/steady-mix.mjs --paper
+  # India mix: ⅓ Nifty Next 50 / ⅓ gold / ⅓ Momentum 10 paper portfolio (uses the Momentum 10 list above)
+  node paper-bot/india-mix.mjs --paper
   # one evening notification for all strategies + this week's scorecard refreshed
   node paper-bot/evening.mjs --notify
 }
@@ -87,6 +89,10 @@ do_refit() {
   node --max-old-space-size=12000 paper-bot/momentum10.mjs >/dev/null
   # Steady mix: re-run its backtest
   node --max-old-space-size=12000 paper-bot/steady-mix.mjs >/dev/null
+  # India mix: re-run its backtest
+  node --max-old-space-size=12000 paper-bot/india-mix.mjs >/dev/null
+  # Option strike guide: ITM / ATM / OTM weekly buys on the cached NSE option files
+  node paper-bot/option-strikes.mjs >/dev/null
   # Day patterns: every strategy by weekday / opening gap, and the Monday tests (~2 minutes)
   node --max-old-space-size=12000 paper-bot/day-patterns.mjs >/dev/null
 }

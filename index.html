@@ -48,6 +48,16 @@
     <div class="note" id="viewNote"></div>
 
     <main>
+      <!-- Do this month: the monthly action list for the tested investing rules, in rupees -->
+      <section class="card span2" id="monthCard">
+        <h2>Do this month <span style="font-size:12px;color:var(--warn);font-weight:500">STEADY MIX · MOMENTUM 10 · MOMENTUM 20 · ONE CHECK A MONTH · PAPER</span></h2>
+        <p class="hint">What the three tested investing rules hold now and what changes at the month-end, scaled to the amount you type. One check a month is enough: the
+          evening Mac alert tells you on the month-end, on the change day, and when NIFTY crosses its 200-day average. Facts from the paper records — you decide whether to follow.</p>
+        <div class="row" style="gap:8px;align-items:flex-end"><div style="flex:0 0 180px"><label>Amount (₹)</label><input id="monthAmt" type="number" min="10000" step="10000" value="100000" /></div>
+          <div style="flex:0 0 auto"><button id="monthBtn" type="button" style="margin-top:0">Show</button></div></div>
+        <div id="monthOut" style="margin-top:10px">Loading…</div>
+      </section>
+
       <!-- My plan: what the tested rules say to do now, in one place -->
       <section class="card span2" id="planNowCard">
         <h2>My plan <span style="font-size:12px;color:var(--warn);font-weight:500">WHAT THE TESTED RULES SAY NOW · UPDATED EVERY EVENING · PAPER</span></h2>
@@ -295,6 +305,14 @@
         <div id="momOut" style="margin-top:10px">Loading…</div>
       </section>
 
+      <!-- India mix: Indian investments only, three equal parts -->
+      <section class="card span2" id="indiaCard">
+        <h2>India mix <span style="font-size:12px;color:var(--warn);font-weight:500">⅓ NIFTY NEXT 50 · ⅓ GOLD · ⅓ MOMENTUM 10 · INDIAN ONLY · TESTED · PAPER FROM NOV 2026</span></h2>
+        <p class="hint">The best balance of return and falls among 62 tested mixes of Indian investments: a Nifty Next 50 index fund, a gold ETF and the Momentum 10 stocks in equal parts,
+          put back to ⅓ each every month. Gold tends to rise when Indian stocks fall, so the monthly re-balance trims what rose and adds to what fell. Not investment advice.</p>
+        <div id="indiaOut" style="margin-top:10px">Loading…</div>
+      </section>
+
       <!-- Steady mix: the steadiest tested mix of stocks, gold and a liquid fund -->
       <section class="card span2" id="steadyCard">
         <h2>Steady mix <span style="font-size:12px;color:var(--warn);font-weight:500">30% MOMENTUM 10 WITH FILTER · 10% GOLD · 60% LIQUID · TESTED · PAPER FROM NOV 2026</span></h2>
@@ -392,6 +410,15 @@
         <div class="out" id="descOut"></div>
         <div class="out" id="probOut"></div>
         <div class="out" id="newsOut"></div>
+      </section>
+
+      <!-- Option strike guide: ITM vs ATM vs OTM on real NSE weekly prices (rebuild of a YouTube backtest) -->
+      <section class="card span2" id="strikeCard">
+        <h2>Option strike guide <span style="font-size:12px;color:var(--warn);font-weight:500">ITM vs ATM vs OTM · REAL NSE WEEKLY PRICES · TESTED · NOT A STRATEGY</span></h2>
+        <p class="hint">Which strike to buy if you already have a view: ITM (≈ delta 0.70), ATM (0.50) or OTM (0.30) NIFTY options bought at the start of each weekly cycle and held to expiry.
+          A YouTube backtest showed these numbers assuming the direction was always right; this card rebuilds them on real prices and also shows what happens when the direction is not known in advance.</p>
+        <div class="row" style="gap:8px;align-items:flex-end"><div style="flex:0 0 260px"><label>How far do you expect NIFTY to move your way by expiry?</label><select id="strikeMove"></select></div></div>
+        <div id="strikeOut" style="margin-top:10px">Loading…</div>
       </section>
 
       <!-- Option calculator panel -->
@@ -948,6 +975,9 @@
     <script src="/static/js/21-new-ideas.js"></script>
     <script src="/static/js/22-momentum-ten.js"></script>
     <script src="/static/js/23-steady-mix.js"></script>
+    <script src="/static/js/24-this-month.js"></script>
+    <script src="/static/js/25-india-mix.js"></script>
+    <script src="/static/js/26-option-strikes.js"></script>
     <script src="/static/js/19-my-plan.js"></script>
     <script src="/static/js/20-rsi-swing.js"></script>
   </body>

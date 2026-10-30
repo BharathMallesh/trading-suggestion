@@ -67,6 +67,9 @@ import { loadMomentum, loadMomentumPaper } from './paper-bot/momentum.mjs';
 import { loadNewIdeas } from './paper-bot/new-ideas.mjs';
 import { loadMomentum10, loadMomentum10Paper } from './paper-bot/momentum10.mjs';
 import { loadSteadyMix, loadSteadyMixPaper } from './paper-bot/steady-mix.mjs';
+import { thisMonth } from './paper-bot/this-month.mjs';
+import { loadIndiaMix, loadIndiaMixPaper } from './paper-bot/india-mix.mjs';
+import { loadOptionStrikes } from './paper-bot/option-strikes.mjs';
 import { whatWorksToday } from './paper-bot/day-today.mjs';
 import { loadCoreSatellite, coreSatellite, saveCoreSatellite } from './paper-bot/core-satellite.mjs';
 import { loadFoStrangle, loadFoStranglePaper, foStrangleTest, saveFoStrangle, summarise as foSummarise } from './paper-bot/fo-strangle.mjs';
@@ -697,6 +700,13 @@ const server = http.createServer(async (req, res) => {
       const b = loadMomentum();
       return json(res, 200, { backtest: b ? { ...b, methods: Object.fromEntries(Object.entries(b.methods).map(([k, m]) => [k, { ...m, curve: undefined }])) } : null, paper: loadMomentumPaper() });
     }
+    if (req.method === 'GET' && url.pathname === '/api/this-month') {
+      // Home → Do this month: the monthly action list, scaled to ?amount= (₹10,000 – ₹10 crore)
+      const amount = Math.min(1e9, Math.max(10000, Number(url.searchParams.get('amount')) || 100000));
+      return json(res, 200, thisMonth({ amount }));
+    }
+    if (req.method === 'GET' && url.pathname === '/api/option-strikes') return json(res, 200, loadOptionStrikes() || {});
+    if (req.method === 'GET' && url.pathname === '/api/india-mix') return json(res, 200, { backtest: loadIndiaMix(), paper: loadIndiaMixPaper() });
     if (req.method === 'GET' && url.pathname === '/api/steady-mix') return json(res, 200, { backtest: loadSteadyMix(), paper: loadSteadyMixPaper() });
     if (req.method === 'GET' && url.pathname === '/api/momentum10') return json(res, 200, { backtest: loadMomentum10(), paper: loadMomentum10Paper() });
     if (req.method === 'GET' && url.pathname === '/api/new-ideas') return json(res, 200, loadNewIdeas() || {});
