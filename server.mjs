@@ -62,6 +62,7 @@ import { dayResults } from './paper-bot/day-results.mjs';
 import { loadFnoSpreads, fnoSpreadsTest, saveFnoSpreads } from './paper-bot/fno-spreads.mjs';
 import { loadDayPatterns } from './paper-bot/day-patterns.mjs';
 import { myPlan } from './paper-bot/my-plan.mjs';
+import { loadRsiSwing, loadRsiSwingPaper, summarise as rsiSummarise } from './paper-bot/rsi-swing.mjs';
 import { loadMomentum, loadMomentumPaper } from './paper-bot/momentum.mjs';
 import { whatWorksToday } from './paper-bot/day-today.mjs';
 import { loadCoreSatellite, coreSatellite, saveCoreSatellite } from './paper-bot/core-satellite.mjs';
@@ -678,6 +679,10 @@ const server = http.createServer(async (req, res) => {
       const r = await fnoSpreadsTest({});
       saveFnoSpreads(r);
       return json(res, 200, { backtest: r });
+    }
+    if (req.method === 'GET' && url.pathname === '/api/rsi-swing') {
+      const p = loadRsiSwingPaper();
+      return json(res, 200, { backtest: loadRsiSwing(), paper: p ? { startedAt: p.startedAt, updatedAt: p.updatedAt, version: p.version, summary: rsiSummarise(p.trades), trades: p.trades.slice(-20).reverse(), scan: p.scan } : null });
     }
     if (req.method === 'GET' && url.pathname === '/api/my-plan') {
       // Home → My plan: what the tested rules say to do now (cached 10 minutes)

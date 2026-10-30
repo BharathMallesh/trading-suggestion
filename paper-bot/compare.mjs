@@ -8,6 +8,7 @@ import { loadAthSwing, loadAthPaper, loadSurvivorship, summarise as athSum } fro
 import { loadBreakfast, loadBreakfastPaper, summarise as bfSum } from './breakfast.mjs';
 import { earlyVerdict } from './weekly.mjs';
 import { loadFnoSpreads } from './fno-spreads.mjs';
+import { loadRsiSwing, loadRsiSwingPaper, summarise as rsiSum } from './rsi-swing.mjs';
 import { loadFoStrangle, loadFoStranglePaper, summarise as foSum } from './fo-strangle.mjs';
 import { loadNiftyDip, loadNiftyDipPaper, summarise as dipSum, ofVersion } from './nifty-dip.mjs';
 
@@ -15,7 +16,7 @@ const pct = (x, d = 1) => (x == null ? '–' : `${(x * 100).toFixed(d)}%`);
 const rs = (v) => (v == null ? '–' : `${v < 0 ? '−' : '+'}₹${Math.abs(Math.round(v)).toLocaleString('en-IN')}`);
 const R = (x) => (x == null ? '–' : `${x >= 0 ? '+' : ''}${x.toFixed(2)} R`);
 
-export function compareStrategies({ vwap = loadVwapPullback(), vp = vwapPaper(), ath = loadAthSwing(), ap = loadAthPaper(), bf = loadBreakfast(), bp = loadBreakfastPaper(), sv = loadSurvivorship(), dip = loadNiftyDip(), dp = loadNiftyDipPaper(), fo = loadFoStrangle(), fp = loadFoStranglePaper(), fs = loadFnoSpreads() } = {}) {
+export function compareStrategies({ vwap = loadVwapPullback(), vp = vwapPaper(), ath = loadAthSwing(), ap = loadAthPaper(), bf = loadBreakfast(), bp = loadBreakfastPaper(), sv = loadSurvivorship(), dip = loadNiftyDip(), dp = loadNiftyDipPaper(), fo = loadFoStrangle(), fp = loadFoStranglePaper(), fs = loadFnoSpreads(), rsiTest = loadRsiSwing(), rsiPaper = loadRsiSwingPaper() } = {}) {
   const rows = [];
   // strong-stock swing
   {
@@ -117,6 +118,21 @@ export function compareStrategies({ vwap = loadVwapPullback(), vp = vwapPaper(),
       paperVerdict: 'Research result only.',
       reliable: false,
       verdict: 'momentum-debit loses in every check. ivrank-credit looks good only inside the model: real NSE option prices pay less premium when volatility is high, and with real prices it lost. Kept as research only.',
+    });
+  }
+  // RSI swing (oversold bounce, Rathod interview)
+  if (rsiTest?.results) {
+    const c = rsiTest.results[`long-${rsiTest.chosen}`];
+    const ps = rsiSum(rsiPaper?.trades || []);
+    rows.push({
+      key: 'rsi', name: 'RSI swing (oversold bounce)', style: 'Daily + hourly RSI, hourly candle entry · 2–6 days · delivery',
+      test: `${rsiTest.from?.slice(0, 7)} → ${rsiTest.to?.slice(0, 7)}, ${rsiTest.stocks} stocks, ${c.all.trades} trades`,
+      backtest: `${c.all.avgRetPct >= 0 ? '+' : ''}${c.all.avgRetPct.toFixed(2)}% a trade after charges (t ${c.all.tStat?.toFixed(1)}); second year ${c.second.avgRetPct >= 0 ? '+' : ''}${c.second.avgRetPct.toFixed(2)}% (t ${c.second.tStat?.toFixed(1)})`,
+      money: c.portfolio?.cagr != null ? `₹1 lakh at 1% risk: ${pct(c.portfolio.cagr)} a year` : '–',
+      paper: ps.trades ? `${ps.trades} closed · ${pct(ps.winRate, 0)} won · ${ps.avgRetPct.toFixed(2)}% a trade` : `no closed trades yet (since ${rsiPaper?.startedAt || '–'})`,
+      paperVerdict: earlyVerdict(ps.trades, ps.avgRetPct, ps.tStat, '%'),
+      reliable: !!rsiTest.passed,
+      verdict: rsiTest.passed ? 'Passed its test.' : 'Lost after charges on the second year; about break-even before charges. Paper only.',
     });
   }
   return {

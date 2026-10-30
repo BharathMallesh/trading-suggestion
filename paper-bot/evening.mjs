@@ -16,11 +16,12 @@ import { isTradingDay } from './market-calendar.mjs';
 import { loadNiftyDipPaper, ofVersion } from './nifty-dip.mjs';
 import { loadFoStranglePaper } from './fo-strangle.mjs';
 import { loadMomentumPaper } from './momentum.mjs';
+import { loadRsiSwingPaper } from './rsi-swing.mjs';
 
 const rs = (v) => `${v < 0 ? '−' : '+'}₹${Math.abs(Math.round(v)).toLocaleString('en-IN')}`;
 
 /** Lines for one date: [{ title, short, detail }] per strategy. `scan` = today's swing scan (or null). */
-export function eveningLines(date, { vwap = loadPaper(), breakfast = loadBreakfastPaper(), swing = loadAthPaper(), scan = null, swingVersion = 'original', dip = loadNiftyDipPaper(), fo = loadFoStranglePaper(), mom = loadMomentumPaper() } = {}) {
+export function eveningLines(date, { vwap = loadPaper(), breakfast = loadBreakfastPaper(), swing = loadAthPaper(), scan = null, swingVersion = 'original', dip = loadNiftyDipPaper(), fo = loadFoStranglePaper(), mom = loadMomentumPaper(), rsi = loadRsiSwingPaper() } = {}) {
   const out = [];
   const v = (vwap?.trades || []).filter((t) => t.date === date && (t.variant || 'video') === 'video');
   out.push({ title: 'YouTube intraday', short: v.length ? `YouTube ${rs(v.reduce((a, t) => a + t.net, 0))}` : 'YouTube: no trade', detail: closeSummary(vwap, date).join(' · ') });
@@ -50,6 +51,15 @@ export function eveningLines(date, { vwap = loadPaper(), breakfast = loadBreakfa
   if (fo) out.push({ title: 'NIFTY short strangle', short: foDone.length ? `Strangle: week ${rs(foDone.reduce((a, t) => a + t.rupees, 0))}` : foOpen ? 'Strangle: holding' : 'Strangle: no position', detail: foDone.length ? foDone.map((t) => `settled ${t.putStrike}/${t.callStrike}: ${rs(t.rupees)} a lot${t.breached ? ` (${t.breached} side breached)` : ''}`).join(' · ') : fo.status?.message || 'no position' });
   const m = momentumLine(date, mom);
   if (m) out.push(m);
+  // RSI swing (paper): buys and sells today, or entry signals at the latest hour
+  if (rsi?.trades) {
+    const b = rsi.trades.filter((t) => t.entryDate === date);
+    const s = rsi.trades.filter((t) => !t.open && t.exitDate === date);
+    const sig = rsi.scan?.triggered || [];
+    if (b.length || s.length || sig.length) {
+      out.push({ title: 'RSI swing', short: `RSI swing: ${b.length} bought, ${s.length} sold`, detail: [...b.map((t) => `bought ${t.symbol.replace('.NS', '')} at ₹${t.entry.toFixed(1)} (stop ₹${t.stop.toFixed(1)})`), ...s.map((t) => `sold ${t.symbol.replace('.NS', '')} ${t.reason} ${(t.retPct * 100).toFixed(2)}%`), ...sig.map((x) => `signal ${x.symbol.replace('.NS', '')}`)].join(' · ') + ' (paper; the strategy failed its test)' });
+    }
+  }
   return out;
 }
 

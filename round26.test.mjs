@@ -14,6 +14,8 @@ process.env.NIFTY_DIP_PAPER_PATH = join(TMP, 'nifty-dip-paper.json');
 process.env.FO_STRANGLE_PATH = join(TMP, 'fo-strangle.json');
 process.env.FO_STRANGLE_PAPER_PATH = join(TMP, 'fo-strangle-paper.json');
 process.env.FNO_SPREADS_PATH = join(TMP, 'fno-spreads.json');
+process.env.RSI_SWING_PATH = join(TMP, 'rsi-swing.json');
+process.env.RSI_SWING_PAPER_PATH = join(TMP, 'rsi-swing-paper.json');
 after(() => rmSync(TMP, { recursive: true, force: true }));
 
 const { dayResults } = await import('./paper-bot/day-results.mjs');

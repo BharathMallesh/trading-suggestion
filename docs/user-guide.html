@@ -171,6 +171,7 @@ details.faq p { margin-top: 8px; color: var(--muted); }
       <li class="sub"><a href="#t-dip">NIFTY dip-buy</a></li>
       <li class="sub"><a href="#t-fo">NIFTY short strangle (F&amp;O)</a></li>
       <li class="sub"><a href="#t-fno">F&amp;O spreads (specification)</a></li>
+      <li class="sub"><a href="#t-rsi">RSI swing (oversold bounce)</a></li>
       <li class="sub"><a href="#t-vwap">YouTube strategy: where it is</a></li>
       <li class="sub"><a href="#t-vwap-how">YouTube strategy: how it works</a></li>
       <li class="sub"><a href="#t-labothers">All other lab cards</a></li>
@@ -217,7 +218,7 @@ details.faq p { margin-top: 8px; color: var(--muted); }
         <div class="view"><h3>My portfolio</h3><p>The shares you own: tax if you sold today, tax harvesting, risk, and whether your trading beat NIFTY.</p></div>
         <div class="view"><h3>Investing</h3><p>Long-term money: what SIPs have done, a goal planner, the Momentum 20 screen, the core + satellite paper account, the index-fund picker, market tilts and two slow strategies.</p></div>
         <div class="view"><h3>Options &amp; risk</h3><p>Call / Put payoff odds, the Call / Put prediction, big-move odds, volatility, an option calculator and option selling.</p></div>
-        <div class="view"><h3>Trading strategies</h3><p>Six rule-based strategies, each on its own sub-tab with live signals, a backtest and a paper record: Strong-stock swing, YouTube intraday (VWAP), Breakfast, NIFTY dip-buy, the F&amp;O strangle and the F&amp;O spreads research card.</p></div>
+        <div class="view"><h3>Trading strategies</h3><p>Seven rule-based strategies, each on its own sub-tab with live signals, a backtest and a paper record: Strong-stock swing, YouTube intraday (VWAP), Breakfast, NIFTY dip-buy, the F&amp;O strangle, the F&amp;O spreads research card and the RSI swing.</p></div>
         <div class="view"><h3>Day patterns</h3><p>Which strategy did better or worse on which weekday, after a gap-up, gap-down or flat open, and the Monday tests. Each result shows how many trades it rests on and how likely it is to be chance; only the strong-stock swing pattern (Thursday buys best, Monday buys worst) held in both halves of the history. Re-run every Saturday. The <b>What works today?</b> button (pick one logic or all) ranks the logics for today’s weekday and, after 9:20, today’s NIFTY opening (gap up, gap down or flat), lists the stocks each logic did best and worst with on this weekday, and shows how each logic did on paper over the last five trading days. It describes the past; it does not predict today.</p></div>
         <div class="view"><h3>Research lab</h3><p>Every other experiment, mostly ones that found no edge, plus market data and settings.</p></div>
       </div>
@@ -583,7 +584,7 @@ details.faq p { margin-top: 8px; color: var(--muted); }
     <!-- LAB -->
     <section class="part" id="lab">
       <h2>Trading strategies and Research lab tabs</h2>
-      <div class="prose"><p>The <b>Trading strategies</b> tab holds six strategies. A row of sub-tabs under the main tabs (<span class="btn">Compare all</span> <span class="btn">Strong-stock swing</span> <span class="btn">YouTube intraday (VWAP)</span> <span class="btn">Breakfast strategy</span> <span class="btn">NIFTY dip-buy</span> <span class="btn">F&amp;O strangle</span> <span class="btn">F&amp;O spreads</span>) shows one at a time; the app remembers your choice. <b>Compare all</b> puts them side by side: style, backtest after costs, money, paper record and a plain verdict. The <b>Research lab</b> tab holds every other experiment. Most found that the idea does <b>not</b> work after costs, and the app says so; cards with a grey “Tested: no reliable edge” note are listed last.</p></div>
+      <div class="prose"><p>The <b>Trading strategies</b> tab holds seven strategies. A row of sub-tabs under the main tabs (<span class="btn">Compare all</span> <span class="btn">Strong-stock swing</span> <span class="btn">YouTube intraday (VWAP)</span> <span class="btn">Breakfast strategy</span> <span class="btn">NIFTY dip-buy</span> <span class="btn">F&amp;O strangle</span> <span class="btn">F&amp;O spreads</span> <span class="btn">RSI swing</span>) shows one at a time; the app remembers your choice. <b>Compare all</b> puts them side by side: style, backtest after costs, money, paper record and a plain verdict. The <b>Research lab</b> tab holds every other experiment. Most found that the idea does <b>not</b> work after costs, and the app says so; cards with a grey “Tested: no reliable edge” note are listed last.</p></div>
       <div class="cards">
         <article class="tool" id="t-ath">
           <div class="eyebrow">Tab: Trading strategies</div>
@@ -704,6 +705,27 @@ details.faq p { margin-top: 8px; color: var(--muted); }
             </ul></div>
           </div>
           <div class="example"><b>Good to know:</b> this card is a research result only. It is not tracked on paper, because a record priced by the same model could only repeat what the model already says. Neither logic is a trading edge.</div>
+        </article>
+
+        <article class="tool" id="t-rsi">
+          <div class="eyebrow">Tab: Trading strategies → RSI swing</div>
+          <header><h3>RSI swing (oversold bounce)</h3><span class="badge b-exp">Experiment: paper only</span></header>
+          <p class="what">The RSI + price-action logic from a trader interview: buy a stock that is very oversold on both the daily and the hourly chart once an hourly candle shows buyers taking control, and hold for 2–6 days.</p>
+          <div class="cols">
+            <div><h4>The rules</h4><ol>
+              <li>Setup: <b>daily RSI below 30</b> (with today’s live price) and <b>hourly RSI below 25</b> (below 15 = “strong”).</li>
+              <li>Entry: within the next two days, an <b>hourly green candle closes above the high of the last red candle</b> → buy at the next hour’s open.</li>
+              <li>Stop: <b>that day’s low</b>, acting on a candle close below it.</li>
+              <li>Exit: a red candle closes below the previous green candle’s low (tested on hourly and on daily candles), or a +3.5% target; out within 6 days.</li>
+            </ol></div>
+            <div><h4>What the test found</h4><ul>
+              <li>200 NIFTY 200 stocks, two years of hourly candles, after delivery charges (0.25% + 0.1% slippage a side).</li>
+              <li>All three exit versions and all short versions lost money. The version chosen on the first year (daily exit) made +0.40% a trade there, then <b>lost −0.55% a trade on the second year</b> (t −5.2).</li>
+              <li>Before charges it was roughly break-even; the ~0.7% cost of each 2–3 day trade turns it into a loss.</li>
+              <li>The card also shows today’s oversold stocks and any entry signal, and keeps a paper record.</li>
+            </ul></div>
+          </div>
+          <div class="example"><b>Good to know:</b> the interview gave no measured win rate and its examples were picked by hand. His filter “skip falls caused by bad news, fraud or poor results” cannot be tested from prices.</div>
         </article>
 
         <article class="tool" id="t-vwap">

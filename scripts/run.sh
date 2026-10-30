@@ -36,6 +36,7 @@ do_collect() {
   node paper-bot/nifty-dip.mjs --paper
   node paper-bot/fo-strangle.mjs --paper   # F&O: NSE files arrive in the evening, so this records up to yesterday
   node paper-bot/core-satellite.mjs --update   # the 80/20 index fund + swing paper account
+  node --max-old-space-size=8000 paper-bot/rsi-swing.mjs --paper   # RSI swing (Rathod): live scan + paper record
   # Momentum 20: add the day's NSE file, then this month's list + the paper portfolio
   node paper-bot/bhav-history.mjs >/dev/null && node --max-old-space-size=12000 paper-bot/momentum.mjs --paper
   # one evening notification for all strategies + this week's scorecard refreshed
@@ -72,6 +73,8 @@ do_refit() {
   node paper-bot/fo-strangle.mjs >/dev/null
   # F&O spreads (specification document): backtests + the real-NSE-price check
   node paper-bot/fno-spreads.mjs >/dev/null
+  # RSI swing (Rathod): re-run on the last two years of hourly candles
+  node --max-old-space-size=8000 paper-bot/rsi-swing.mjs >/dev/null
   # Momentum 20: re-run the survivorship-free backtest (also refreshes NSE's ETF list)
   node --max-old-space-size=12000 paper-bot/momentum.mjs >/dev/null
   # Day patterns: every strategy by weekday / opening gap, and the Monday tests (~2 minutes)

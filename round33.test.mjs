@@ -7,6 +7,8 @@ import { join } from 'node:path';
 
 const TMP = mkdtempSync(join(tmpdir(), 'trading-r33-'));
 process.env.FNO_SPREADS_PATH = join(TMP, 'fno-spreads.json');
+process.env.RSI_SWING_PATH = join(TMP, 'rsi-swing.json');
+process.env.RSI_SWING_PAPER_PATH = join(TMP, 'rsi-swing-paper.json');
 after(() => rmSync(TMP, { recursive: true, force: true }));
 
 const f = await import('./paper-bot/fno-spreads.mjs');
