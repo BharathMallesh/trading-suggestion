@@ -64,6 +64,9 @@ import { loadDayPatterns } from './paper-bot/day-patterns.mjs';
 import { myPlan } from './paper-bot/my-plan.mjs';
 import { loadRsiSwing, loadRsiSwingPaper, summarise as rsiSummarise } from './paper-bot/rsi-swing.mjs';
 import { loadMomentum, loadMomentumPaper } from './paper-bot/momentum.mjs';
+import { loadNewIdeas } from './paper-bot/new-ideas.mjs';
+import { loadMomentum10, loadMomentum10Paper } from './paper-bot/momentum10.mjs';
+import { loadSteadyMix, loadSteadyMixPaper } from './paper-bot/steady-mix.mjs';
 import { whatWorksToday } from './paper-bot/day-today.mjs';
 import { loadCoreSatellite, coreSatellite, saveCoreSatellite } from './paper-bot/core-satellite.mjs';
 import { loadFoStrangle, loadFoStranglePaper, foStrangleTest, saveFoStrangle, summarise as foSummarise } from './paper-bot/fo-strangle.mjs';
@@ -694,6 +697,9 @@ const server = http.createServer(async (req, res) => {
       const b = loadMomentum();
       return json(res, 200, { backtest: b ? { ...b, methods: Object.fromEntries(Object.entries(b.methods).map(([k, m]) => [k, { ...m, curve: undefined }])) } : null, paper: loadMomentumPaper() });
     }
+    if (req.method === 'GET' && url.pathname === '/api/steady-mix') return json(res, 200, { backtest: loadSteadyMix(), paper: loadSteadyMixPaper() });
+    if (req.method === 'GET' && url.pathname === '/api/momentum10') return json(res, 200, { backtest: loadMomentum10(), paper: loadMomentum10Paper() });
+    if (req.method === 'GET' && url.pathname === '/api/new-ideas') return json(res, 200, loadNewIdeas() || {});
     if (req.method === 'GET' && url.pathname === '/api/day-patterns') return json(res, 200, loadDayPatterns() || {});
     if (req.method === 'GET' && url.pathname === '/api/day-patterns/today') {
       // "What works today?": logics ranked for today's weekday / opening, with stocks and the last few days

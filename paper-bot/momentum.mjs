@@ -76,7 +76,7 @@ export function priceIndex(series) {
   }
   return idx;
 }
-const at = (p, date) => {
+export const at = (p, date) => {
   // last index with dates[i] <= date
   let lo = 0;
   let hi = p.dates.length - 1;
@@ -90,7 +90,7 @@ const at = (p, date) => {
   }
   return ans;
 };
-const monthsBack = (date, n) => {
+export const monthsBack = (date, n) => {
   const [y, m, d] = date.split('-').map(Number);
   const t = new Date(Date.UTC(y, m - 1 - n, Math.min(d, 28)));
   return t.toISOString().slice(0, 10);
@@ -152,7 +152,10 @@ const nextMonthKey = (ym) => {
  * Monthly rebalanced top-N portfolio. Returns the value at each rebalance, the
  * holdings, turnover and (simplified) tax. refDates = trading dates (e.g. NIFTY).
  */
-export function simulate({ idx, universe, refDates, method = 'a', r = RULES, from = r.from, to = null, tax = false }) {
+export function simulate({ idx, universe, refDates, method = 'a', r = RULES, from = r.from, to = null, tax = false, rank = null, gate = null }) {
+  // rank(idx, symbols, monthEnd) → sorted [{symbol, score}] replaces the momentum score;
+  // gate(monthEnd) → false holds cash (a liquid fund at r.cashYield a year) until it says true again
+
   const ends = monthEnds(refDates).filter((d) => d >= monthsBack(from, 1) && (!to || d <= to));
   const firstAfter = (d) => refDates.find((x) => x > d) || null;
   let value = 1;
@@ -167,6 +170,8 @@ export function simulate({ idx, universe, refDates, method = 'a', r = RULES, fro
   const side = (r.costPct + r.slipPct) / 100;
   // fill price on a trading day: the open (default) or the midpoint of open and close ("realistic")
   const fillAt = (p, i) => (r.fill === 'mid' ? (p.open[i] + p.close[i]) / 2 : p.open[i]);
+  let cash = false;
+  let prevDay = null;
   const every = r.rebalanceEvery || 1; // months between rebalances (3 = quarterly: after Mar, Jun, Sep, Dec)
   const payTax = (date) => {
     let t = 0;
@@ -184,6 +189,8 @@ export function simulate({ idx, universe, refDates, method = 'a', r = RULES, fro
     const exitDay = firstAfter(exitSignal) || exitSignal;
     if (!entryDay || entryDay < from) continue;
     if (every > 1 && holdings.length && Number(signal.slice(5, 7)) % every !== 0) continue; // hold until the next rebalance month
+    if (cash && prevDay) value *= (1 + (r.cashYield || 0)) ** ((Date.parse(entryDay) - Date.parse(prevDay)) / (365.25 * 86400000));
+    prevDay = entryDay;
     // 1. value the current holdings at today's open (entryDay) — exits use the open, vanished stocks their last close
     if (holdings.length) {
       let v = 0;
@@ -198,10 +205,34 @@ export function simulate({ idx, universe, refDates, method = 'a', r = RULES, fro
       // weights after drift
       for (const h of holdings) h.wNow = (h.w * (h.now / h.entry)) / v;
     }
-    // 2. new list
+    // 2. new list (or cash when the gate says out)
     const elig = universe.get(nextMonthKey(signal.slice(0, 7)));
     if (!elig) continue;
-    const ranked = scores(idx, [...elig], signal, method);
+    const fyHere = Number(entryDay.slice(5, 7)) >= 4 ? Number(entryDay.slice(0, 4)) : Number(entryDay.slice(0, 4)) - 1;
+    if (gate && !gate(signal)) {
+      if (holdings.length) {
+        let sold = 0;
+        for (const h of holdings) {
+          sold += h.wNow;
+          if (tax) {
+            const gain = value * h.wNow * (1 - h.basis / h.now);
+            if ((Date.parse(entryDay) - Date.parse(h.entryDate)) / 86400000 >= 365) fyLT += gain;
+            else fyST += gain;
+          }
+        }
+        turnoverSum += sold / 2;
+        value *= 1 - sold * side;
+        holdings = [];
+      }
+      if (tax && fy != null && fyHere !== fy) payTax(entryDay);
+      fy = fyHere;
+      cash = true;
+      curve.push({ date: entryDay, value });
+      lists.push({ signal, entryDay, exitDay, symbols: [] });
+      continue;
+    }
+    cash = false;
+    const ranked = rank ? rank(idx, [...elig].filter((s) => !isEtf(s)), signal) : scores(idx, [...elig], signal, method);
     const pick = ranked.slice(0, r.top).filter((x) => {
       const p = idx.get(x.symbol);
       const i = at(p, entryDay);
@@ -282,7 +313,7 @@ export function simulate({ idx, universe, refDates, method = 'a', r = RULES, fro
   return { curve, lists, cagr: years > 0 ? curve[curve.length - 1].value ** (1 / years) - 1 : null, maxDrawdown: dd, turnoverPerYear: years > 0 ? turnoverSum / years : null, taxPaid, years };
 }
 
-const cagrOf = (curve, from, to) => {
+export const cagrOf = (curve, from, to) => {
   const seg = curve.filter((c) => c.date >= from && c.date <= to);
   if (seg.length < 2) return null;
   const y = (Date.parse(seg[seg.length - 1].date) - Date.parse(seg[0].date)) / (365.25 * 86400000);
@@ -302,7 +333,7 @@ export function yearly(curve) {
 }
 
 // ---------------------------------------------------------------- the test ---
-async function loadAll(loadCandles) {
+export async function loadAll(loadCandles) {
   const { loadSeries, pointInTimeUniverse } = await import('./bhav-history.mjs');
   const series = loadSeries();
   if (!series.size) throw new Error('No NSE history yet: run node paper-bot/bhav-history.mjs first.');

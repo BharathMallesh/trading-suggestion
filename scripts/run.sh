@@ -39,6 +39,10 @@ do_collect() {
   node --max-old-space-size=8000 paper-bot/rsi-swing.mjs --paper   # RSI swing (Rathod): live scan + paper record
   # Momentum 20: add the day's NSE file, then this month's list + the paper portfolio
   node paper-bot/bhav-history.mjs >/dev/null && node --max-old-space-size=12000 paper-bot/momentum.mjs --paper
+  # Momentum 10 + buffer (candidate): this month's list + its paper portfolio
+  node --max-old-space-size=12000 paper-bot/momentum10.mjs --paper
+  # Steady mix: 30% Momentum 10 (with the NIFTY filter) / 10% gold / 60% liquid paper portfolio (uses the list above)
+  node paper-bot/steady-mix.mjs --paper
   # one evening notification for all strategies + this week's scorecard refreshed
   node paper-bot/evening.mjs --notify
 }
@@ -77,6 +81,12 @@ do_refit() {
   node --max-old-space-size=8000 paper-bot/rsi-swing.mjs >/dev/null
   # Momentum 20: re-run the survivorship-free backtest (also refreshes NSE's ETF list)
   node --max-old-space-size=12000 paper-bot/momentum.mjs >/dev/null
+  # New ideas: low volatility, momentum + low volatility, momentum with a market filter
+  node --max-old-space-size=12000 paper-bot/new-ideas.mjs >/dev/null
+  # Momentum 10 + buffer (candidate): re-run its backtest
+  node --max-old-space-size=12000 paper-bot/momentum10.mjs >/dev/null
+  # Steady mix: re-run its backtest
+  node --max-old-space-size=12000 paper-bot/steady-mix.mjs >/dev/null
   # Day patterns: every strategy by weekday / opening gap, and the Monday tests (~2 minutes)
   node --max-old-space-size=12000 paper-bot/day-patterns.mjs >/dev/null
 }
