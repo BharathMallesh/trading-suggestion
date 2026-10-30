@@ -71,6 +71,7 @@ import { thisMonth } from './paper-bot/this-month.mjs';
 import { loadIndiaMix, loadIndiaMixPaper } from './paper-bot/india-mix.mjs';
 import { loadOptionStrikes } from './paper-bot/option-strikes.mjs';
 import { loadImbalanceSwing, loadImbalancePaper } from './paper-bot/imbalance-swing.mjs';
+import { loadMatrixCalendar } from './paper-bot/matrix-calendar.mjs';
 import { whatWorksToday } from './paper-bot/day-today.mjs';
 import { loadCoreSatellite, coreSatellite, saveCoreSatellite } from './paper-bot/core-satellite.mjs';
 import { loadFoStrangle, loadFoStranglePaper, foStrangleTest, saveFoStrangle, summarise as foSummarise } from './paper-bot/fo-strangle.mjs';
@@ -706,6 +707,7 @@ const server = http.createServer(async (req, res) => {
       const amount = Math.min(1e9, Math.max(10000, Number(url.searchParams.get('amount')) || 100000));
       return json(res, 200, thisMonth({ amount }));
     }
+    if (req.method === 'GET' && url.pathname === '/api/matrix-calendar') return json(res, 200, loadMatrixCalendar() || {});
     if (req.method === 'GET' && url.pathname === '/api/imbalance-swing') return json(res, 200, { backtest: loadImbalanceSwing(), paper: loadImbalancePaper() });
     if (req.method === 'GET' && url.pathname === '/api/option-strikes') return json(res, 200, loadOptionStrikes() || {});
     if (req.method === 'GET' && url.pathname === '/api/india-mix') return json(res, 200, { backtest: loadIndiaMix(), paper: loadIndiaMixPaper() });

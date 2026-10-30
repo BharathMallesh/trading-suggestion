@@ -43,6 +43,7 @@
         <button type="button" data-sub="fo" title="F&amp;O: sell a weekly NIFTY call and put 2% away, held to expiry (paper only)">F&amp;O strangle</button>
         <button type="button" data-sub="fno" title="F&amp;O spreads from the strategy specification document: momentum debit spreads and IV-rank credit spreads">F&amp;O spreads</button>
         <button type="button" data-sub="rsi" title="RSI + price action swing (daily RSI below 30, hourly RSI below 25, hourly candle entry), 2–6 day holds">RSI swing</button>
+        <button type="button" data-sub="mc" title="Matrix Calendar: hedged NIFTY option selling with monthly calendar legs, Monday close to Tuesday">Matrix calendar</button>
         <button type="button" data-sub="imb" title="Big move on heavy volume, quiet base, breakout; 1% risk, breakeven at +1R, trailing stop">Imbalance swing</button>
       </div>
     </nav>
@@ -768,6 +769,14 @@
       </section>
 
       <!-- RSI + price-action swing (Rathod interview) -->
+      <section class="card span2" id="mcCard">
+        <h2>Matrix calendar (option selling) <span style="font-size:12px;color:var(--warn);font-weight:500">SELL 2 × 0.23Δ · 500-PT WINGS · MONTHLY CALENDAR LEGS · OVERNIGHT · REAL NSE PRICES · TESTED</span></h2>
+        <p class="hint">The option-selling setup from a trader interview, an upgraded iron condor: the session before the weekly expiry (Monday now), at the close, sell 2 lots of the ≈0.23-delta call and put of the <b>next</b> weekly expiry,
+          buy 1 lot of each 500 points farther out, and buy 1 lot of the <b>monthly</b> expiry at each sold strike (positive vega, so a jump in volatility hurts less). Out the next day. Weeks whose expiry moves for a holiday are skipped.
+          Rebuilt on real NSE closing prices from 2019, next to a plain iron condor on the same strikes. Research only — not investment advice.</p>
+        <div id="mcOut" style="margin-top:10px">Loading…</div>
+      </section>
+
       <section class="card span2" id="imbCard">
         <h2>Imbalance swing (move → base → breakout) <span style="font-size:12px;color:var(--warn);font-weight:500">30% MOVE ON 3× VOLUME · QUIET BASE · BREAKOUT · 1% RISK · TESTED · PAPER</span></h2>
         <p class="hint">The three-step setup from a fund-managing trader's interview: a <b>sharp move (30%+ in up to 20 days) on heavy volume</b>, then a <b>quiet base</b> that gives back no more than half of it on lighter volume,
@@ -988,6 +997,7 @@
     <script src="/static/js/25-india-mix.js"></script>
     <script src="/static/js/26-option-strikes.js"></script>
     <script src="/static/js/27-imbalance-swing.js"></script>
+    <script src="/static/js/28-matrix-calendar.js"></script>
     <script src="/static/js/19-my-plan.js"></script>
     <script src="/static/js/20-rsi-swing.js"></script>
   </body>

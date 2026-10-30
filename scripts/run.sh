@@ -97,6 +97,8 @@ do_refit() {
   node paper-bot/option-strikes.mjs >/dev/null
   # Imbalance swing: re-run the 16-year backtest
   node --max-old-space-size=12000 paper-bot/imbalance-swing.mjs >/dev/null
+  # Matrix calendar: adds the new weeks' NSE option files (cached) and re-runs the test
+  node paper-bot/matrix-calendar.mjs >/dev/null
   # Day patterns: every strategy by weekday / opening gap, and the Monday tests (~2 minutes)
   node --max-old-space-size=12000 paper-bot/day-patterns.mjs >/dev/null
 }
