@@ -72,6 +72,7 @@ import { loadIndiaMix, loadIndiaMixPaper } from './paper-bot/india-mix.mjs';
 import { loadOptionStrikes } from './paper-bot/option-strikes.mjs';
 import { loadImbalanceSwing, loadImbalancePaper } from './paper-bot/imbalance-swing.mjs';
 import { loadMatrixCalendar } from './paper-bot/matrix-calendar.mjs';
+import { tradePlan } from './paper-bot/trade-plan.mjs';
 import { whatWorksToday } from './paper-bot/day-today.mjs';
 import { loadCoreSatellite, coreSatellite, saveCoreSatellite } from './paper-bot/core-satellite.mjs';
 import { loadFoStrangle, loadFoStranglePaper, foStrangleTest, saveFoStrangle, summarise as foSummarise } from './paper-bot/fo-strangle.mjs';
@@ -706,6 +707,11 @@ const server = http.createServer(async (req, res) => {
       // Home → Do this month: the monthly action list, scaled to ?amount= (₹10,000 – ₹10 crore)
       const amount = Math.min(1e9, Math.max(10000, Number(url.searchParams.get('amount')) || 100000));
       return json(res, 200, thisMonth({ amount }));
+    }
+    if (req.method === 'GET' && url.pathname === '/api/trade-plan') {
+      // Home → Swing trade plan: tomorrow's buys / sells / stops, shares for ?capital= (₹50,000 – ₹10 crore)
+      const capital = Math.min(1e9, Math.max(50000, Number(url.searchParams.get('capital')) || 500000));
+      return json(res, 200, tradePlan({ capital }));
     }
     if (req.method === 'GET' && url.pathname === '/api/matrix-calendar') return json(res, 200, loadMatrixCalendar() || {});
     if (req.method === 'GET' && url.pathname === '/api/imbalance-swing') return json(res, 200, { backtest: loadImbalanceSwing(), paper: loadImbalancePaper() });

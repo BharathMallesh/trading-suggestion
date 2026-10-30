@@ -21,6 +21,7 @@ import { monthLines } from './this-month.mjs';
 import { loadMomentum10Paper } from './momentum10.mjs';
 import { loadSteadyMixPaper } from './steady-mix.mjs';
 import { loadImbalancePaper } from './imbalance-swing.mjs';
+import { saveSwingScan, tradePlan } from './trade-plan.mjs';
 
 const rs = (v) => `${v < 0 ? '−' : '+'}₹${Math.abs(Math.round(v)).toLocaleString('en-IN')}`;
 
@@ -132,11 +133,17 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     if (afterClose) {
       try {
         scan = await athSwingScan({});
+        saveSwingScan(scan); // for the swing trade plan card
       } catch (err) {
         console.log(`Swing scan failed: ${err.message}`);
       }
     }
     const lines = eveningLines(date, { scan, swingVersion: activeRules() !== RULES ? 'improved' : 'original' });
+    // the swing trade plan for tomorrow (wide trail): buys, sells and stops to update
+    if (scan) {
+      const p = tradePlan({ scan });
+      if (p.counts.buy || p.counts.sell || p.hold.some((h) => h.stopRaised)) lines.push({ title: 'Swing plan', short: `Swing plan: buy ${p.counts.buy}, sell ${p.counts.sell}, hold ${p.counts.hold}`, detail: [...p.buy.filter((b) => b.action === 'buy').map((b) => `BUY ${b.symbol} at the open (stop ₹${b.stop.toFixed(1)})`), ...p.hold.filter((h) => h.action === 'sell').map((h) => `SELL ${h.symbol} at the open (closed below ₹${h.stop.toFixed(1)})`), ...p.hold.filter((h) => h.action === 'hold').map((h) => `${h.symbol} stop ₹${h.stop.toFixed(1)}`)].join(' · ') });
+    }
     for (const l of lines) console.log(`${l.title}: ${l.detail}`);
     if (process.argv.includes('--notify') && afterClose) {
       const msg = lines.map((l) => l.short).join(' · ');
