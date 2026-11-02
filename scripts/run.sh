@@ -42,6 +42,8 @@ do_collect() {
   node paper-bot/bhav-history.mjs >/dev/null && node --max-old-space-size=12000 paper-bot/momentum.mjs --paper
   # Momentum 10 + buffer (candidate): this month's list + its paper portfolio
   node --max-old-space-size=12000 paper-bot/momentum10.mjs --paper
+  # Up/Down outlook: today's Strong / Neutral / Weak labels + the weekly scorecard
+  node --max-old-space-size=12000 paper-bot/updown-outlook.mjs
   # Steady mix: 30% Momentum 10 (with the NIFTY filter) / 10% gold / 60% liquid paper portfolio (uses the list above)
   node paper-bot/steady-mix.mjs --paper
   # India mix: ⅓ Nifty Next 50 / ⅓ gold / ⅓ Momentum 10 paper portfolio (uses the Momentum 10 list above)
@@ -96,6 +98,8 @@ do_refit() {
   node --max-old-space-size=12000 paper-bot/india-mix.mjs >/dev/null
   # Option strike guide: ITM / ATM / OTM weekly buys on the cached NSE option files
   node paper-bot/option-strikes.mjs >/dev/null
+  # Up/Down outlook: rebuild the odds tables (16 years, by label)
+  node --max-old-space-size=12000 paper-bot/updown-outlook.mjs --table >/dev/null
   # Imbalance swing: re-run the 16-year backtest
   node --max-old-space-size=12000 paper-bot/imbalance-swing.mjs >/dev/null
   # Matrix calendar: adds the new weeks' NSE option files (cached) and re-runs the test

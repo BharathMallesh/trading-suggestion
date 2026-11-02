@@ -50,6 +50,16 @@
     <div class="note" id="viewNote"></div>
 
     <main>
+      <!-- Up/Down outlook: a 1–3 month lean with honest odds (not a next-day call) -->
+      <section class="card span2" id="updownCard">
+        <h2>Up/Down outlook <span style="font-size:12px;color:var(--warn);font-weight:500">1–3 MONTH LEAN · STRONG / NEUTRAL / WEAK · ODDS FROM 16 YEARS OF NSE DATA · NOT A NEXT-DAY CALL</span></h2>
+        <p class="hint">Tomorrow's direction is a coin flip; over 1–3 months strength tends to persist a little. Each stock is labelled from its momentum, its 200-day average and its 52-week high,
+          and shown with how often stocks with that label actually rose afterwards (2010–17 and 2018→ separately). A lean, not a prediction — not advice.</p>
+        <div class="row" style="gap:8px;align-items:flex-end"><div style="flex:0 0 200px"><label>NSE symbol</label><input id="udSym" type="text" value="RELIANCE" autocomplete="off" /></div>
+          <div style="flex:0 0 auto"><button id="udBtn" type="button" style="margin-top:0">Check</button></div></div>
+        <div id="udOut" style="margin-top:10px">Loading…</div>
+      </section>
+
       <!-- Swing trade plan: tomorrow's buys, sells and stops for the Strong-stock swing (wide trail) -->
       <section class="card span2" id="tradePlanCard">
         <h2>Swing trade plan <span style="font-size:12px;color:var(--warn);font-weight:500">STRONG-STOCK SWING · WIDE TRAIL · BUY / SELL AT THE NEXT OPEN · UPDATED EVERY EVENING · PAPER</span></h2>
@@ -1009,6 +1019,7 @@
     <script src="/static/js/27-imbalance-swing.js"></script>
     <script src="/static/js/28-matrix-calendar.js"></script>
     <script src="/static/js/29-trade-plan.js"></script>
+    <script src="/static/js/30-updown.js"></script>
     <script src="/static/js/19-my-plan.js"></script>
     <script src="/static/js/20-rsi-swing.js"></script>
   </body>

@@ -74,6 +74,7 @@ import { loadImbalanceSwing, loadImbalancePaper } from './paper-bot/imbalance-sw
 import { loadMatrixCalendar } from './paper-bot/matrix-calendar.mjs';
 import { tradePlan } from './paper-bot/trade-plan.mjs';
 import { loadSwingOrb } from './paper-bot/swing-orb.mjs';
+import { outlookFor, loadUpdownLive, loadUpdownTable, features as udFeatures } from './paper-bot/updown-outlook.mjs';
 import { whatWorksToday } from './paper-bot/day-today.mjs';
 import { loadCoreSatellite, coreSatellite, saveCoreSatellite } from './paper-bot/core-satellite.mjs';
 import { loadFoStrangle, loadFoStranglePaper, foStrangleTest, saveFoStrangle, summarise as foSummarise } from './paper-bot/fo-strangle.mjs';
@@ -708,6 +709,30 @@ const server = http.createServer(async (req, res) => {
       // Home → Do this month: the monthly action list, scaled to ?amount= (₹10,000 – ₹10 crore)
       const amount = Math.min(1e9, Math.max(10000, Number(url.searchParams.get('amount')) || 100000));
       return json(res, 200, thisMonth({ amount }));
+    }
+    if (req.method === 'GET' && url.pathname === '/api/updown') {
+      // Home → Up/Down outlook: a 1–3 month lean for one stock (?symbol=), today's lists, NIFTY's trend, the scorecard
+      const live = loadUpdownLive();
+      const table = loadUpdownTable();
+      const sym = url.searchParams.get('symbol');
+      let stock = null;
+      if (sym) {
+        if (!/^[A-Za-z0-9&\-.]{1,20}$/.test(sym)) return json(res, 400, { error: 'Type an NSE symbol such as RELIANCE.' });
+        try {
+          stock = await outlookFor(sym, { live, table });
+        } catch (e) {
+          stock = { symbol: sym.toUpperCase(), error: e.message };
+        }
+      }
+      let nifty = null;
+      try {
+        const n = (await candles('^NSEI', { range: '2y', interval: '1d' })).filter((x) => x.close > 0);
+        const f = udFeatures(n.map((x) => x.close), n.length - 1);
+        nifty = { close: n.at(-1).close, above200: f.above200, sma200: f.sma200, odds: table?.nifty?.[f.above200 ? 'above' : 'below'], base: table?.nifty?.all };
+      } catch {
+        /* NIFTY is optional */
+      }
+      return json(res, 200, { date: live?.date, stock, strong: (live?.rows || []).filter((x) => x.label === 'strong'), weak: (live?.rows || []).filter((x) => x.label === 'weak'), counts: live ? { strong: live.rows.filter((x) => x.label === 'strong').length, neutral: live.rows.filter((x) => x.label === 'neutral').length, weak: live.rows.filter((x) => x.label === 'weak').length } : null, odds: table?.labels || null, tableFrom: table?.from, tableTo: table?.to, nifty, score: live?.score, since: live?.startedAt, weeks: live?.snapshots?.length || 0 });
     }
     if (req.method === 'GET' && url.pathname === '/api/swing-orb') return json(res, 200, loadSwingOrb() || {});
     if (req.method === 'GET' && url.pathname === '/api/trade-plan') {
