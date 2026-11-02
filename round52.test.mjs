@@ -54,3 +54,12 @@ test('plan: no new buys once all slots are taken', () => {
   assert.equal(p.counts.buy, 0);
   assert.match(p.buy[0].why, /slots used/);
 });
+
+test('plan: buys never add up to more than the cash left after the kept positions', () => {
+  const triggered = Array.from({ length: 20 }, (_, i) => ({ symbol: `S${i}.NS`, setup: 'flag', close: 100, stop: 94, riskPct: 6 }));
+  const held = [open('KEEP', 100, 90, 95, 100)]; // worth ~₹1.5 lakh at ₹10 lakh capital
+  const p = tp.tradePlan({ capital: 1000000, paper: { trades: held }, scan: { date: '2026-10-30', triggered }, r });
+  const spent = p.buy.filter((b) => b.action === 'buy').reduce((a, b) => a + b.value, 0) + p.hold.reduce((a, h) => a + h.value, 0);
+  assert.ok(spent <= 1000000 + 1e-6, `spent ${spent}`);
+  assert.ok(p.buy.some((b) => b.why === 'no cash left'));
+});

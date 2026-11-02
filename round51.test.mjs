@@ -57,3 +57,9 @@ test('an untraded leg at entry is not used (stale price)', () => {
   for (const row of Object.values(c.expiries['2026-11-10'])) row.ceVol = 0;
   assert.equal(mc.buildLegs(c, '2026-11-02').untraded, true);
 });
+
+test('no trade when an ATM side is missing (a half straddle would put the strikes too close)', () => {
+  const c = chain(20000, EX, [60, 150, 220, 300]);
+  c.expiries['2026-11-10'][20000].CE = 0; // the ATM call has no price (and there is no 20050 strike)
+  assert.equal(mc.buildLegs(c, '2026-11-02'), null);
+});

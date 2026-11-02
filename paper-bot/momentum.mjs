@@ -205,9 +205,19 @@ export function simulate({ idx, universe, refDates, method = 'a', r = RULES, fro
       // weights after drift
       for (const h of holdings) h.wNow = (h.w * (h.now / h.entry)) / v;
     }
+    // holdings were just marked to today: if this month is skipped, re-base them so the next mark doesn't count this month again
+    const rebase = () => {
+      for (const h of holdings) if (h.now) {
+        h.w = h.wNow;
+        h.entry = h.now;
+      }
+    };
     // 2. new list (or cash when the gate says out)
     const elig = universe.get(nextMonthKey(signal.slice(0, 7)));
-    if (!elig) continue;
+    if (!elig) {
+      rebase();
+      continue;
+    }
     const fyHere = Number(entryDay.slice(5, 7)) >= 4 ? Number(entryDay.slice(0, 4)) : Number(entryDay.slice(0, 4)) - 1;
     if (gate && !gate(signal)) {
       if (holdings.length) {
@@ -238,7 +248,10 @@ export function simulate({ idx, universe, refDates, method = 'a', r = RULES, fro
       const i = at(p, entryDay);
       return i >= 0 && p.dates[i] === entryDay; // tradable on the entry day
     });
-    if (!pick.length) continue;
+    if (!pick.length) {
+      rebase();
+      continue;
+    }
     const target = new Map(pick.map((x) => [x.symbol, 1 / pick.length]));
     // 3. turnover and costs; tax on every sale (full exits and trims back to equal weight) against the cost basis
     let turnover = 0;
@@ -283,8 +296,9 @@ export function simulate({ idx, universe, refDates, method = 'a', r = RULES, fro
     curve.push({ date: entryDay, value });
     lists.push({ signal, entryDay, exitDay, symbols: pick.map((x) => x.symbol) });
   }
-  // final valuation at the last reference date
+  // final valuation at the last reference date (a run that ends out of the market still earns the liquid fund to the end)
   const lastDay = refDates[refDates.length - 1];
+  if (cash && prevDay) value *= (1 + (r.cashYield || 0)) ** (Math.max(0, Date.parse(to || lastDay) - Date.parse(prevDay)) / (365.25 * 86400000));
   if (holdings.length) {
     let v = 0;
     for (const h of holdings) {

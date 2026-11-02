@@ -26,6 +26,14 @@ function ibRender(d) {
       ${row('Worst fall', (x) => `<span style="color:var(--down)">${ibPc(x.maxDrawdown, 0)}</span>`)}
       ${row('NIFTY, a year', (x) => ibPc(x.niftyCagr))}
       </tbody></table></div>`;
+    if (b.versions?.nobe) {
+      const vs = Object.values(b.versions);
+      html += `<div style="font-size:14px;margin-top:12px"><b>Paper versions</b> (same buys, different exits)</div>
+        <div style="overflow-x:auto"><table style="font-size:12px"><thead><tr><th style="text-align:left">Version</th>${ps.map(([, l]) => `<th>${l}: a year (after tax) · fall</th>`).join('')}<th>Per trade</th></tr></thead><tbody>${vs.map((x) =>
+          `<tr><td style="text-align:left">${esc(x.label)}</td>${ps.map(([k]) => `<td><b style="color:${ibCol(x.byPeriod[k].cagr)}">${ibPc(x.byPeriod[k].cagr)}</b> (${ibPc(x.byPeriod[k].cagrAfterTax)}) · <span style="color:var(--down)">${ibPc(x.byPeriod[k].maxDrawdown, 0)}</span></td>`).join('')}<td>${ibF(x.all.avgR)} R</td></tr>`).join('')}
+          <tr><td style="text-align:left">NIFTY</td>${ps.map(([k]) => `<td>${ibPc(v[k].niftyCagr)}</td>`).join('')}<td>–</td></tr></tbody></table></div>
+        <div class="note">The "no breakeven" version was picked after seeing all three periods (the breakeven step cut good trades on normal pullbacks), so it is tracked on paper next to the original rather than replacing it.</div>`;
+    }
     if (b.best?.length) html += `<div class="note">Biggest winners: ${b.best.map((t) => `${esc(t.symbol)} ${ibF(t.r, 1)} R (${esc(t.entryDate)})`).join(' · ')}</div>`;
     html += `<div class="note">${esc(b.note)}</div>`;
   } else html += '<div class="note">Backtest not run yet (it runs with the Saturday re-tests).</div>';
@@ -34,10 +42,11 @@ function ibRender(d) {
     html += `<div style="font-size:14px;margin-top:12px"><b>Live scan</b> (NSE close of ${esc(s.date || '–')})</div>
       <div style="font-size:13px">${s.triggered.length ? `Entry signals — bought at the next open on paper: ${s.triggered.map((x) => `<b>${esc(x.symbol)}</b> (move +${ibF(x.movePct, 0)}%, stop ₹${ibF(x.stop, 1)}, risk ${ibF(x.riskPct, 1)}%)`).join(' · ')}` : 'No breakout signal at the latest close.'}</div>
       ${s.forming.length ? `<div class="note">Bases forming (a move and a quiet base, waiting for a breakout): ${s.forming.map((x) => `${esc(x.symbol)} +${ibF(x.movePct, 0)}% · base ${x.baseDays}d · breakout above ₹${ibF(x.triggerAbove, 1)}`).join(' · ')}</div>` : '<div class="note">No bases forming right now.</div>'}`;
-    const open = p.trades.filter((t) => t.open);
-    html += `<div style="font-size:14px;margin-top:10px"><b>Paper record</b> since ${esc(p.startedAt)}: ${p.summary?.trades ? `${p.summary.trades} closed · won ${ibPc(p.summary.winRate, 0)} · ${ibF(p.summary.avgR)} R a trade` : 'no closed trades yet'}${open.length ? ` · open: ${open.map((t) => `${esc(t.symbol)} (stop ₹${ibF(t.trail, 1)})`).join(', ')}` : ''}</div>`;
-    if (p.trades.length) html += `<div style="overflow-x:auto"><table style="font-size:12px"><thead><tr><th style="text-align:left">Stock</th><th>Bought</th><th>Entry</th><th>Stop now</th><th>Exit</th><th>Why</th><th>Result</th></tr></thead><tbody>${p.trades.map((t) =>
-      `<tr><td style="text-align:left">${esc(t.symbol)}</td><td>${esc(t.entryDate)}</td><td>₹${ibF(t.entry, 1)}</td><td>₹${ibF(t.trail, 1)}</td><td>${t.open ? '–' : `₹${ibF(t.exit, 1)}`}</td><td>${esc(t.reason)}</td><td style="color:${ibCol(t.r)}"><b>${t.r >= 0 ? '+' : ''}${ibF(t.r)} R</b></td></tr>`).join('')}</tbody></table></div>`;
+    const open = p.trades.filter((t) => t.open && (t.version || 'original') === 'original');
+    const recLine = (s) => (s?.trades ? `${s.trades} closed · won ${ibPc(s.winRate, 0)} · ${ibF(s.avgR)} R a trade` : 'no closed trades yet');
+    html += `<div style="font-size:14px;margin-top:10px"><b>Paper record</b> since ${esc(p.startedAt)} — original: ${recLine(p.byVersion?.original || p.summary)} · no breakeven: ${recLine(p.byVersion?.nobe)}${open.length ? ` · open: ${open.map((t) => `${esc(t.symbol)}`).join(', ')}` : ''}</div>`;
+    if (p.trades.length) html += `<div style="overflow-x:auto"><table style="font-size:12px"><thead><tr><th style="text-align:left">Stock</th><th>Version</th><th>Bought</th><th>Entry</th><th>Stop now</th><th>Exit</th><th>Why</th><th>Result</th></tr></thead><tbody>${p.trades.map((t) =>
+      `<tr><td style="text-align:left">${esc(t.symbol)}</td><td>${t.version === 'nobe' ? 'no breakeven' : 'original'}</td><td>${esc(t.entryDate)}</td><td>₹${ibF(t.entry, 1)}</td><td>₹${ibF(t.trail, 1)}</td><td>${t.open ? '–' : `₹${ibF(t.exit, 1)}`}</td><td>${esc(t.reason)}</td><td style="color:${ibCol(t.r)}"><b>${t.r >= 0 ? '+' : ''}${ibF(t.r)} R</b></td></tr>`).join('')}</tbody></table></div>`;
   }
   $('imbOut').innerHTML = html;
 }

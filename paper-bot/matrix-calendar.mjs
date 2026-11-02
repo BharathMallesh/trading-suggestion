@@ -96,8 +96,10 @@ export function buildLegs(chain, date, r = RULES) {
   if (!W || !M || !(S > 0)) return null;
   // implied one-sigma move to the weekly expiry from its ATM straddle
   const atm = round(S, 50);
-  const straddle = (px(W, atm, 'CE') ?? px(W, atm + 50, 'CE')) + (px(W, atm, 'PE') ?? px(W, atm - 50, 'PE'));
-  if (!(straddle > 0)) return null;
+  const ce = px(W, atm, 'CE') ?? px(W, atm + 50, 'CE');
+  const pe = px(W, atm, 'PE') ?? px(W, atm - 50, 'PE');
+  if (ce == null || pe == null) return null; // a missing side would halve the straddle and put the strikes too close
+  const straddle = ce + pe;
   const sigmaT = straddle / 2 / (0.3989 * S);
   const z = invNorm(1 - r.delta);
   const kc = round(S * Math.exp(z * sigmaT), r.step);

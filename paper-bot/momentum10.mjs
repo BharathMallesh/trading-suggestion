@@ -249,7 +249,7 @@ export async function momentum10PaperUpdate({ loadCandles = candles, now = new D
       } catch {
         px = null;
       }
-      const ret = px ? px / h.entry - 1 : 0;
+      const ret = px ? px / h.entry - 1 : h.lastRet || 0; // a missing price keeps the last known result
       h.lastRet = ret;
       marks.push({ symbol: h.symbol, entry: h.entry, entryDate: h.entryDate, last: px, retPct: ret * 100 });
       v += h.weight * (1 + ret);

@@ -85,7 +85,7 @@ export async function swingOrbUpdate({ loadCandles = candles, now = new Date(), 
   if (needBackfill || backfillSyms.size) {
     const syms = needBackfill ? await universe() : [...backfillSyms].map((s) => `${s}.NS`);
     for (const { s, rows } of await loadDaily(loadCandles, syms, '2005-01-01', now)) {
-      for (const t of tradesFor(s, rows, wide)) if (t.entryDate >= oldest && !source.has(keyOf(t))) source.set(keyOf(t), { ...t, from: 'backfill' });
+      for (const t of tradesFor(s, rows, wide)) if ((t.entryDate >= oldest || store.trades[keyOf(t)]) && !source.has(keyOf(t))) source.set(keyOf(t), { ...t, from: 'backfill' }); // recorded trades keep updating until they close
     }
     if (needBackfill) store.backfillDone = today;
   }

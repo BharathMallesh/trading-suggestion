@@ -61,8 +61,9 @@ export function eveningLines(date, { vwap = loadPaper(), breakfast = loadBreakfa
   // Imbalance swing (paper): today's signals, buys and exits
   if (imb) {
     const sig = imb.scan?.date === date ? imb.scan.triggered : [];
-    const b = (imb.trades || []).filter((t) => t.entryDate === date);
-    const s = (imb.trades || []).filter((t) => !t.open && t.exitDate === date);
+    const own = (imb.trades || []).filter((t) => (t.version || 'original') === 'original'); // both versions buy the same; exits per version are on the card
+    const b = own.filter((t) => t.entryDate === date);
+    const s = own.filter((t) => !t.open && t.exitDate === date);
     if (sig.length || b.length || s.length) out.push({ title: 'Imbalance swing', short: `Imbalance swing: ${sig.length} signal${sig.length === 1 ? '' : 's'}, ${b.length} bought, ${s.length} sold`, detail: [...sig.map((x) => `signal ${x.symbol} (stop ₹${x.stop.toFixed(1)}, buy at the next open)`), ...b.map((t) => `bought ${t.symbol} at ₹${t.entry.toFixed(1)}`), ...s.map((t) => `sold ${t.symbol} ${t.r >= 0 ? '+' : ''}${t.r.toFixed(2)} R (${t.reason})`)].join(' · ') });
   }
   // RSI swing (paper): buys and sells today, or entry signals at the latest hour

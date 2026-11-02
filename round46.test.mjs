@@ -56,8 +56,10 @@ test('paper: OUT puts the stock part in the liquid fund; IN buys the Momentum 10
   const r0 = st.rebalances[0];
   assert.equal(r0.inMarket, false);
   assert.ok(r0.holdings.every((h) => h.kind !== 'stock'));
-  assert.ok(Math.abs(r0.holdings.reduce((a, h) => a + h.amount, 0) - 100000) < 1e-6);
-  assert.equal(r0.holdings.find((h) => h.kind === 'gold').amount, 10000);
+  // the first buy pays charges only on the gold part (liquid is free; the stock part sits in the liquid fund)
+  assert.ok(Math.abs(r0.holdings.reduce((a, h) => a + h.amount, 0) + r0.cost - 100000) < 1e-6);
+  assert.ok(Math.abs(r0.cost - 10000 * 0.0055) < 1);
+  assert.ok(Math.abs(r0.holdings.find((h) => h.kind === 'gold').amount - 10000) < 10);
   // a fresh account in a rising market: filter IN, the Momentum 10 list is bought with 30%
   rmSync(process.env.STEADY_MIX_PAPER_PATH, { force: true });
   const inNifty = up(330);
@@ -66,6 +68,6 @@ test('paper: OUT puts the stock part in the liquid fund; IN buys the Momentum 10
   const stocks = st.rebalances[0].holdings.filter((h) => h.kind === 'stock');
   assert.equal(st.rebalances[0].inMarket, true);
   assert.deepEqual(stocks.map((h) => h.name), ['AAA', 'BBB']);
-  assert.equal(stocks[0].amount, 15000);
+  assert.ok(Math.abs(stocks[0].amount - 15000 * (1 - st.rebalances[0].cost / 100000)) < 1e-6); // ₹30,000 over 2 stocks, less the buying charges
   assert.ok(st.curve.at(-1).value > 100000, 'stocks and gold up 2% at the close');
 });

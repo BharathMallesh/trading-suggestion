@@ -33,6 +33,15 @@ export const RULES = {
   breakevenAtR: 1, trailFromR: 2, trailAtr: 3, atr: 14, maxHold: 250, slippagePct: 0.1,
   riskPct: 1, maxOpen: 10, maxPositionPct: 20, capital: 1000000, cashRatePct: 6, universe: 300,
 };
+/**
+ * Paper versions. "No breakeven" (2 Nov 2026 improvement test, 6 versions picked on 2010–17): no stop move to
+ * breakeven at +1R, the stop only starts trailing at +2R — better in all three periods, but chosen after seeing
+ * them, so it is tracked on paper next to the original rather than replacing it.
+ */
+export const VERSIONS = {
+  original: { label: 'Original (breakeven at +1R)', rules: RULES },
+  nobe: { label: 'No breakeven step (trail from +2R only)', rules: { ...RULES, breakevenAtR: Infinity } },
+};
 export const PERIODS = { dev: ['2010-01-01', '2017-12-31'], val: ['2018-01-01', '2022-12-31'], holdout: ['2023-01-01', '2099-12-31'] };
 
 /** Bars with shares traded (value ÷ close) and ATR. */
@@ -194,7 +203,9 @@ export function imbalancePaper(series, uni, { startedAt, r = RULES } = {}) {
   const forming = [];
   for (const [sym, rows] of series) {
     if (isEtf(sym) || rows.length < 100) continue;
-    for (const t of tradesFor(sym, rows.filter((x) => x.date >= addDays(startedAt, -200)), r, (d) => d >= startedAt && uni.get(d.slice(0, 7))?.has(sym))) trades.push(t);
+    for (const [v, { rules }] of Object.entries(VERSIONS)) {
+      for (const t of tradesFor(sym, rows.filter((x) => x.date >= addDays(startedAt, -200)), rules, (d) => d >= startedAt && uni.get(d.slice(0, 7))?.has(sym))) trades.push({ ...t, version: v });
+    }
     if (!latest.has(sym) || rows.at(-1).date !== lastDate) continue;
     const bars = prepare(rows.slice(-200), r);
     const i = bars.length - 1;
@@ -206,7 +217,8 @@ export function imbalancePaper(series, uni, { startedAt, r = RULES } = {}) {
     }
   }
   trades.sort((a, b) => a.entryDate.localeCompare(b.entryDate));
-  return { startedAt, lastDate, trades, summary: measures(trades), scan: { date: lastDate, triggered, forming: forming.sort((a, b) => b.movePct - a.movePct).slice(0, 20) } };
+  const byVersion = Object.fromEntries(Object.keys(VERSIONS).map((v) => [v, measures(trades.filter((t) => t.version === v))]));
+  return { startedAt, lastDate, trades, summary: byVersion.original, byVersion, scan: { date: lastDate, triggered, forming: forming.sort((a, b) => b.movePct - a.movePct).slice(0, 20) } };
 }
 const addDays = (d, n) => new Date(Date.parse(`${d}T00:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
 
@@ -239,31 +251,46 @@ export async function imbalanceSwingTest({ loadCandles = candles, r = RULES } = 
     if (!closeMaps.has(s)) closeMaps.set(s, new Map((series.get(s) || []).map((x) => [x.date, x.close])));
     return closeMaps.get(s);
   };
-  const byPeriod = {};
-  for (const [p, [a, b]] of Object.entries(PERIODS)) {
-    const tp = tested.filter((t) => t.entryDate >= a && t.entryDate <= b);
-    const pf = tp.length ? portfolio(tp, r, { closes, days: days.filter((d) => d >= a && d <= b) }) : null;
-    const yrs = pf?.curve?.length > 1 ? (Date.parse(pf.curve.at(-1).date) - Date.parse(pf.curve[0].date)) / (365.25 * 86400000) : 0;
-    let peak = -Infinity;
-    let dd = 0;
-    for (const c of pf?.curve || []) {
-      peak = Math.max(peak, c.equity);
-      dd = Math.max(dd, 1 - c.equity / peak);
+  // by period: trades, the account at 1% risk (daily marked), after Indian tax, and NIFTY
+  const periodsOf = (list, rules) => {
+    const out = {};
+    for (const [p, [a, b]] of Object.entries(PERIODS)) {
+      const tp = list.filter((t) => t.entryDate >= a && t.entryDate <= b);
+      const dd0 = days.filter((d) => d >= a && d <= b);
+      const pf = tp.length ? portfolio(tp, rules, { closes, days: dd0 }) : null;
+      const pft = tp.length ? portfolio(tp, rules, { tax: true, closes, days: dd0 }) : null;
+      const yrs = pf?.curve?.length > 1 ? (Date.parse(pf.curve.at(-1).date) - Date.parse(pf.curve[0].date)) / (365.25 * 86400000) : 0;
+      let peak = -Infinity;
+      let dd = 0;
+      for (const c of pf?.curve || []) {
+        peak = Math.max(peak, c.equity);
+        dd = Math.max(dd, 1 - c.equity / peak);
+      }
+      const n = nifty.filter((x) => x.date >= a && x.date <= b);
+      const nyrs = n.length > 1 ? (Date.parse(n.at(-1).date) - Date.parse(n[0].date)) / (365.25 * 86400000) : 0;
+      out[p] = {
+        ...measures(tp), perYear: yrs > 0 ? tp.length / yrs : null,
+        cagr: yrs > 0 ? (pf.curve.at(-1).equity / rules.capital) ** (1 / yrs) - 1 : null,
+        cagrAfterTax: yrs > 0 ? (pft.finalEquity / rules.capital) ** (1 / yrs) - 1 : null,
+        maxDrawdown: dd, timeInMarket: pf?.timeInMarket ?? null,
+        niftyCagr: nyrs > 0 ? (n.at(-1).close / n[0].close) ** (1 / nyrs) * 1.012 - 1 : null,
+      };
     }
-    const n = nifty.filter((x) => x.date >= a && x.date <= b);
-    const nyrs = n.length > 1 ? (Date.parse(n.at(-1).date) - Date.parse(n[0].date)) / (365.25 * 86400000) : 0;
-    byPeriod[p] = {
-      ...measures(tp), perYear: yrs > 0 ? tp.length / yrs : null,
-      cagr: yrs > 0 ? (pf.curve.at(-1).equity / r.capital) ** (1 / yrs) - 1 : null, maxDrawdown: dd, timeInMarket: pf?.timeInMarket ?? null,
-      niftyCagr: nyrs > 0 ? (n.at(-1).close / n[0].close) ** (1 / nyrs) * 1.012 - 1 : null,
-    };
+    return out;
+  };
+  const byPeriod = periodsOf(tested, r);
+  // the paper versions, on the same data
+  const versions = {};
+  for (const [k, { label, rules }] of Object.entries(VERSIONS)) {
+    const list = k === 'original' ? tested : [...series].flatMap(([sym, rows]) => (isEtf(sym) || rows.length < 100 ? [] : tradesFor(sym, rows, rules, (d) => uni.get(d.slice(0, 7))?.has(sym)))).filter((t) => t.entryDate >= PERIODS.dev[0]);
+    versions[k] = { label, all: measures(list), byPeriod: k === 'original' ? byPeriod : periodsOf(list, rules) };
   }
   const all = measures(tested);
   const v = byPeriod;
   const passed = ['dev', 'val', 'holdout'].every((p) => v[p].avgR > 0) && (all.tStat ?? 0) >= 2 && ['dev', 'val', 'holdout'].every((p) => v[p].losses >= 30);
   const pc = (x) => (x == null ? '–' : `${(x * 100).toFixed(1)}%`);
   return {
-    at: new Date().toISOString(), from: tested[0]?.entryDate, to: lastBhav, rules: r, periods: PERIODS, all, byPeriod, passed,
+    at: new Date().toISOString(), from: tested[0]?.entryDate, to: lastBhav, rules: r, periods: PERIODS, all, byPeriod, versions, passed,
     verdict: `${passed ? 'Passed' : 'Did not pass'}: ${all.trades} trades, won ${pc(all.winRate)}, ${all.avgR?.toFixed(2)} R a trade after charges (t ${all.tStat?.toFixed(1)}). By period (2010–17 / 2018–22 / 2023→): ${['dev', 'val', 'holdout'].map((p) => `${v[p].avgR?.toFixed(2)} R`).join(' / ')}; at 1% risk ${['dev', 'val', 'holdout'].map((p) => pc(v[p].cagr)).join(' / ')} a year vs NIFTY ${['dev', 'val', 'holdout'].map((p) => pc(v[p].niftyCagr)).join(' / ')}.`,
     recent: tested.slice().sort((a, b) => b.entryDate.localeCompare(a.entryDate)).slice(0, 15),
     best: tested.filter((t) => !t.open).sort((a, b) => b.r - a.r).slice(0, 5),

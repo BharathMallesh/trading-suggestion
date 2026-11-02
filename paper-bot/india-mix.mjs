@@ -19,7 +19,7 @@ import { candles } from '../market-data.mjs';
 import { writeJsonAtomic } from '../util.mjs';
 import { RULES as MOM, simulate, loadAll, monthEnds } from './momentum.mjs';
 import { rankBy, buffered, loadMomentum10Paper } from './momentum10.mjs';
-import { monthlyReturns, stats, PERIODS } from './steady-mix.mjs';
+import { monthlyReturns, stats, PERIODS, turnoverCost, valuesBySymbol } from './steady-mix.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SAVED = () => process.env.INDIA_MIX_PATH || join(HERE, 'data', 'india-mix.json');
@@ -136,10 +136,15 @@ export async function indiaMixPaperUpdate({ loadCandles = candles, now = new Dat
     if (gold && next50) {
       const date = gold.date;
       let value = st.capital;
-      if (last) value = (await valueOf(last, { date, price: async (s) => (await priceOf(s, completed))?.px ?? null })).v * (1 - MIX.rebalanceDragPct / 100);
+      let prev = new Map();
+      if (last) {
+        const m = await valueOf(last, { date, price: async (s) => (await priceOf(s, completed))?.px ?? null });
+        value = m.v;
+        prev = valuesBySymbol(m.marks);
+      }
       const holdings = [
-        { kind: 'fund', symbol: MIX.next50Symbol, name: 'Nifty Next 50 (JUNIORBEES)', amount: value * MIX.next50, entry: next50.px * (1 + side) },
-        { kind: 'gold', symbol: MIX.goldSymbol, name: 'Gold (GOLDBEES)', amount: value * MIX.gold, entry: gold.px * (1 + side) },
+        { kind: 'fund', symbol: MIX.next50Symbol, name: 'Nifty Next 50 (JUNIORBEES)', amount: value * MIX.next50, entry: next50.px },
+        { kind: 'gold', symbol: MIX.goldSymbol, name: 'Gold (GOLDBEES)', amount: value * MIX.gold, entry: gold.px },
       ];
       const list = m10?.monthEnd === completed ? m10.list : null;
       const stockMoney = value * MIX.stocks;
@@ -147,10 +152,13 @@ export async function indiaMixPaperUpdate({ loadCandles = candles, now = new Dat
         const per = stockMoney / list.length;
         for (const x of list) {
           const o = await priceOf(`${x.symbol}.NS`, completed);
-          holdings.push(o ? { kind: 'stock', symbol: `${x.symbol}.NS`, name: x.symbol, amount: per, entry: o.px * (1 + side) } : { kind: 'liquid', name: `${x.symbol} (no price; liquid)`, amount: per });
+          holdings.push(o ? { kind: 'stock', symbol: `${x.symbol}.NS`, name: x.symbol, amount: per, entry: o.px } : { kind: 'liquid', name: `${x.symbol} (no price; liquid)`, amount: per });
         }
       } else holdings.push({ kind: 'liquid', name: 'Stock part (no Momentum 10 list yet; liquid)', amount: stockMoney });
-      st.rebalances.push({ monthEnd: completed, date, value, holdings });
+      // charges only on what changed, taken pro rata from every part
+      const cost = turnoverCost(prev, holdings, side);
+      for (const h of holdings) h.amount *= (value - cost) / value;
+      st.rebalances.push({ monthEnd: completed, date, value: value - cost, cost, holdings });
     }
   }
   const cur = st.rebalances.at(-1);

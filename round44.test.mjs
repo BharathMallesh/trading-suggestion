@@ -55,3 +55,19 @@ test('a closed gate holds the liquid fund: value grows only by the cash yield, n
   const inMkt = simulate({ idx, universe, refDates: days, r, from: days[300], rank: ni.lowVol });
   assert.ok(inMkt.lists.some((l) => l.symbols[0] === 'CALM'));
 });
+
+test('simulate: a skipped month (empty ranking) does not count the held stocks\' return twice', () => {
+  const r = { top: 1, costPct: 0, slipPct: 0, from: days[300] };
+  const months = [...new Set(days.filter((d) => d >= days[300]).map((d) => d.slice(0, 7)))];
+  let n = 0;
+  // rank CALM normally, but return nothing in the third month
+  const rank = (idx2, syms, me) => (++n === 3 ? [] : ni.lowVol(idx2, syms, me));
+  const out = simulate({ idx, universe, refDates: days, r, from: days[300], rank });
+  const calm = idx.get('CALM');
+  const first = out.curve[0];
+  const last = out.curve.at(-1);
+  const pxAt = (d) => calm.close[calm.dates.indexOf(d)] ?? calm.close.at(-1);
+  // holding CALM the whole time with no costs: the value must track its price (no month counted twice)
+  assert.ok(Math.abs(last.value / first.value - pxAt(last.date) / calm.open[calm.dates.indexOf(first.date)]) < 1e-6, `${last.value / first.value} vs ${pxAt(last.date) / calm.open[calm.dates.indexOf(first.date)]}`);
+  assert.ok(months.length > 3);
+});

@@ -28,7 +28,7 @@ function build({ baseVol = 1500, giveBackLow = 128, after = 'run' } = {}) {
   if (after === 'run') {
     for (let k = 1; k <= 20; k++) push(137 + 2 * (k - 1), 137 + 2 * k, 136 + 2 * (k - 1), 137 + 2 * k, 2000);
     for (let k = 1; k <= 30; k++) push(177 - 2 * (k - 1), 178 - 2 * (k - 1), 176 - 2 * k, 177 - 2 * k, 2000);
-  } else for (let k = 1; k <= 10; k++) push(137 - 2 * k, 138 - 2 * k, 120 - k, 125 - k, 2000); // falls straight through the base low
+  } else if (after === 'fail') for (let k = 1; k <= 10; k++) push(137 - 2 * k, 138 - 2 * k, 120 - k, 125 - k, 2000); // falls straight through the base low
   return rows;
 }
 
@@ -66,4 +66,23 @@ test('measures: win rate, average win ÷ loss, largest winner and the 30-loss ch
   assert.equal(m.losses, 2);
   assert.equal(m.enoughLosses, false);
   assert.ok(m.skew > 0);
+});
+
+test('no-breakeven version: the stop stays at the base low until +2R, so a pullback after +1R does not stop it out', () => {
+  // up to just past +1R, back to entry, then a big run
+  const rows = build({ after: 'none' });
+  let t = Date.parse(`${rows.at(-1).date}T00:00:00Z`) + 86400000;
+  const push = (o, h, l, c) => {
+    while ([0, 6].includes(new Date(t).getUTCDay())) t += 86400000;
+    rows.push({ date: new Date(t).toISOString().slice(0, 10), open: o, high: h, low: l, close: c, val: 2000 * c });
+    t += 86400000;
+  };
+  push(140, 150, 139, 149); // entry next open ≈ 140; risk ≈ 12 (stop 128) → +1R ≈ 152
+  push(150, 153, 149, 150);
+  push(150, 150, 138, 139); // back below entry: the original's breakeven stop is hit
+  for (let k = 1; k <= 20; k++) push(139 + 4 * (k - 1), 139 + 4 * k, 138 + 4 * (k - 1), 139 + 4 * k);
+  const orig = im.tradesFor('X', rows, im.VERSIONS.original.rules)[0];
+  const nobe = im.tradesFor('X', rows, im.VERSIONS.nobe.rules)[0];
+  assert.equal(orig.reason, 'breakeven');
+  assert.ok(nobe.r > orig.r + 2, `no-breakeven kept the trade: ${nobe.r} vs ${orig.r}`);
 });

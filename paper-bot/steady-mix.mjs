@@ -116,6 +116,29 @@ export const loadSteadyMix = () => readJ(SAVED());
 export const loadSteadyMixPaper = () => readJ(PAPER());
 
 // --------------------------------------------------------------- paper ---
+/**
+ * Charges for a monthly re-balance: only on what changes — a new holding pays on its full amount,
+ * a kept one on its top-up or trim, a dropped one on its value. `prev` = Map symbol → value at the
+ * change day's open; liquid parts are free.
+ */
+export function turnoverCost(prev, holdings, side) {
+  let c = 0;
+  const seen = new Set();
+  for (const h of holdings) {
+    if (!h.symbol || h.kind === 'liquid') continue;
+    c += side * Math.abs(h.amount - (prev.get(h.symbol) || 0));
+    seen.add(h.symbol);
+  }
+  for (const [s, v] of prev) if (!seen.has(s)) c += side * v;
+  return c;
+}
+/** Per-symbol values of marked holdings (from valueOf's marks). */
+export const valuesBySymbol = (marks) => {
+  const m = new Map();
+  for (const x of marks) if (x.symbol && x.kind !== 'liquid') m.set(x.symbol, (m.get(x.symbol) || 0) + x.amount * (1 + x.retPct / 100));
+  return m;
+};
+
 /** NIFTY market-filter state at a month-end, replaying the ±1% band from the start of the data. */
 export function filterAt(nifty, monthEnd) {
   const gate = trendGate(nifty);
@@ -177,7 +200,12 @@ export async function steadyMixPaperUpdate({ loadCandles = candles, now = new Da
     if (gold) {
       const date = gold.date;
       let value = st.capital;
-      if (last) value = (await valueOf(last, { date, price: async (s) => (await closeOn(s, completed))?.px ?? null })).v * (1 - MIX.rebalanceDragPct / 100);
+      let prev = new Map();
+      if (last) {
+        const m = await valueOf(last, { date, price: async (s) => (await closeOn(s, completed))?.px ?? null });
+        value = m.v;
+        prev = valuesBySymbol(m.marks);
+      }
       const inMarket = filterAt(nifty, completed);
       const list = m10?.monthEnd === completed ? m10.list : null;
       const holdings = [];
@@ -186,13 +214,16 @@ export async function steadyMixPaperUpdate({ loadCandles = candles, now = new Da
         const per = stockMoney / list.length;
         for (const x of list) {
           const o = await closeOn(`${x.symbol}.NS`, completed);
-          if (o) holdings.push({ kind: 'stock', symbol: `${x.symbol}.NS`, name: x.symbol, amount: per, entry: o.px * (1 + side) });
+          if (o) holdings.push({ kind: 'stock', symbol: `${x.symbol}.NS`, name: x.symbol, amount: per, entry: o.px });
           else holdings.push({ kind: 'liquid', name: `${x.symbol} (no price; liquid)`, amount: per });
         }
       } else holdings.push({ kind: 'liquid', name: inMarket ? 'Stock part (no Momentum 10 list yet; liquid)' : 'Stock part (market filter OUT; liquid)', amount: stockMoney });
-      holdings.push({ kind: 'gold', symbol: MIX.goldSymbol, name: 'Gold (GOLDBEES)', amount: value * MIX.gold, entry: gold.px * (1 + side) });
+      holdings.push({ kind: 'gold', symbol: MIX.goldSymbol, name: 'Gold (GOLDBEES)', amount: value * MIX.gold, entry: gold.px });
       holdings.push({ kind: 'liquid', name: 'Liquid fund', amount: value * MIX.liquid });
-      st.rebalances.push({ monthEnd: completed, date, value, inMarket, holdings });
+      // charges only on what changed, taken pro rata from every part
+      const cost = turnoverCost(prev, holdings, side);
+      for (const h of holdings) h.amount *= (value - cost) / value;
+      st.rebalances.push({ monthEnd: completed, date, value: value - cost, cost, inMarket, holdings });
     }
   }
   const cur = st.rebalances.at(-1);

@@ -33,6 +33,32 @@ test('paper: at the month-end change, buys ⅓ JUNIORBEES, ⅓ GOLDBEES and ⅓ 
   assert.equal(st.rebalances[0].monthEnd, me);
   const h = st.rebalances[0].holdings;
   assert.deepEqual(h.map((x) => x.name), ['Nifty Next 50 (JUNIORBEES)', 'Gold (GOLDBEES)', 'AAA', 'BBB']);
-  assert.ok(Math.abs(h[0].amount - 100000 / 3) < 1e-6 && Math.abs(h[2].amount - 100000 / 6) < 1e-6);
+  // charges on the first buy: 0.55% of everything bought (no liquid part)
+  assert.ok(Math.abs(st.rebalances[0].cost - 100000 * 0.0055) < 1e-6);
+  assert.ok(Math.abs(h[0].amount - (100000 - st.rebalances[0].cost) / 3) < 1e-6 && Math.abs(h[2].amount - (100000 - st.rebalances[0].cost) / 6) < 1e-6);
   assert.ok(st.curve.at(-1).value > 100000 * 1.09, 'every part up 10% at the close, less entry costs');
+});
+
+test('a second month with flat prices and the same holdings costs nothing (charges only on what changes)', async () => {
+  const { rmSync } = await import('node:fs');
+  rmSync(process.env.INDIA_MIX_PAPER_PATH, { force: true });
+  const days = [];
+  for (let t = Date.UTC(2026, 9, 1); days.length < 45; t += 86400000) if (new Date(t).getUTCDay() % 6) days.push(new Date(t).toISOString().slice(0, 10));
+  const flat = (upTo) => async (sym, o) => {
+    const ds = days.filter((d) => d <= upTo);
+    if (sym === '^NSEI') return ds.map((date) => ({ date, open: 100, close: 100 }));
+    if (o.range) return [{ date: ds.at(-1), open: 100, close: 100 }];
+    return ds.filter((d) => Date.parse(d) / 1000 > o.period1).map((date) => ({ date, open: 100, close: 100 }));
+  };
+  const octEnd = days.filter((d) => d.startsWith('2026-10')).at(-1);
+  const novEnd = days.filter((d) => d.startsWith('2026-11')).at(-1);
+  const list = [{ symbol: 'AAA' }, { symbol: 'BBB' }];
+  const firstDec = days.find((d) => d.startsWith('2026-12')) || novEnd;
+  let st = await im.indiaMixPaperUpdate({ loadCandles: flat(days.find((d) => d > octEnd)), now: new Date('2026-10-01T10:00:00Z'), m10: { monthEnd: octEnd, list } });
+  assert.equal(st.rebalances.length, 1);
+  const v1 = st.rebalances[0].value;
+  st = await im.indiaMixPaperUpdate({ loadCandles: flat(firstDec), now: new Date(`${firstDec}T12:00:00Z`), m10: { monthEnd: novEnd, list } });
+  assert.equal(st.rebalances.length, 2);
+  assert.ok(st.rebalances[1].cost < 1e-6, `no charges for an unchanged portfolio, got ${st.rebalances[1].cost}`);
+  assert.ok(Math.abs(st.rebalances[1].value - v1) < 1e-6);
 });

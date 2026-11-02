@@ -54,20 +54,24 @@ export function tradePlan({ capital = 1000000, paper = loadAthPaper(), scan = lo
   const heldNow = new Set(open.map((t) => sym(t.symbol)));
   const keep = hold.filter((h) => h.action === 'hold').length;
   let slots = Math.max(0, r.maxOpen - keep);
+  // cash left for new buys: capital less what the kept positions are worth (sells free their money), as the tested portfolio does
+  let cash = Math.max(0, capital - hold.filter((h) => h.action === 'hold').reduce((a, h) => a + h.value, 0));
   const buy = (scan?.triggered || []).map((x) => {
     const s = sym(x.symbol);
-    const shares = sharesFor(capital, x.close, x.stop, r);
+    const shares = Math.min(sharesFor(capital, x.close, x.stop, r), Math.floor(cash / x.close));
     const row = { symbol: s, setup: x.setup, close: x.close, stop: x.stop, riskPct: x.riskPct, shares, value: shares * x.close, riskRs: shares * (x.close - x.stop) };
     if (heldNow.has(s)) return { ...row, action: 'skip', why: 'already held' };
-    if (!shares) return { ...row, action: 'skip', why: 'stop too close to size a position' };
     if (slots <= 0) return { ...row, action: 'skip', why: `all ${r.maxOpen} slots used` };
+    if (!shares || row.value < capital * 0.01) return { ...row, action: 'skip', why: cash < capital * 0.01 ? 'no cash left' : 'stop too close to size a position' };
     slots--;
+    cash -= row.value;
     return { ...row, action: 'buy' };
   });
   const closed = wide.filter((t) => !t.open);
   return {
     asOf, capital, rules: { riskPct: r.riskPct, maxOpen: r.maxOpen, maxPositionPct: r.maxPositionPct, trailAtr: r.chandelierAtr },
     buy, hold, sold: closed.filter((t) => t.exitDate === asOf).map((t) => ({ symbol: sym(t.symbol), exit: t.exit, r: t.r, reason: t.reason })),
+    cashLeft: cash,
     counts: { buy: buy.filter((b) => b.action === 'buy').length, sell: hold.filter((h) => h.action === 'sell').length, hold: keep, freeSlots: slots },
     record: { since: paper?.startedAt || null, ...summarise(wide), open: open.length },
     steps: [
