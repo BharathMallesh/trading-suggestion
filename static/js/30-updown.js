@@ -26,6 +26,22 @@ function udRender(d) {
     html += `<div style="margin-top:8px;padding:8px 10px;border-radius:8px;background:var(--soft);font-size:13px"><b>NIFTY</b> ${n.close.toFixed(0)} is <b>${n.above200 ? 'above' : 'below'}</b> its 200-day average (${n.sma200.toFixed(0)}).
       ${n.odds ? `Since 2010, from this position NIFTY rose over the next 3 months ${udPc(n.odds['3m'].up)} of the time (average ${udMv(n.odds['3m'].avg)}), vs ${udPc(n.base['3m'].up)} overall.` : ''}${!n.above200 ? ' Below the average has not been a reason to expect falls — NIFTY often recovered.' : ''}</div>`;
   }
+  if (d.baskets) {
+    const b = d.baskets;
+    const hs = [['1m', '1 month'], ['3m', '3 months'], ['6m', '6 months'], ['12m', '1 year']];
+    const cell = (x) => `${udPc(x.early)} / ${udPc(x.late)}`;
+    const get = (k, w, f) => ({ early: b.early[k][w][f], late: b.late[k][w][f] });
+    html += `<div style="font-size:14px;margin-top:12px"><b>Basket odds</b> — hold <b>all ${d.counts?.strong ?? ''} STRONG stocks together</b> instead of one (share of times up · 2010–17 / 2018→)</div>
+      <div style="overflow-x:auto"><table style="font-size:12px"><thead><tr><th style="text-align:left">Held for</th>${hs.map(([, l]) => `<th>${l}</th>`).join('')}</tr></thead><tbody>
+        <tr><td style="text-align:left"><b>🟢 All STRONG stocks together</b></td>${hs.map(([k]) => `<td><b>${cell(get(k, 'strongBasket', 'up'))}</b></td>`).join('')}</tr>
+        <tr><td style="text-align:left">One STRONG stock alone</td>${hs.map(([k]) => `<td>${cell(get(k, 'singleStrong', 'up'))}</td>`).join('')}</tr>
+        <tr><td style="text-align:left">NIFTY</td>${hs.map(([k]) => `<td>${cell(get(k, 'nifty', 'up'))}</td>`).join('')}</tr>
+        <tr><td style="text-align:left">🔴 All WEAK stocks together</td>${hs.map(([k]) => `<td>${cell(get(k, 'weakBasket', 'up'))}</td>`).join('')}</tr>
+        <tr><td style="text-align:left">STRONG basket beat NIFTY</td>${hs.map(([k]) => `<td>${cell(get(k, 'strongBasket', 'beatsNifty'))}</td>`).join('')}</tr>
+        <tr><td style="text-align:left">Average move: STRONG / WEAK basket (all years)</td>${hs.map(([k]) => `<td>${udMv(b.all[k].strongBasket.avg)} / ${udMv(b.all[k].weakBasket.avg)}</td>`).join('')}</tr>
+      </tbody></table></div>
+      <div class="note">Equal amounts in every STRONG stock on the first trading day of each month since 2010 (before costs and tax). Holding many strong stocks together is far more reliable than one, and a longer hold raises the odds further — Momentum 10 / 20 is this idea as a ready portfolio.</div>`;
+  }
   if (d.counts) {
     html += `<div style="font-size:14px;margin-top:12px"><b>Today's labels</b> (NSE top 200, close of ${esc(d.date)}): ${d.counts.strong} strong · ${d.counts.neutral} neutral · ${d.counts.weak} weak</div>
       <div style="font-size:13px;margin-top:4px"><span style="color:var(--up)"><b>🟢 Strong:</b></span> ${d.strong.map((x) => `<a href="#" data-ud="${esc(x.symbol)}">${esc(x.symbol)}</a>`).join(', ') || 'none'}</div>

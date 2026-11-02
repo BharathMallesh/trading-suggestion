@@ -732,7 +732,7 @@ const server = http.createServer(async (req, res) => {
       } catch {
         /* NIFTY is optional */
       }
-      return json(res, 200, { date: live?.date, stock, strong: (live?.rows || []).filter((x) => x.label === 'strong'), weak: (live?.rows || []).filter((x) => x.label === 'weak'), counts: live ? { strong: live.rows.filter((x) => x.label === 'strong').length, neutral: live.rows.filter((x) => x.label === 'neutral').length, weak: live.rows.filter((x) => x.label === 'weak').length } : null, odds: table?.labels || null, tableFrom: table?.from, tableTo: table?.to, nifty, score: live?.score, since: live?.startedAt, weeks: live?.snapshots?.length || 0 });
+      return json(res, 200, { date: live?.date, stock, strong: (live?.rows || []).filter((x) => x.label === 'strong'), weak: (live?.rows || []).filter((x) => x.label === 'weak'), counts: live ? { strong: live.rows.filter((x) => x.label === 'strong').length, neutral: live.rows.filter((x) => x.label === 'neutral').length, weak: live.rows.filter((x) => x.label === 'weak').length } : null, odds: table?.labels || null, baskets: table?.baskets || null, tableFrom: table?.from, tableTo: table?.to, nifty, score: live?.score, since: live?.startedAt, weeks: live?.snapshots?.length || 0 });
     }
     if (req.method === 'GET' && url.pathname === '/api/swing-orb') return json(res, 200, loadSwingOrb() || {});
     if (req.method === 'GET' && url.pathname === '/api/trade-plan') {

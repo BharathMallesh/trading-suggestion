@@ -136,6 +136,59 @@ export function buildTable(series, uni, nifty) {
   return { at: new Date().toISOString(), from: samples[0]?.d, to: samples.reduce((a, x) => (x.d > a ? x.d : a), ''), samples: samples.length, labels: out, nifty: niftyOut };
 }
 
+export const BASKET_H = { '1m': 21, '3m': 63, '6m': 126, '12m': 252 };
+
+/**
+ * Basket odds: on the first trading day of each month since 2010, hold every STRONG (or WEAK) stock in
+ * equal amounts. Share of times the basket was up after 1 / 3 / 6 / 12 months, how often it beat NIFTY,
+ * its average move — next to one STRONG stock alone and NIFTY. 2010–17 and 2018→ separately.
+ */
+export function buildBasketTable(series, uni, nifty) {
+  const nIdx = new Map(nifty.map((x, i) => [x.date, i]));
+  const nC = nifty.map((x) => x.close);
+  const firsts = nifty.map((x) => x.date).filter((d, i, a) => d >= '2010-01-01' && (i === 0 || a[i - 1].slice(0, 7) !== d.slice(0, 7)));
+  const pos = new Map();
+  for (const [s, rows] of series) pos.set(s, new Map(rows.map((r, i) => [r.date, i])));
+  const months = [];
+  for (const d of firsts) {
+    const ni = nIdx.get(d);
+    const members = uni.get(d.slice(0, 7));
+    if (ni == null || !members) continue;
+    const rows = [];
+    for (const s of members) {
+      if (isEtf(s)) continue;
+      const i = pos.get(s)?.get(d);
+      if (i == null || i < 260) continue;
+      const c = series.get(s).map((x) => x.close);
+      const f = features(c, i);
+      if (f) rows.push({ f, mom: f.mom, fwd: Object.fromEntries(Object.entries(BASKET_H).map(([k, h]) => [k, i + h < c.length ? c[i + h] / c[i] - 1 : null])) });
+    }
+    const sorted = rows.map((x) => x.mom).sort((a, b) => a - b);
+    for (const x of rows) x.label = labelOf(x.f, percentile(sorted, x.mom, { member: true }));
+    months.push({ d, rows, nfwd: Object.fromEntries(Object.entries(BASKET_H).map(([k, h]) => [k, ni + h < nC.length ? nC[ni + h] / nC[ni] - 1 : null])) });
+  }
+  const basket = (m, lab, k) => {
+    const v = m.rows.filter((x) => x.label === lab && x.fwd[k] != null).map((x) => x.fwd[k]);
+    return v.length >= 3 ? v.reduce((a, b) => a + b, 0) / v.length : null;
+  };
+  const rate = (v) => (v.length ? v.filter((x) => x > 0).length / v.length : null);
+  const mean = (v) => (v.length ? v.reduce((a, b) => a + b, 0) / v.length : null);
+  const parts = { early: (m) => m.d < '2018-01-01', late: (m) => m.d >= '2018-01-01', all: () => true };
+  const out = {};
+  for (const [p, f] of Object.entries(parts)) {
+    const ms = months.filter(f);
+    out[p] = Object.fromEntries(Object.keys(BASKET_H).map((k) => {
+      const sb = ms.map((m) => basket(m, 'strong', k)).filter((x) => x != null);
+      const wb = ms.map((m) => basket(m, 'weak', k)).filter((x) => x != null);
+      const single = ms.flatMap((m) => m.rows.filter((x) => x.label === 'strong' && x.fwd[k] != null).map((x) => x.fwd[k]));
+      const nf = ms.map((m) => m.nfwd[k]).filter((x) => x != null);
+      const beat = (lab) => ms.map((m) => (basket(m, lab, k) != null && m.nfwd[k] != null ? basket(m, lab, k) - m.nfwd[k] : null)).filter((x) => x != null);
+      return [k, { strongBasket: { n: sb.length, up: rate(sb), avg: mean(sb), beatsNifty: rate(beat('strong')) }, weakBasket: { n: wb.length, up: rate(wb), avg: mean(wb), beatsNifty: rate(beat('weak')) }, singleStrong: { n: single.length, up: rate(single) }, nifty: { n: nf.length, up: rate(nf), avg: mean(nf) } }];
+    }));
+  }
+  return out;
+}
+
 /** Today's labels for the latest top-200, plus the momentum distribution to label any other stock. */
 export function snapshot(series, uni) {
   const lastDate = [...series.values()].reduce((a, rows) => (rows.length && rows.at(-1).date > a ? rows.at(-1).date : a), '');
@@ -183,7 +236,7 @@ export async function updownUpdate({ table = false, loadCandles = candles, now =
   const uni = pointInTimeUniverse(series);
   if (table) {
     const nifty = (await loadCandles('^NSEI', { period1: Math.floor(Date.parse('2008-01-01') / 1000), interval: '1d' })).filter((x) => x.close > 0);
-    writeJsonAtomic(TABLE(), buildTable(series, uni, nifty));
+    writeJsonAtomic(TABLE(), { ...buildTable(series, uni, nifty), baskets: buildBasketTable(series, uni, nifty) });
   }
   const snap = snapshot(series, uni);
   const live = loadUpdownLive() || { startedAt: snap.date, snapshots: [] };

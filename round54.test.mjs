@@ -59,3 +59,16 @@ test("snapshot + scorecard: today's labels, and saved lists graded once the hori
   assert.equal(sc.weak['1m'].up, 0);
   assert.equal(sc.strong['3m'].n, 0, 'three months have not passed yet');
 });
+
+test('basket odds: equal amounts in every STRONG stock each month, compared with one stock and NIFTY', () => {
+  const b = ud.buildBasketTable(series, uni, nifty);
+  // only WIN is strong and a basket needs ≥ 3 stocks, so no strong basket here; single strong stock always rose
+  assert.equal(b.all['1m'].strongBasket.n, 0);
+  assert.equal(b.all['1m'].singleStrong.up, 1);
+  assert.equal(b.all['1m'].nifty.up, 0); // flat NIFTY never "rose"
+  // three rising stocks → a strong basket exists and rises
+  const s3 = new Map([['A', mk((i) => 100 * 1.003 ** i)], ['B', mk((i) => 100 * 1.0031 ** i)], ['C', mk((i) => 100 * 1.0032 ** i)], ...[...Array(12)].map((_, j) => [`F${j}`, mk((i) => 100 * 0.999 ** i * (1 + j / 100))])]);
+  const u3 = new Map(days.map((d) => [d.slice(0, 7), new Set(s3.keys())]));
+  const b3 = ud.buildBasketTable(s3, u3, nifty);
+  assert.ok(b3.all['1m'].strongBasket.n > 0 && b3.all['1m'].strongBasket.up === 1 && b3.all['1m'].strongBasket.beatsNifty === 1);
+});
