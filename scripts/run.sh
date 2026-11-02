@@ -32,6 +32,7 @@ do_collect() {
   # paper records of all the strategies (after the close)
   node paper-bot/vwap-pullback.mjs --paper
   node paper-bot/ath-swing.mjs --paper --alerts   # also: trailing-stop price alerts for open swing positions
+  node paper-bot/swing-orb.mjs   # swing entry timing test: buy at the open vs on the opening-range breakout
   node paper-bot/breakfast.mjs --paper
   node paper-bot/nifty-dip.mjs --paper
   node paper-bot/fo-strangle.mjs --paper   # F&O: NSE files arrive in the evening, so this records up to yesterday

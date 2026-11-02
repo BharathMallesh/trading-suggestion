@@ -73,6 +73,7 @@ import { loadOptionStrikes } from './paper-bot/option-strikes.mjs';
 import { loadImbalanceSwing, loadImbalancePaper } from './paper-bot/imbalance-swing.mjs';
 import { loadMatrixCalendar } from './paper-bot/matrix-calendar.mjs';
 import { tradePlan } from './paper-bot/trade-plan.mjs';
+import { loadSwingOrb } from './paper-bot/swing-orb.mjs';
 import { whatWorksToday } from './paper-bot/day-today.mjs';
 import { loadCoreSatellite, coreSatellite, saveCoreSatellite } from './paper-bot/core-satellite.mjs';
 import { loadFoStrangle, loadFoStranglePaper, foStrangleTest, saveFoStrangle, summarise as foSummarise } from './paper-bot/fo-strangle.mjs';
@@ -708,6 +709,7 @@ const server = http.createServer(async (req, res) => {
       const amount = Math.min(1e9, Math.max(10000, Number(url.searchParams.get('amount')) || 100000));
       return json(res, 200, thisMonth({ amount }));
     }
+    if (req.method === 'GET' && url.pathname === '/api/swing-orb') return json(res, 200, loadSwingOrb() || {});
     if (req.method === 'GET' && url.pathname === '/api/trade-plan') {
       // Home → Swing trade plan: tomorrow's buys / sells / stops, shares for ?capital= (₹50,000 – ₹10 crore)
       const capital = Math.min(1e9, Math.max(50000, Number(url.searchParams.get('capital')) || 500000));

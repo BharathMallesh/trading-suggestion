@@ -26,7 +26,23 @@ function tpRender(p) {
   if (p.sold.length) html += `<div class="note">Sold today: ${p.sold.map((s) => `${esc(s.symbol)} ${s.r >= 0 ? '+' : ''}${s.r.toFixed(2)} R (${esc(s.reason)})`).join(' · ')}</div>`;
   const rec = p.record;
   html += `<div class="note" style="margin-top:8px">Paper record (wide trail) since ${esc(rec.since || '–')}: ${rec.trades ? `${rec.trades} closed · won ${Math.round(rec.winRate * 100)}% · ${rec.avgR.toFixed(2)} R a trade` : 'no closed trades yet'} · ${rec.open} open. ${esc(p.note)}</div>`;
-  $('tpOut').innerHTML = html;
+  $('tpOut').innerHTML = html + '<div id="tpOrb"></div>';
+  tpOrb();
+}
+/** The entry timing test: buy at the open vs on the 10-minute opening-range breakout (same stock, stop and exit). */
+async function tpOrb() {
+  try {
+    const o = await api('/api/swing-orb');
+    const s = o.summary;
+    if (!s) return;
+    const f = (x) => (x == null ? '–' : `${x >= 0 ? '+' : ''}${x.toFixed(2)} R`);
+    const rows = Object.values(o.trades).sort((a, b) => b.entryDate.localeCompare(a.entryDate)).slice(0, 12);
+    $('tpOrb').innerHTML = `<div style="margin-top:12px;padding:10px 12px;border-radius:10px;border:1px dashed var(--line);font-size:13px"><b>Entry timing test</b> (paper): buy at the 9:15 open vs only on a break above the 10-minute opening range (skip if the range breaks down first). Same stock, stop and exit.
+      <div style="margin-top:4px">${s.closed} closed of ${s.trades}: at the open <b>${f(s.atOpen.avgR)}</b> a trade · opening-range entry <b>${f(s.orb.avgR)}</b> (taken ${s.orb.taken}, skipped ${s.orb.skipped}; the skipped ones made ${f(s.skippedAtOpenR)} at the open)</div>
+      <div class="note" style="margin:4px 0 0">Too early to judge until about 50 closed trades (a few months). ${rows.map((t) => `${esc(t.symbol)} ${esc(t.entryDate)}: ${t.orb.skip ? `skipped (${esc(t.orb.skip)})` : `in at ${esc(t.orb.time)}`}${t.open ? ' · open' : ` · ${f(t.rOpen)} vs ${t.orb.skip ? '0' : f(t.rOrb)}`}`).join(' · ')}</div></div>`;
+  } catch {
+    /* the test file may not exist yet */
+  }
 }
 async function tpLoad() {
   $('tpBtn').disabled = true;

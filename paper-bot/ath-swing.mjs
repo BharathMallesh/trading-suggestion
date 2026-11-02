@@ -483,7 +483,7 @@ function curveCagr(curve, from, to) {
   return cagr(seg[0].equity, seg[seg.length - 1].equity, (Date.parse(seg[seg.length - 1].date) - Date.parse(seg[0].date)) / (365.25 * 86400000));
 }
 
-async function universe() {
+export async function universe() {
   try {
     const idx = await loadIndexList('nifty200');
     return (idx.symbols || []).map((s) => (/\.(NS|BO)$/.test(s) ? s : `${s}.NS`));
@@ -501,7 +501,7 @@ export function completedOnly(rows, now = new Date()) {
   return rows.length && rows[rows.length - 1].date === today && mins < 15 * 60 + 35 ? rows.slice(0, -1) : rows;
 }
 
-async function loadDaily(loadCandles, symbols, from = '2005-01-01', now = new Date()) {
+export async function loadDaily(loadCandles, symbols, from = '2005-01-01', now = new Date()) {
   const p1 = Math.floor(Date.parse(from) / 1000);
   return (await mapLimit(symbols, 6, async (s) => {
     try {
