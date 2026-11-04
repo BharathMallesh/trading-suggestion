@@ -23,6 +23,7 @@ import { writeJsonAtomic } from '../util.mjs';
 import { downloadBhav, parseFoBhav, FoBlockedError } from './vol-premium.mjs';
 import { lotOn, LOT_NOW } from './fo-strangle.mjs';
 import { invNorm } from './option-strikes.mjs';
+import { isTradingDay } from './market-calendar.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DIR = () => process.env.FO_BHAV_MC_DIR || join(HERE, 'data', 'fo-bhav-mc');
@@ -64,6 +65,8 @@ async function chainOn(date, { fetchFn = fetch, spot = null, download = true } =
   if (!d) return null;
   mkdirSync(DIR(), { recursive: true });
   if (d.missing) {
+    // a recent trading day may simply not be published yet: retry next time instead of caching "no file"
+    if (isTradingDay(date) && (Date.now() + 19800_000 - Date.parse(`${date}T00:00:00Z`)) / 86400000 < 4) return null;
     writeFileSync(f, 'null');
     return null;
   }

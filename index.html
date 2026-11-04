@@ -434,6 +434,24 @@
         <div class="out" id="newsOut"></div>
       </section>
 
+      <!-- F&O risk check: before a trade, how bad can one week get for this account? -->
+      <section class="card span2" id="foRiskCard">
+        <h2>F&amp;O risk check <span style="font-size:12px;color:var(--warn);font-weight:500">BEFORE YOU TRADE · TODAY'S NSE PRICES · EVERY NIFTY MOVE SINCE 2010 · BLOCKS OVERSIZED TRADES</span></h2>
+        <p class="hint">Losses in F&amp;O can't be avoided, but ruinous ones can: most big losses come from a position too large or unprotected for the account. Pick a NIFTY weekly trade — this replays every NIFTY move of the
+          same length since 2010 on today's real option prices and says whether a 1-in-100 bad week would stay within your limit (2% of the account by default). Not advice.</p>
+        <div class="row" style="gap:8px;align-items:flex-end;flex-wrap:wrap">
+          <div style="flex:0 0 140px"><label>Index / stock</label><input id="frSym" list="frSyms" value="NIFTY" autocomplete="off" /><datalist id="frSyms"></datalist></div>
+          <div style="flex:0 0 150px"><label>Account (₹)</label><input id="frAcct" type="number" min="10000" step="50000" value="500000" /></div>
+          <div style="flex:0 0 250px"><label>Trade</label><select id="frStrat"><option value="strangle">Sell a strangle (no protection)</option><option value="condor">Iron condor (strangle + wings)</option><option value="buy-call">Buy a call</option><option value="buy-put">Buy a put</option></select></div>
+          <div style="flex:0 0 80px"><label>Lots</label><input id="frLots" type="number" min="1" max="50" value="1" /></div>
+          <div style="flex:0 0 110px"><label>Strikes away (%)</label><input id="frDist" type="number" min="0.5" max="8" step="0.5" value="2" /></div>
+          <div style="flex:0 0 100px"><label>Wings, NIFTY (pts)</label><input id="frWing" type="number" min="100" max="2000" step="100" value="500" /></div>
+          <div style="flex:0 0 100px"><label>Wings, stock (%)</label><input id="frWingPct" type="number" min="0.5" max="20" step="0.5" value="4" /></div>
+          <div style="flex:0 0 110px"><label>Max loss (% of acct)</label><input id="frMax" type="number" min="0.5" max="10" step="0.5" value="2" /></div>
+          <div style="flex:0 0 auto"><button id="frBtn" type="button" style="margin-top:0">Check</button></div></div>
+        <div id="frOut" style="margin-top:10px">Loading…</div>
+      </section>
+
       <!-- Option strike guide: ITM vs ATM vs OTM on real NSE weekly prices (rebuild of a YouTube backtest) -->
       <section class="card span2" id="strikeCard">
         <h2>Option strike guide <span style="font-size:12px;color:var(--warn);font-weight:500">ITM vs ATM vs OTM · REAL NSE WEEKLY PRICES · TESTED · NOT A STRATEGY</span></h2>
@@ -1020,6 +1038,7 @@
     <script src="/static/js/28-matrix-calendar.js"></script>
     <script src="/static/js/29-trade-plan.js"></script>
     <script src="/static/js/30-updown.js"></script>
+    <script src="/static/js/31-fo-riskcheck.js"></script>
     <script src="/static/js/19-my-plan.js"></script>
     <script src="/static/js/20-rsi-swing.js"></script>
   </body>

@@ -74,6 +74,7 @@ import { loadImbalanceSwing, loadImbalancePaper } from './paper-bot/imbalance-sw
 import { loadMatrixCalendar } from './paper-bot/matrix-calendar.mjs';
 import { tradePlan } from './paper-bot/trade-plan.mjs';
 import { loadSwingOrb } from './paper-bot/swing-orb.mjs';
+import { riskCheckLive, stockSymbols } from './paper-bot/fo-riskcheck.mjs';
 import { outlookFor, loadUpdownLive, loadUpdownTable, features as udFeatures } from './paper-bot/updown-outlook.mjs';
 import { whatWorksToday } from './paper-bot/day-today.mjs';
 import { loadCoreSatellite, coreSatellite, saveCoreSatellite } from './paper-bot/core-satellite.mjs';
@@ -709,6 +710,19 @@ const server = http.createServer(async (req, res) => {
       // Home → Do this month: the monthly action list, scaled to ?amount= (₹10,000 – ₹10 crore)
       const amount = Math.min(1e9, Math.max(10000, Number(url.searchParams.get('amount')) || 100000));
       return json(res, 200, thisMonth({ amount }));
+    }
+    if (req.method === 'GET' && url.pathname === '/api/fo-riskcheck') {
+      // Options & risk → F&O risk check: blocks trades too big / unprotected for the account
+      const q = url.searchParams;
+      const num = (k, d, lo, hi) => Math.min(hi, Math.max(lo, Number(q.get(k)) || d));
+      try {
+        if (q.has('symbols')) return json(res, 200, { symbols: ['NIFTY', ...stockSymbols()] });
+        const symbol = String(q.get('symbol') || 'NIFTY').toUpperCase();
+        if (!/^[A-Z0-9&-]{1,20}$/.test(symbol)) return json(res, 400, { error: 'Type an NSE F&O symbol, e.g. RELIANCE.' });
+        return json(res, 200, await riskCheckLive({ symbol, strategy: q.get('strategy') || 'strangle', account: num('account', 500000, 10000, 1e9), lots: Math.round(num('lots', 1, 1, 50)), distancePct: num('distance', 2, 0.5, 8), wing: Math.round(num('wing', 500, 100, 2000) / 50) * 50, wingPct: num('wingPct', 4, 0.5, 20), maxLossPct: num('maxLoss', 2, 0.5, 10) }));
+      } catch (e) {
+        return json(res, 400, { error: e.message });
+      }
     }
     if (req.method === 'GET' && url.pathname === '/api/updown') {
       // Home → Up/Down outlook: a 1–3 month lean for one stock (?symbol=), today's lists, NIFTY's trend, the scorecard

@@ -29,6 +29,8 @@ import { candles } from '../market-data.mjs';
 import { writeJsonAtomic } from '../util.mjs';
 
 const run = promisify(execFile);
+import { isTradingDay } from './market-calendar.mjs';
+
 const DIR = () => process.env.BHAV_EQ_DIR || join(dirname(fileURLToPath(import.meta.url)), 'data', 'bhav-eq');
 const MON = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36';
@@ -149,6 +151,9 @@ export async function buildBhavHistory({ from = '2008-01-01', loadCandles = cand
       }
       const got = await downloadCm(d, { fetchFn });
       if (got === null) continue; // network trouble: picked up next run
+      // NSE can publish a day's file late: a recent trading day with no file yet is retried next run,
+      // not marked done (that would skip it for good)
+      if (!got.csv && isTradingDay(d) && (Date.now() + 19800_000 - Date.parse(`${d}T00:00:00Z`)) / 86400000 < 4) continue;
       if (got.csv) {
         const rows = parseCmBhav(got.csv);
         for (const r of [...rows].sort((a, b) => b.val - a.val).slice(0, TOP_KEEP)) tracked.add(r.sym);

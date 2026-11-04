@@ -33,6 +33,7 @@
 //   node paper-bot/vol-premium.mjs --real    # + real option prices (first run downloads ~350 days)
 //   node paper-bot/vol-premium.mjs --save    # both, saved; updates the weekly IV ratio (weekly refit)
 
+import { isTradingDay } from './market-calendar.mjs';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -288,6 +289,41 @@ export function parseFoBhav(text) {
 }
 
 /**
+ * Stock option chains from one day's F&O file (new NSE format): per symbol the underlying price, the lot
+ * size and the next two expiries, strikes within ±25% of the price. For the F&O risk check on stocks.
+ */
+export function parseStockChains(text, date) {
+  const lines = String(text).replace(/\r/g, '').split('\n').filter(Boolean);
+  const head = lines[0].split(',');
+  const col = (n) => head.indexOf(n);
+  const c = { sym: col('TckrSymb'), tp: col('FinInstrmTp'), exp: col('XpryDt'), k: col('StrkPric'), opt: col('OptnTp'), close: col('ClsPric'), vol: col('TtlTradgVol'), und: col('UndrlygPric'), lot: col('NewBrdLotQty') };
+  if (c.sym < 0 || c.lot < 0) return null; // old format: no lot sizes
+  const out = {};
+  for (const l of lines.slice(1)) {
+    const f = l.split(',');
+    if (f[c.tp] !== 'STO') continue;
+    const s = f[c.sym];
+    const exp = f[c.exp];
+    if (!(exp > date)) continue;
+    const o = (out[s] ||= { underlying: Number(f[c.und]) || null, lot: Number(f[c.lot]) || null, expiries: {} });
+    const k = Number(f[c.k]);
+    if (o.underlying && Math.abs(k / o.underlying - 1) > 0.25) continue;
+    const typ = f[c.opt];
+    if (typ !== 'CE' && typ !== 'PE') continue;
+    const row = ((o.expiries[exp] ||= {})[k] ||= {});
+    row[typ] = Number(f[c.close]);
+    row[typ === 'CE' ? 'ceVol' : 'peVol'] = Number(f[c.vol]) || 0;
+  }
+  for (const o of Object.values(out)) {
+    const keep = Object.keys(o.expiries).sort().slice(0, 2);
+    o.expiries = Object.fromEntries(keep.map((e) => [e, o.expiries[e]]));
+  }
+  return Object.keys(out).length ? out : null;
+}
+const FO_STOCKS_DIR = process.env.FO_STOCKS_DIR || join(dirname(fileURLToPath(import.meta.url)), 'data', 'fo-stocks');
+export const foStocksDir = () => FO_STOCKS_DIR;
+
+/**
  * NIFTY option closes for one date, keeping only the nearest expiry within
  * 10 days (cached). null = no file (holiday). Blocks throw FoBlockedError.
  */
@@ -342,12 +378,28 @@ export async function foBhav(date, { fetchFn = fetch } = {}) {
   const d = await downloadBhav(date, { fetchFn });
   if (!d) return null; // network: retry another time
   if (d.missing) {
+    // NSE publishes the day's file in the evening, sometimes late: a trading day from the last few days
+    // that has no file yet is retried next time instead of being cached as "no file" for good
+    const ageDays = (Date.now() + 19800_000 - Date.parse(`${date}T00:00:00Z`)) / 86400000;
+    if (isTradingDay(date) && ageDays < 4) return null;
     mkdirSync(FO_DIR, { recursive: true });
-    writeFileSync(f, 'null'); // genuine "no file for this date"
+    writeFileSync(f, 'null'); // genuine "no file for this date" (a holiday, or an old date NSE never published)
     return null;
   }
   const parsed = parseFoBhav(d.csv);
   if (!parsed) return null; // unexpected format: don't cache
+  // the same file carries every stock's options: keep recent days' chains for the stock risk check
+  try {
+    if ((Date.now() + 19800_000 - Date.parse(`${date}T00:00:00Z`)) / 86400000 < 10) {
+      const stocks = parseStockChains(d.csv, date);
+      if (stocks) {
+        mkdirSync(FO_STOCKS_DIR, { recursive: true });
+        writeFileSync(join(FO_STOCKS_DIR, `${date}.json`), JSON.stringify(stocks));
+      }
+    }
+  } catch {
+    /* stock chains are optional */
+  }
   const near = Object.keys(parsed.expiries).filter((e) => e > date && (Date.parse(e) - Date.parse(date)) / 86400000 <= 10).sort();
   const keep = { underlying: parsed.underlying, expiries: {} };
   for (const e of near.slice(0, 2)) {
