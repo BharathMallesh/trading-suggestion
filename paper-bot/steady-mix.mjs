@@ -195,7 +195,11 @@ export async function steadyMixPaperUpdate({ loadCandles = candles, now = new Da
     return { v, marks };
   };
   const last = st.rebalances.at(-1);
-  if (completed && completed >= st.startedAt.slice(0, 7) + '-00' && (!last || last.monthEnd < completed)) {
+  // when the filter is IN the stock part needs the Momentum 10 list for this month-end, made from NSE's
+  // daily file, which can arrive after the evening job: wait for it (up to a week) — the entry prices are
+  // the first open after the month-end either way
+  const listWait = completed && filterAt(nifty, completed) && m10?.monthEnd !== completed && (Date.parse(today) - Date.parse(completed)) / 86400000 <= 7;
+  if (completed && !listWait && completed >= st.startedAt.slice(0, 7) + '-00' && (!last || last.monthEnd < completed)) {
     const gold = await closeOn(MIX.goldSymbol, completed);
     if (gold) {
       const date = gold.date;

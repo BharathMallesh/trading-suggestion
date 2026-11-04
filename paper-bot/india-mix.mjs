@@ -130,7 +130,11 @@ export async function indiaMixPaperUpdate({ loadCandles = candles, now = new Dat
     return { v, marks };
   };
   const last = st.rebalances.at(-1);
-  if (completed && completed >= st.startedAt.slice(0, 7) + '-00' && (!last || last.monthEnd < completed)) {
+  // the Momentum 10 list for this month-end is made from NSE's daily file, which can arrive after the
+  // evening job: wait for it (up to a week) instead of parking the stock third in the liquid fund; the
+  // entry prices are the first open after the month-end either way
+  const listWait = completed && m10?.monthEnd !== completed && (Date.parse(today) - Date.parse(completed)) / 86400000 <= 7;
+  if (completed && !listWait && completed >= st.startedAt.slice(0, 7) + '-00' && (!last || last.monthEnd < completed)) {
     const gold = await priceOf(MIX.goldSymbol, completed);
     const next50 = await priceOf(MIX.next50Symbol, completed);
     if (gold && next50) {

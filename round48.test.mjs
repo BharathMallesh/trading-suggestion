@@ -62,3 +62,25 @@ test('a second month with flat prices and the same holdings costs nothing (charg
   assert.ok(st.rebalances[1].cost < 1e-6, `no charges for an unchanged portfolio, got ${st.rebalances[1].cost}`);
   assert.ok(Math.abs(st.rebalances[1].value - v1) < 1e-6);
 });
+
+test('waits for the Momentum 10 list of the month-end instead of parking the stock third in cash', async () => {
+  const { rmSync } = await import('node:fs');
+  rmSync(process.env.INDIA_MIX_PAPER_PATH, { force: true });
+  const days = [];
+  for (let t = Date.UTC(2026, 9, 1); days.length < 26; t += 86400000) if (new Date(t).getUTCDay() % 6) days.push(new Date(t).toISOString().slice(0, 10));
+  const octEnd = days.filter((d) => d.startsWith('2026-10')).at(-1);
+  const firstNov = days.find((d) => d.startsWith('2026-11'));
+  const load = async (sym, o) => {
+    if (sym === '^NSEI') return days.map((date) => ({ date, open: 100, close: 100 }));
+    if (o.range) return [{ date: days.at(-1), open: 100, close: 100 }];
+    return days.filter((d) => Date.parse(d) / 1000 > o.period1).map((date) => ({ date, open: 100, close: 100 }));
+  };
+  // the list is still September's: no re-balance yet
+  let st = await im.indiaMixPaperUpdate({ loadCandles: load, now: new Date('2026-10-28T12:00:00Z'), m10: { monthEnd: '2026-09-30', list: [{ symbol: 'OLD' }] } }); // record starts in late October, like the real one
+  assert.equal(st.rebalances.length, 0);
+  // next run: October's list is ready → bought at the first November open, with the stocks
+  st = await im.indiaMixPaperUpdate({ loadCandles: load, now: new Date(`${firstNov}T14:00:00Z`), m10: { monthEnd: octEnd, list: [{ symbol: 'AAA' }, { symbol: 'BBB' }] } });
+  assert.equal(st.rebalances.length, 1);
+  assert.equal(st.rebalances[0].date, firstNov);
+  assert.deepEqual(st.rebalances[0].holdings.filter((h) => h.kind === 'stock').map((h) => h.name), ['AAA', 'BBB']);
+});

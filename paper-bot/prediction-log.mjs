@@ -60,7 +60,11 @@ export function logPrediction(result) {
     // Probabilities before the news tilt (null when no tilt was applied).
     preNews: result.newsTilt?.applied ? result.newsTilt.before : null,
     newsTiltPts: result.newsTilt?.applied ? result.newsTilt.shiftPts : 0,
-    atr: result.indicators?.atr14 ?? result.expectedMove?.atr ?? null,
+    // the band a move must clear to count as Up / Down must match the horizon: a next-session call is
+    // scored on the session's move, so it uses the DAILY ATR (as the calibration does); the 1-hour
+    // (15-minute mode) call uses the intraday ATR
+    atr: (horizonFor(result.mode, result.intervalMinutes) == null ? result.expectedMove?.atr : null) ?? result.indicators?.atr14 ?? result.expectedMove?.atr ?? null,
+    atrBasis: horizonFor(result.mode, result.intervalMinutes) == null && result.expectedMove?.atr ? 'daily' : 'bars',
     timeWindow: result.expectedMove?.timeWindow || null,
     horizonMinutes: horizonFor(result.mode, result.intervalMinutes),
     // Session-horizon predictions made while NSE is open are scored from the
@@ -155,6 +159,59 @@ async function settlementPrice(entry, now) {
   // First session after the prediction's bar whose close is final (not in progress).
   const bar = rows.find((r) => r.date > predDate && sessionComplete(r.date, now));
   return bar ? { price: Number(bar.close), at: bar.date } : null;
+}
+
+/** Average true range (simple 14-bar mean) of daily rows ending before `date` (the session the call was made from). */
+export function dailyAtrBefore(rows, date, n = 14) {
+  const prior = rows.filter((r) => r.date < date); // sessions before the call only
+  if (prior.length < n + 1) return null;
+  const tail = prior.slice(-(n + 1));
+  let s = 0;
+  for (let i = 1; i < tail.length; i++) s += Math.max(tail[i].high - tail[i].low, Math.abs(tail[i].high - tail[i - 1].close), Math.abs(tail[i].low - tail[i - 1].close));
+  return s / n;
+}
+
+/**
+ * One-time fix (Nov 2026): session-horizon predictions were scored with the 15-minute ATR, a band about
+ * 4× too narrow for a next-session move, so almost nothing counted as SIDEWAYS while the probabilities
+ * were fitted on daily ATR. Re-score them with the daily ATR as of the call's date. Idempotent.
+ */
+export async function rescoreSessionEntries({ loadCandles = yahooCandles, thresholdPct = 0.15 } = {}) {
+  return withFileLock(LOG_PATH, async () => {
+    const log = loadLog();
+    const todo = log.entries.filter((e) => e.evaluated && horizonFor(e.mode, e.intervalMinutes) == null && e.atrBasis !== 'daily' && e.lastClose && e.realizedRetPct != null);
+    const bySym = new Map();
+    for (const e of todo) {
+      if (!bySym.has(e.symbol)) {
+        try {
+          bySym.set(e.symbol, (await loadCandles(e.symbol, { range: '2y', interval: '1d' })).filter((r) => r.close > 0 && r.high > 0));
+        } catch {
+          bySym.set(e.symbol, null);
+        }
+      }
+    }
+    let changed = 0;
+    for (const e of todo) {
+      const rows = bySym.get(e.symbol);
+      const date = new Date(new Date(e.ts).getTime() + 19800_000).toISOString().slice(0, 10);
+      const atr = rows && dailyAtrBefore(rows, date);
+      if (!atr) continue;
+      const thr = Math.max(thresholdPct, (atr / e.lastClose) * 100 * 0.35);
+      const label = labelFromReturn(e.realizedRetPct, thr);
+      e.realizedLabelOld = e.realizedLabelOld ?? e.realizedLabel;
+      e.evalThresholdPctOld = e.evalThresholdPctOld ?? e.evalThresholdPct;
+      e.atrIntraday = e.atrIntraday ?? e.atr;
+      e.atr = atr;
+      e.atrBasis = 'daily';
+      e.evalThresholdPct = thr;
+      e.realizedLabel = label;
+      e.hitBias = label === e.bias;
+      e.hitTopProb = label === topProbLabel(e);
+      changed++;
+    }
+    if (changed) saveLog(log);
+    return { checked: todo.length, rescored: changed };
+  });
 }
 
 /**
