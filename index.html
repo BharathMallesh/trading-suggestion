@@ -454,7 +454,7 @@
           <div style="flex:0 0 140px"><label>Index / stock</label><input id="frSym" list="frSyms" value="NIFTY" autocomplete="off" /><datalist id="frSyms"></datalist></div>
           <div style="flex:0 0 220px"><label>…or pick a Strong / Weak stock</label><select id="frPick"><option value="">— choose —</option></select></div>
           <div style="flex:0 0 150px"><label>Account (₹)</label><input id="frAcct" type="number" min="10000" step="50000" value="500000" /></div>
-          <div style="flex:0 0 250px"><label>Trade</label><select id="frStrat"><option value="strangle">Sell a strangle (no protection)</option><option value="condor">Iron condor (strangle + wings)</option><option value="buy-call">Buy a call</option><option value="buy-put">Buy a put</option></select></div>
+          <div style="flex:0 0 250px"><label>Trade</label><select id="frStrat"><option value="strangle">Sell a strangle (no protection)</option><option value="condor">Iron condor (strangle + wings)</option><option value="buy-call">Buy a call</option><option value="buy-put">Buy a put</option><option value="call-spread">Call spread (buy a call, sell a higher one)</option><option value="put-spread">Put spread (buy a put, sell a lower one)</option></select></div>
           <div style="flex:0 0 80px"><label>Lots</label><input id="frLots" type="number" min="1" max="50" value="1" /></div>
           <div style="flex:0 0 110px"><label>Strikes away (%)</label><input id="frDist" type="number" min="0" max="8" step="0.5" value="2" /></div>
           <div style="flex:0 0 100px"><label>Wings, NIFTY (pts)</label><input id="frWing" type="number" min="100" max="2000" step="100" value="500" /></div>

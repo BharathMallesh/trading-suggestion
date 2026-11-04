@@ -111,3 +111,23 @@ test('fits my budget: only options whose one-lot cost is within the per-trade li
   assert.equal(r.rows.find((x) => x.symbol === 'DOWNCO').type, 'PE');
   assert.equal(r.tries, 3);
 });
+
+test('spreads: buy one option and sell one farther out — net cost is the most you can lose, profit is capped at the width less the cost', () => {
+  const c = chainAt(20000);
+  for (const strategy of ['call-spread', 'put-spread']) {
+    const r = rc.riskCheck({ strategy, account: 1e7, chain: c, niftyRows: nifty, distancePct: 0, wing: 250 });
+    assert.equal(r.legs.length, 2);
+    assert.equal(r.legs[0].side, 'buy');
+    assert.equal(r.legs[1].side, 'sell');
+    assert.equal(Math.abs(r.legs[1].strike - r.legs[0].strike), 250);
+    assert.ok(r.premium < 0, 'a net cost');
+    assert.ok(Math.abs(r.definedMaxLoss + r.premium) < 1e-9, 'max loss = the net cost');
+    assert.ok(Math.abs(r.maxProfit - (250 * r.lot + r.premium)) < 1e-6, 'max profit = width − cost');
+    assert.ok(r.worstEver >= r.premium - 600, 'never loses (much) more than the cost — only charges on top');
+    assert.ok(r.best <= r.maxProfit, 'never makes more than the cap');
+  }
+  // a spread costs less than the plain option it starts from
+  const buy = rc.riskCheck({ strategy: 'buy-put', account: 1e7, chain: c, niftyRows: nifty, distancePct: 0 });
+  const sp = rc.riskCheck({ strategy: 'put-spread', account: 1e7, chain: c, niftyRows: nifty, distancePct: 0, wing: 250 });
+  assert.ok(-sp.premium < -buy.premium);
+});

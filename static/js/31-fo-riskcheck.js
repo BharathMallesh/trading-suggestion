@@ -24,6 +24,7 @@ function frRender(r) {
     <tr><td style="text-align:left">Bad case (1 in 20)</td><td style="color:${frCol(r.bad20)}">${frRs(r.bad20)} (${pct(r.bad20)} of the account)</td></tr>
     <tr><td style="text-align:left"><b>Very bad case (1 in 100)</b></td><td style="color:${frCol(r.bad100)}"><b>${frRs(r.bad100)} (${pct(r.bad100)})</b> · your limit ${frRs(-r.allowedLoss)}</td></tr>
     <tr><td style="text-align:left">Worst since 2010</td><td style="color:${frCol(r.worstEver)}">${frRs(r.worstEver)} (${pct(r.worstEver)})</td></tr>
+    ${r.maxProfit != null ? `<tr><td style="text-align:left">Maximum possible profit</td><td style="color:var(--up)">${frRs(r.maxProfit)}</td></tr>` : ''}
     <tr><td style="text-align:left">Maximum possible loss</td><td>${r.definedMaxLoss != null ? frRs(-r.definedMaxLoss) : '<b style="color:var(--down)">no limit</b>'}</td></tr>
     <tr><td style="text-align:left">Margin / money tied up</td><td>₹${Math.round(r.margin).toLocaleString('en-IN')}</td></tr>
   </tbody></table></div><div class="note">${esc(r.note)}</div>`;
