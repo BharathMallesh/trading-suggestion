@@ -27,7 +27,7 @@ const pick = async () => ({ date: '2026-11-04', rows: [
   call('EEE', 0.3, 1000), { ...row('ZZZ', 0.95, 900), kind: 'option' },
 ] });
 const none = async () => ({ date: null, rows: [] });
-const quiet = { fetchDay: async () => null, eqClose: () => null, loadCandles: async () => [] };
+const quiet = { fetchDay: async () => null, eqClose: () => null, loadCandles: async () => [], dayCheck: async () => null };
 const EVENING = new Date('2026-11-04T15:00:00Z'); // 20:30 IST on a trading day
 
 test('opens only on the day\'s own closes: best odds first, max 2 the same way, liquid legs, ≥ 5 sessions; charges count at once', async () => {

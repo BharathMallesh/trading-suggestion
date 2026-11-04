@@ -77,6 +77,7 @@ import { loadSwingOrb } from './paper-bot/swing-orb.mjs';
 import { riskCheckLive, stockSymbols, stockLots, affordable } from './paper-bot/fo-riskcheck.mjs';
 import { loadSpreadPaper } from './paper-bot/spread-paper.mjs';
 import { tradeToday } from './paper-bot/trade-today.mjs';
+import { foPlan } from './paper-bot/fo-plan.mjs';
 const affordableCache = new Map();
 import { outlookFor, loadUpdownLive, loadUpdownTable, features as udFeatures } from './paper-bot/updown-outlook.mjs';
 import { whatWorksToday } from './paper-bot/day-today.mjs';
@@ -714,6 +715,7 @@ const server = http.createServer(async (req, res) => {
       const amount = Math.min(1e9, Math.max(10000, Number(url.searchParams.get('amount')) || 100000));
       return json(res, 200, thisMonth({ amount }));
     }
+    if (req.method === 'GET' && url.pathname === '/api/fo-plan') return json(res, 200, await foPlan()); // Options & risk → My F&O plan
     if (req.method === 'GET' && url.pathname === '/api/trade-today') return json(res, 200, await tradeToday({ fresh: url.searchParams.has('fresh') })); // Home → Trade today?
     if (req.method === 'GET' && url.pathname === '/api/spread-paper') return json(res, 200, loadSpreadPaper() || {});
     if (req.method === 'GET' && url.pathname === '/api/fo-affordable') {

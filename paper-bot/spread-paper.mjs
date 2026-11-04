@@ -22,10 +22,14 @@ import { foStocksDir, foBhav } from './vol-premium.mjs';
 import { lastSessionDate, nseOpenNow, tradingDaysBetween } from './market-calendar.mjs';
 import { loadSeries } from './bhav-history.mjs';
 
+/** Trade today? for the session just ended (loaded only when needed). */
+const defaultDayCheck = async (now) => (await import('./trade-today.mjs')).tradeToday({ now });
+
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PAPER = () => process.env.SPREAD_PAPER_PATH || join(HERE, 'data', 'spread-paper.json');
 const FO_DIR = () => process.env.FO_BHAV_DIR || join(HERE, 'data', 'fo-bhav');
-export const RULES = { capital: 10000, perTrade: 3000, maxOpen: 3, maxPerSide: 2, minSessions: 5, minVolume: 100, exitSessionsBefore: 2 };
+export const RULES = { capital: 10000, perTrade: 3000, maxOpen: 3, maxPerSide: 2, minSessions: 5, minVolume: 100, exitSessionsBefore: 2, stopAtPct: 30 };
+// plan rules on top: no new trade on a Trade-today STAY OUT day (a VIX jump or a 1.5% NIFTY fall), none after a 30% fall
 
 export function loadSpreadPaper() {
   try {
@@ -80,7 +84,7 @@ function eqCloseNse(symbol, date) {
   }
 }
 
-export async function spreadPaperUpdate({ now = new Date(), loadCandles = candles, rules = RULES, pick = (o) => affordable(o), fetchDay = (d) => foBhav(d), eqClose = eqCloseNse } = {}) {
+export async function spreadPaperUpdate({ now = new Date(), loadCandles = candles, rules = RULES, pick = (o) => affordable(o), fetchDay = (d) => foBhav(d), eqClose = eqCloseNse, dayCheck = defaultDayCheck } = {}) {
   rules = { ...RULES, ...rules };
   const t0 = new Date(now.getTime() + 19800_000);
   const today = t0.toISOString().slice(0, 10);
@@ -146,9 +150,25 @@ export async function spreadPaperUpdate({ now = new Date(), loadCandles = candle
   //    to expiry, both legs traded at least `minVolume` contracts, and cash kept for every open trade's full worst case
   const open = st.trades.filter((x) => x.open);
   let opened = 0;
+  // plan rule: stop opening after a 30% fall from the starting money (value at the latest marks)
+  const valueNow = st.cash + open.reduce((a, x) => a + x.cost + (x.mark ?? -(x.entryCharges ?? 0)), 0);
+  if (!st.stopped && valueNow <= rules.capital * (1 - rules.stopAtPct / 100)) st.stopped = { date: session, value: valueNow };
+  // plan rule: no new trade on a STAY OUT day (checked once per session; a failed check doesn't block)
+  let skipToday = false;
+  if (!st.stopped && open.length < rules.maxOpen && !nseOpenNow(now) && !st.trades.some((x) => x.entryDate === session)) {
+    try {
+      const d = await dayCheck(now);
+      if (d?.asOf === session && d.kinds?.find((k) => k.kind === 'intraday')?.level === 'stay') {
+        skipToday = true;
+        st.skipped = [...(st.skipped || []).filter((x) => x.date !== session), { date: session, why: d.signs.map((s) => s.text).join('; ') }].slice(-30);
+      }
+    } catch {
+      /* the check is optional */
+    }
+  }
   const reserved = open.reduce((a, x) => a + Math.max(0, (x.maxLoss ?? x.cost) - x.cost), 0); // charges etc. still to come
   let free = st.cash - reserved;
-  if (open.length < rules.maxOpen && free >= 500 && !nseOpenNow(now) && !st.trades.some((x) => x.entryDate === session)) {
+  if (!st.stopped && !skipToday && open.length < rules.maxOpen && free >= 500 && !nseOpenNow(now) && !st.trades.some((x) => x.entryDate === session)) {
     let res = { rows: [] };
     try {
       res = await pick({ capital: rules.capital, perTrade: Math.min(rules.perTrade, free) });
@@ -183,6 +203,8 @@ export async function spreadPaperUpdate({ now = new Date(), loadCandles = candle
     value: st.cash + openNow.reduce((a, x) => a + x.cost + (x.mark ?? -(x.entryCharges ?? 0)), 0),
     unsettled: openNow.filter((x) => x.unsettled).length,
   };
+  // the account value at each session's marks (for the worst fall)
+  st.curve = [...(st.curve || []).filter((x) => x.date !== session), { date: session, value: st.summary.value }].sort((a, b) => a.date.localeCompare(b.date)).slice(-400);
   st.updatedAt = now.toISOString();
   writeJsonAtomic(PAPER(), st);
   return { st, opened };
