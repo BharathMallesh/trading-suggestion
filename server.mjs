@@ -74,7 +74,7 @@ import { loadImbalanceSwing, loadImbalancePaper } from './paper-bot/imbalance-sw
 import { loadMatrixCalendar } from './paper-bot/matrix-calendar.mjs';
 import { tradePlan } from './paper-bot/trade-plan.mjs';
 import { loadSwingOrb } from './paper-bot/swing-orb.mjs';
-import { riskCheckLive, stockSymbols } from './paper-bot/fo-riskcheck.mjs';
+import { riskCheckLive, stockSymbols, stockLots, affordable } from './paper-bot/fo-riskcheck.mjs';
 import { outlookFor, loadUpdownLive, loadUpdownTable, features as udFeatures } from './paper-bot/updown-outlook.mjs';
 import { whatWorksToday } from './paper-bot/day-today.mjs';
 import { loadCoreSatellite, coreSatellite, saveCoreSatellite } from './paper-bot/core-satellite.mjs';
@@ -711,15 +711,24 @@ const server = http.createServer(async (req, res) => {
       const amount = Math.min(1e9, Math.max(10000, Number(url.searchParams.get('amount')) || 100000));
       return json(res, 200, thisMonth({ amount }));
     }
+    if (req.method === 'GET' && url.pathname === '/api/fo-affordable') {
+      // Options & risk → Fits my budget: options a small account can buy (cost per lot within ?perTrade=)
+      const capital = Math.min(1e8, Math.max(1000, Number(url.searchParams.get('capital')) || 10000));
+      const perTrade = Math.min(capital, Math.max(200, Number(url.searchParams.get('perTrade')) || Math.round(capital * 0.3)));
+      return json(res, 200, await affordable({ capital, perTrade }));
+    }
     if (req.method === 'GET' && url.pathname === '/api/fo-riskcheck') {
       // Options & risk → F&O risk check: blocks trades too big / unprotected for the account
       const q = url.searchParams;
-      const num = (k, d, lo, hi) => Math.min(hi, Math.max(lo, Number(q.get(k)) || d));
+      const num = (k, d, lo, hi) => {
+        const v = q.has(k) && q.get(k) !== '' ? Number(q.get(k)) : NaN;
+        return Math.min(hi, Math.max(lo, Number.isFinite(v) ? v : d)); // 0 is a real value (at the money)
+      };
       try {
         if (q.has('symbols')) return json(res, 200, { symbols: ['NIFTY', ...stockSymbols()] });
         const symbol = String(q.get('symbol') || 'NIFTY').toUpperCase();
         if (!/^[A-Z0-9&-]{1,20}$/.test(symbol)) return json(res, 400, { error: 'Type an NSE F&O symbol, e.g. RELIANCE.' });
-        return json(res, 200, await riskCheckLive({ symbol, strategy: q.get('strategy') || 'strangle', account: num('account', 500000, 10000, 1e9), lots: Math.round(num('lots', 1, 1, 50)), distancePct: num('distance', 2, 0.5, 8), wing: Math.round(num('wing', 500, 100, 2000) / 50) * 50, wingPct: num('wingPct', 4, 0.5, 20), maxLossPct: num('maxLoss', 2, 0.5, 10) }));
+        return json(res, 200, await riskCheckLive({ symbol, strategy: q.get('strategy') || 'strangle', account: num('account', 500000, 10000, 1e9), lots: Math.round(num('lots', 1, 1, 50)), distancePct: num('distance', 2, 0, 8), wing: Math.round(num('wing', 500, 100, 2000) / 50) * 50, wingPct: num('wingPct', 4, 0.5, 20), maxLossPct: num('maxLoss', 2, 0.5, 50) }));
       } catch (e) {
         return json(res, 400, { error: e.message });
       }
@@ -746,7 +755,9 @@ const server = http.createServer(async (req, res) => {
       } catch {
         /* NIFTY is optional */
       }
-      return json(res, 200, { date: live?.date, stock, strong: (live?.rows || []).filter((x) => x.label === 'strong'), weak: (live?.rows || []).filter((x) => x.label === 'weak'), counts: live ? { strong: live.rows.filter((x) => x.label === 'strong').length, neutral: live.rows.filter((x) => x.label === 'neutral').length, weak: live.rows.filter((x) => x.label === 'weak').length } : null, odds: table?.labels || null, baskets: table?.baskets || null, tableFrom: table?.from, tableTo: table?.to, nifty, score: live?.score, since: live?.startedAt, weeks: live?.snapshots?.length || 0 });
+      const lots = stockLots();
+      const withLot = (x) => ({ ...x, foLot: lots[x.symbol] ?? null });
+      return json(res, 200, { date: live?.date, stock, strong: (live?.rows || []).filter((x) => x.label === 'strong').map(withLot), weak: (live?.rows || []).filter((x) => x.label === 'weak').map(withLot), counts: live ? { strong: live.rows.filter((x) => x.label === 'strong').length, neutral: live.rows.filter((x) => x.label === 'neutral').length, weak: live.rows.filter((x) => x.label === 'weak').length } : null, odds: table?.labels || null, baskets: table?.baskets || null, tableFrom: table?.from, tableTo: table?.to, nifty, score: live?.score, since: live?.startedAt, weeks: live?.snapshots?.length || 0 });
     }
     if (req.method === 'GET' && url.pathname === '/api/swing-orb') return json(res, 200, loadSwingOrb() || {});
     if (req.method === 'GET' && url.pathname === '/api/trade-plan') {

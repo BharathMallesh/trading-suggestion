@@ -7,6 +7,7 @@ import { join } from 'node:path';
 
 const TMP = mkdtempSync(join(tmpdir(), 'trading-r57-'));
 process.env.FO_BHAV_DIR = join(TMP, 'fo');
+process.env.FO_STOCKS_DIR = join(TMP, 'fo-stocks');
 after(() => rmSync(TMP, { recursive: true, force: true }));
 const rc = await import('./paper-bot/fo-riskcheck.mjs');
 const vp = await import('./paper-bot/vol-premium.mjs');
@@ -89,4 +90,24 @@ test("the Up/Down lean: a stock's label with its 1-month odds; NIFTY by its 200-
   const n = await rc.leanFor('NIFTY', { niftyRows: nifty, table });
   assert.match(n.label, /200-day/);
   assert.ok(n.up1m === 0.6 || n.up1m === 0.72);
+});
+
+test('fits my budget: only options whose one-lot cost is within the per-trade limit, calls for strong and puts for weak', async () => {
+  const { mkdirSync, writeFileSync } = await import('node:fs');
+  const { foStocksDir } = await import('./paper-bot/vol-premium.mjs');
+  mkdirSync(foStocksDir(), { recursive: true });
+  // a ₹1,000 stock: time value about ₹30 at the money, fading over ±₹60
+  const ch = {};
+  for (let k = 900; k <= 1100; k += 10) {
+    const tv = 30 * Math.exp(-(((k - 1000) / 30) ** 2)) + 0.5;
+    ch[k] = { CE: Math.max(1000 - k, 0) + tv, PE: Math.max(k - 1000, 0) + tv, ceVol: 10, peVol: 10 };
+  }
+  writeFileSync(join(foStocksDir(), '2026-11-04.json'), JSON.stringify({ UPCO: { underlying: 1000, lot: 100, expiries: { '2026-11-24': ch } }, DOWNCO: { underlying: 1000, lot: 100, expiries: { '2026-11-24': ch } } }));
+  const live = { rows: [{ symbol: 'UPCO', label: 'strong', mom: 0.5 }, { symbol: 'DOWNCO', label: 'weak', mom: -0.3 }] };
+  const r = await rc.affordable({ capital: 10000, perTrade: 3000, live, loadCandles: async () => nifty });
+  assert.ok(r.rows.length >= 2);
+  for (const x of r.rows) assert.ok(x.cost <= 3000 && x.cost > 0);
+  assert.equal(r.rows.find((x) => x.symbol === 'UPCO').type, 'CE');
+  assert.equal(r.rows.find((x) => x.symbol === 'DOWNCO').type, 'PE');
+  assert.equal(r.tries, 3);
 });

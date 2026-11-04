@@ -10,7 +10,21 @@ function udOddsRows(odds, base) {
     `<tr><td style="text-align:left">${l}</td><td>${udPc(odds.early[k].up)}</td><td><b>${udPc(odds.late[k].up)}</b></td><td>${udPc(odds.late[k].beatsNifty)}</td><td><b>${udMv(odds.late[k].avg)}</b></td><td class="note">${udPc(base.late[k].up)} / ${udMv(base.late[k].avg)}</td></tr>`).join('')}</tbody></table>`;
 }
 
+let UD_SORT = { key: 'mom', dir: -1 };
+function udTable(title, col, rows) {
+  if (!rows.length) return `<div style="font-size:13px;margin-top:8px"><b style="color:${col}">${title}</b>: none today</div>`;
+  const k = UD_SORT.key;
+  const val = (x) => (k === 'symbol' ? x.symbol : k === 'fromHigh' ? 1 - x.hi52 : x[k] ?? -Infinity);
+  const sorted = [...rows].sort((a, b) => (typeof val(a) === 'string' ? val(a).localeCompare(val(b)) : val(a) - val(b)) * UD_SORT.dir);
+  const th = (key, label) => `<th data-udsort="${key}" style="cursor:pointer;white-space:nowrap">${label}${UD_SORT.key === key ? (UD_SORT.dir < 0 ? ' ▼' : ' ▲') : ''}</th>`;
+  return `<div style="font-size:14px;margin-top:10px"><b style="color:${col}">${title}</b> (${rows.length})</div>
+    <div style="overflow-x:auto"><table style="font-size:12px"><thead><tr>${th('symbol', 'Stock')}${th('close', 'Price')}${th('mom', '12-month momentum')}${th('momPct', 'Rank')}${th('fromHigh', 'Below 52-week high')}${th('rsi', 'RSI')}<th>200-day avg</th>${th('foLot', 'F&O lot')}<th></th></tr></thead><tbody>${sorted.map((x) =>
+      `<tr><td style="text-align:left"><b>${esc(x.symbol)}</b></td><td>₹${x.close.toFixed(1)}</td><td style="color:${x.mom >= 0 ? 'var(--up)' : 'var(--down)'}"><b>${x.mom >= 0 ? '+' : ''}${(x.mom * 100).toFixed(0)}%</b></td><td>${Math.round(x.momPct * 100)}</td><td>${((1 - x.hi52) * 100).toFixed(1)}%</td><td>${x.rsi.toFixed(0)}</td><td>${x.above200 ? 'above' : 'below'}</td><td>${x.foLot ?? '–'}</td>
+        <td style="white-space:nowrap"><a href="#" data-ud="${esc(x.symbol)}">Outlook</a>${x.foLot ? ` · <a href="#" data-fr="${esc(x.symbol)}" data-lean="${x.label}">Risk check</a>` : ''}</td></tr>`).join('')}</tbody></table></div>`;
+}
+let UD_LAST = null;
 function udRender(d) {
+  UD_LAST = d;
   let html = '';
   const s = d.stock;
   if (s?.error) html += `<div class="err">${esc(s.symbol)}: ${esc(s.error)}</div>`;
@@ -44,8 +58,8 @@ function udRender(d) {
   }
   if (d.counts) {
     html += `<div style="font-size:14px;margin-top:12px"><b>Today's labels</b> (NSE top 200, close of ${esc(d.date)}): ${d.counts.strong} strong · ${d.counts.neutral} neutral · ${d.counts.weak} weak</div>
-      <div style="font-size:13px;margin-top:4px"><span style="color:var(--up)"><b>🟢 Strong:</b></span> ${d.strong.map((x) => `<a href="#" data-ud="${esc(x.symbol)}">${esc(x.symbol)}</a>`).join(', ') || 'none'}</div>
-      <div style="font-size:13px;margin-top:4px"><span style="color:var(--down)"><b>🔴 Weak:</b></span> ${d.weak.map((x) => `<a href="#" data-ud="${esc(x.symbol)}">${esc(x.symbol)}</a>`).join(', ') || 'none'}</div>`;
+      ${udTable('🟢 Strong — slight lean up', 'var(--up)', d.strong)}${udTable('🔴 Weak — slight lean down', 'var(--down)', d.weak)}
+      <div class="note">Click a column to sort. <b>Outlook</b> shows the stock above; <b>Risk check</b> opens it in Options & risk → F&O risk check (F&O stocks only). Momentum = return from 12 months ago to 1 month ago; rank = where that sits among the NSE top 200 (100 = strongest).</div>`;
   }
   if (d.score) {
     const sc = d.score;
@@ -57,6 +71,22 @@ function udRender(d) {
     e.preventDefault();
     $('udSym').value = a.dataset.ud;
     udLoad();
+  });
+  for (const t of document.querySelectorAll('#udOut [data-udsort]')) t.addEventListener('click', () => {
+    const key = t.dataset.udsort;
+    UD_SORT = { key, dir: UD_SORT.key === key ? -UD_SORT.dir : key === 'symbol' || key === 'fromHigh' ? 1 : -1 };
+    udRender(UD_LAST);
+  });
+  // open a stock in the F&O risk check (Options & risk tab), with the side its lean points to
+  for (const a of document.querySelectorAll('#udOut [data-fr]')) a.addEventListener('click', (e) => {
+    e.preventDefault();
+    location.hash = '#options';
+    setTimeout(() => {
+      $('frSym').value = a.dataset.fr;
+      $('frStrat').value = a.dataset.lean === 'weak' ? 'buy-put' : 'buy-call';
+      $('foRiskCard')?.scrollIntoView();
+      frLoad();
+    }, 300);
   });
 }
 async function udLoad() {

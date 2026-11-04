@@ -54,6 +54,17 @@ export function latestStockChain(symbol) {
   }
   return null;
 }
+/** Lot size per F&O stock from the latest stock file (empty when none saved yet). */
+export function stockLots() {
+  const dir = foStocksDir();
+  if (!existsSync(dir)) return {};
+  const f = readdirSync(dir).filter((x) => x.endsWith('.json')).sort().pop();
+  try {
+    return f ? Object.fromEntries(Object.entries(JSON.parse(readFileSync(join(dir, f), 'utf8'))).map(([s, o]) => [s, o.lot])) : {};
+  } catch {
+    return {};
+  }
+}
 /** Symbols with option chains in the latest stock file. */
 export function stockSymbols() {
   const dir = foStocksDir();
@@ -188,4 +199,54 @@ export async function riskCheckLive(opts, { loadCandles = candles } = {}) {
   const chain = latestStockChain(symbol);
   if (!chain) throw new Error(`No option prices for ${symbol}: it may not be in F&O (check the list), or the evening job hasn't saved them yet.`);
   return { ...riskCheck({ ...opts, symbol, chain, niftyRows: rows }), lean };
+}
+
+/**
+ * Fits my budget: the options a small account can actually buy. For today's STRONG F&O stocks (calls),
+ * WEAK F&O stocks (puts) and NIFTY (both), the strikes at the money and about 2% / 4% / 6% out of it whose
+ * one-lot cost is within `perTrade`, each with its chance of profit at expiry (from the stock's own moves
+ * since 2010) and its full cost as the maximum loss. Sorted by chance of profit. Not advice.
+ */
+export async function affordable({ capital = 10000, perTrade = 3000, live = loadUpdownLive(), loadCandles = candles } = {}) {
+  const lots = stockLots();
+  const picks = [
+    { symbol: 'NIFTY', side: 'buy-call', lean: 'index' },
+    { symbol: 'NIFTY', side: 'buy-put', lean: 'index' },
+    ...(live?.rows || []).filter((x) => x.label === 'strong' && lots[x.symbol]).map((x) => ({ symbol: x.symbol, side: 'buy-call', lean: 'strong', mom: x.mom })),
+    ...(live?.rows || []).filter((x) => x.label === 'weak' && lots[x.symbol]).map((x) => ({ symbol: x.symbol, side: 'buy-put', lean: 'weak', mom: x.mom })),
+  ];
+  const out = [];
+  for (const p of picks) {
+    const yahoo = p.symbol === 'NIFTY' ? '^NSEI' : `${p.symbol}.NS`;
+    let rows = histCache.get(yahoo)?.rows;
+    try {
+      if (!rows) {
+        rows = (await loadCandles(yahoo, { period1: Math.floor(Date.parse('2009-06-01') / 1000), interval: '1d' })).filter((x) => x.close > 0);
+        histCache.set(yahoo, { at: Date.now(), rows });
+      }
+    } catch {
+      continue;
+    }
+    const chain = p.symbol === 'NIFTY' ? latestChain() : latestStockChain(p.symbol);
+    if (!chain) continue;
+    let best = null;
+    for (const distancePct of [0, 2, 4, 6]) {
+      let r;
+      try {
+        r = riskCheck({ symbol: p.symbol, strategy: p.side, account: capital, lots: 1, distancePct, chain, niftyRows: rows });
+      } catch {
+        continue;
+      }
+      const cost = -r.premium;
+      if (!(cost > 0) || cost > perTrade) continue;
+      if (!best || r.chanceOfProfit > best.chanceOfProfit) best = { ...p, distancePct, strike: r.legs[0].strike, type: r.legs[0].type, price: r.legs[0].price, lot: r.lot, cost, chanceOfProfit: r.chanceOfProfit, typical: r.typical, best: r.best, expiry: r.expiry, sessions: r.sessions, spot: r.spot };
+    }
+    if (best) out.push(best);
+  }
+  out.sort((a, b) => b.chanceOfProfit - a.chanceOfProfit);
+  return {
+    capital, perTrade, date: latestChain()?.date || null, rows: out,
+    tries: Math.floor(capital / perTrade),
+    note: `Options whose one-lot cost is within ₹${perTrade.toLocaleString('en-IN')} — the most you can lose on each is that cost. Calls for today's STRONG stocks, puts for WEAK ones (a small 1–3 month lean, not a forecast), NIFTY both ways. Chance of profit = how often the stock's own moves since 2010 would have finished beyond the strike plus the premium by expiry, after charges. With ₹${capital.toLocaleString('en-IN')} that is about ${Math.floor(capital / perTrade)} tries; most bought options expire worthless.`,
+  };
 }

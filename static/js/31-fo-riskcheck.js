@@ -29,10 +29,19 @@ function frRender(r) {
   </tbody></table></div><div class="note">${esc(r.note)}</div>`;
   $('frOut').innerHTML = html;
 }
+let FR_REQ = 0; // only the newest check is shown (a slower earlier one must not overwrite it)
 async function frLoad() {
+  const my = ++FR_REQ;
   $('frBtn').disabled = true;
   const qs = new URLSearchParams({ symbol: ($('frSym').value || 'NIFTY').trim().toUpperCase(), strategy: $('frStrat').value, account: $('frAcct').value, lots: $('frLots').value, distance: $('frDist').value, wing: $('frWing').value, wingPct: $('frWingPct').value, maxLoss: $('frMax').value });
-  try { frRender(await api(`/api/fo-riskcheck?${qs}`)); } catch (e) { $('frOut').innerHTML = `<div class="err">${esc(e.message)}</div>`; } finally { $('frBtn').disabled = false; }
+  try {
+    const r = await api(`/api/fo-riskcheck?${qs}`);
+    if (my === FR_REQ) frRender(r);
+  } catch (e) {
+    if (my === FR_REQ) $('frOut').innerHTML = `<div class="err">${esc(e.message)}</div>`;
+  } finally {
+    if (my === FR_REQ) $('frBtn').disabled = false;
+  }
 }
 lazy('F&O risk check', async () => {
   try {
@@ -41,6 +50,23 @@ lazy('F&O risk check', async () => {
   } catch {
     /* the list is optional */
   }
-  frLoad();
+  try {
+    // today's Strong / Weak stocks that have options, with their momentum, to pick from
+    const u = await api('/api/updown');
+    const opt = (x, lean) => `<option value="${esc(x.symbol)}" data-lean="${lean}">${lean === 'strong' ? '🟢' : '🔴'} ${esc(x.symbol)} · ${x.mom >= 0 ? '+' : ''}${(x.mom * 100).toFixed(0)}% · ${((1 - x.hi52) * 100).toFixed(0)}% off high</option>`;
+    const strong = (u.strong || []).filter((x) => x.foLot).sort((a, b) => b.mom - a.mom);
+    const weak = (u.weak || []).filter((x) => x.foLot).sort((a, b) => a.mom - b.mom);
+    $('frPick').innerHTML = '<option value="">— choose —</option>' + (strong.length ? `<optgroup label="Strong (lean up)">${strong.map((x) => opt(x, 'strong')).join('')}</optgroup>` : '') + (weak.length ? `<optgroup label="Weak (lean down)">${weak.map((x) => opt(x, 'weak')).join('')}</optgroup>` : '');
+  } catch {
+    /* the picker is optional */
+  }
+  if (!FR_REQ) frLoad(); // a check already asked for (e.g. from the Up/Down table) wins
 });
 $('frBtn').addEventListener('click', frLoad);
+$('frPick').addEventListener('change', () => {
+  const o = $('frPick').selectedOptions[0];
+  if (!o?.value) return;
+  $('frSym').value = o.value;
+  if ($('frStrat').value.startsWith('buy')) $('frStrat').value = o.dataset.lean === 'weak' ? 'buy-put' : 'buy-call';
+  frLoad();
+});
