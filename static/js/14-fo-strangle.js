@@ -38,6 +38,21 @@ function foRender(d) {
       <div style="overflow-x:auto"><table style="font-size:12px"><thead><tr><th style="text-align:left">Opened</th><th>Expiry</th><th>Put / call sold</th><th>Premium (pts)</th><th>NIFTY at expiry</th><th>Status</th><th>Result a lot</th></tr></thead><tbody>${p.trades.map((t) =>
       `<tr><td style="text-align:left">${esc(t.entryDate)}</td><td>${esc(t.expiry)}</td><td>${t.putStrike} / ${t.callStrike}</td><td>${t.credit.toFixed(1)}</td><td>${t.settle ? Math.round(t.settle) : '–'}</td><td>${t.open ? 'Open' : t.breached ? `Settled (${esc(t.breached)} side hit)` : 'Settled, both expired'}</td><td style="color:${foCol(t.rupees)}"><b>${foRs(t.rupees)}</b></td></tr>`).join('')}</tbody></table></div>`;
   }
+  // the iron condor version: same strikes sold, plus bought wings — the worst week is capped
+  const bc = b?.condor;
+  if (bc) {
+    const cmp = (n, s, c) => `<tr><td style="text-align:left">${esc(n)}</td><td>${Math.round(s.winRate * 100)}% / ${Math.round(c.winRate * 100)}%</td><td style="color:${foCol(s.avgRsNowLot)}">${foRs(s.avgRsNowLot)}</td><td style="color:${foCol(c.avgRsNowLot)}"><b>${foRs(c.avgRsNowLot)}</b></td><td style="color:var(--down)">${foRs(s.worst?.rsNowLot)}</td><td style="color:var(--down)"><b>${foRs(c.worst?.rsNowLot)}</b></td></tr>`;
+    html += `<div style="font-size:14px;margin-top:12px"><b>Iron condor version</b> — the same strangle plus a bought call and put 500 points farther out (caps the loss)</div>
+      <div style="overflow-x:auto"><table style="font-size:12px"><thead><tr><th style="text-align:left">Period</th><th>Weeks won: strangle / condor</th><th>Strangle: avg a week</th><th>Condor: avg a week</th><th>Strangle: worst week</th><th>Condor: worst week</th></tr></thead><tbody>
+        ${cmp('2019–2022', b.early, bc.early)}${cmp('2023 onward', b.later, bc.later)}${cmp('All weeks', b.all, bc.all)}</tbody></table></div>
+      <div class="note">One lot (65). The wings cut the worst week by about three-quarters, but they also cost most of the premium, so the condor earns close to nothing after charges. Its margin is about its maximum loss (≈ ₹20,000–30,000 a lot), far less than the strangle's.</div>`;
+  }
+  const pc = d.condor;
+  if (pc) {
+    html += `<div style="font-size:14px;margin-top:10px"><b>Condor paper record</b> (since ${esc(pc.startedAt)}): ${pc.summary.trades ? `${pc.summary.trades} weeks closed · won ${Math.round(pc.summary.winRate * 100)}% · total ${foRs(pc.summary.totalRs)}` : 'no week closed yet'} · ${esc(pc.status?.message || '')}</div>`;
+    if (pc.trades?.length) html += `<div style="overflow-x:auto"><table style="font-size:12px"><thead><tr><th style="text-align:left">Opened</th><th>Expiry</th><th>Sold put / call</th><th>Bought put / call</th><th>Net premium (pts)</th><th>NIFTY at expiry</th><th>Result a lot</th></tr></thead><tbody>${pc.trades.map((t) =>
+      `<tr><td style="text-align:left">${esc(t.entryDate)}</td><td>${esc(t.expiry)}</td><td>${t.putStrike} / ${t.callStrike}</td><td>${t.wingPut} / ${t.wingCall}</td><td>${t.credit.toFixed(1)}</td><td>${t.settle ? Math.round(t.settle) : t.open ? 'open' : '–'}</td><td style="color:${foCol(t.rupees)}"><b>${foRs(t.rupees)}</b></td></tr>`).join('')}</tbody></table></div>`;
+  }
   $('foOut').innerHTML = html;
 }
 lazy('NIFTY short strangle', async () => {

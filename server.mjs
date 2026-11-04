@@ -77,7 +77,7 @@ import { loadSwingOrb } from './paper-bot/swing-orb.mjs';
 import { outlookFor, loadUpdownLive, loadUpdownTable, features as udFeatures } from './paper-bot/updown-outlook.mjs';
 import { whatWorksToday } from './paper-bot/day-today.mjs';
 import { loadCoreSatellite, coreSatellite, saveCoreSatellite } from './paper-bot/core-satellite.mjs';
-import { loadFoStrangle, loadFoStranglePaper, foStrangleTest, saveFoStrangle, summarise as foSummarise } from './paper-bot/fo-strangle.mjs';
+import { loadFoStrangle, loadFoStranglePaper, loadFoCondorPaper, foStrangleTest, saveFoStrangle, summarise as foSummarise } from './paper-bot/fo-strangle.mjs';
 import { loadNiftyDip, niftyDipTest, saveNiftyDip, loadNiftyDipPaper, niftyDipToday, paperView as dipPaperView } from './paper-bot/nifty-dip.mjs';
 import { loadBreakfast, breakfastTest, saveBreakfast, breakfastToday, loadBreakfastPaper, summarise as bfSummarise, isFlatOpen } from './paper-bot/breakfast.mjs';
 import { compareStrategies } from './paper-bot/compare.mjs';
@@ -763,7 +763,9 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/api/fo-strangle') {
       // NIFTY weekly short strangle (F&O, paper only): backtest on real NSE option prices + paper record
       const paper = loadFoStranglePaper();
-      return json(res, 200, { backtest: loadFoStrangle(), paper: paper ? { startedAt: paper.startedAt, updatedAt: paper.updatedAt, lastDataDate: paper.lastDataDate, summary: foSummarise(paper.trades), status: paper.status, trades: paper.trades.slice(-20).reverse() } : null });
+      const condor = loadFoCondorPaper();
+      const view = (p) => (p ? { startedAt: p.startedAt, updatedAt: p.updatedAt, lastDataDate: p.lastDataDate, summary: foSummarise(p.trades), status: p.status, trades: p.trades.slice(-20).reverse() } : null);
+      return json(res, 200, { backtest: loadFoStrangle(), paper: view(paper), condor: view(condor) });
     }
     if (req.method === 'POST' && url.pathname === '/api/fo-strangle') {
       await readJson(req);

@@ -14,7 +14,7 @@ import { loadBreakfastPaper } from './breakfast.mjs';
 import { loadAthPaper, athSwingScan, activeRules, RULES } from './ath-swing.mjs';
 import { isTradingDay } from './market-calendar.mjs';
 import { loadNiftyDipPaper, ofVersion } from './nifty-dip.mjs';
-import { loadFoStranglePaper } from './fo-strangle.mjs';
+import { loadFoStranglePaper, loadFoCondorPaper } from './fo-strangle.mjs';
 import { loadMomentumPaper } from './momentum.mjs';
 import { loadRsiSwingPaper } from './rsi-swing.mjs';
 import { monthLines } from './this-month.mjs';
@@ -26,7 +26,7 @@ import { saveSwingScan, tradePlan } from './trade-plan.mjs';
 const rs = (v) => `${v < 0 ? '−' : '+'}₹${Math.abs(Math.round(v)).toLocaleString('en-IN')}`;
 
 /** Lines for one date: [{ title, short, detail }] per strategy. `scan` = today's swing scan (or null). */
-export function eveningLines(date, { vwap = loadPaper(), breakfast = loadBreakfastPaper(), swing = loadAthPaper(), scan = null, swingVersion = 'original', dip = loadNiftyDipPaper(), fo = loadFoStranglePaper(), mom = loadMomentumPaper(), rsi = loadRsiSwingPaper(), m10 = loadMomentum10Paper(), steady = loadSteadyMixPaper(), imb = loadImbalancePaper() } = {}) {
+export function eveningLines(date, { vwap = loadPaper(), breakfast = loadBreakfastPaper(), swing = loadAthPaper(), scan = null, swingVersion = 'original', dip = loadNiftyDipPaper(), fo = loadFoStranglePaper(), condor = loadFoCondorPaper(), mom = loadMomentumPaper(), rsi = loadRsiSwingPaper(), m10 = loadMomentum10Paper(), steady = loadSteadyMixPaper(), imb = loadImbalancePaper() } = {}) {
   const out = [];
   const v = (vwap?.trades || []).filter((t) => t.date === date && (t.variant || 'video') === 'video');
   out.push({ title: 'YouTube intraday', short: v.length ? `YouTube ${rs(v.reduce((a, t) => a + t.net, 0))}` : 'YouTube: no trade', detail: closeSummary(vwap, date).join(' · ') });
@@ -54,6 +54,8 @@ export function eveningLines(date, { vwap = loadPaper(), breakfast = loadBreakfa
   const foDone = (fo?.trades || []).filter((t) => !t.open && t.expiry === date);
   const foOpen = (fo?.trades || []).find((t) => t.open);
   if (fo) out.push({ title: 'NIFTY short strangle', short: foDone.length ? `Strangle: week ${rs(foDone.reduce((a, t) => a + t.rupees, 0))}` : foOpen ? 'Strangle: holding' : 'Strangle: no position', detail: foDone.length ? foDone.map((t) => `settled ${t.putStrike}/${t.callStrike}: ${rs(t.rupees)} a lot${t.breached ? ` (${t.breached} side breached)` : ''}`).join(' · ') : fo.status?.message || 'no position' });
+  const cDone = (condor?.trades || []).filter((t) => !t.open && t.expiry === date);
+  if (cDone.length) out.push({ title: 'NIFTY iron condor', short: `Condor: week ${rs(cDone.reduce((a, t) => a + t.rupees, 0))}`, detail: cDone.map((t) => `settled ${t.putStrike}/${t.callStrike} with wings ${t.wingPut}/${t.wingCall}: ${rs(t.rupees)} a lot`).join(' · ') });
   const m = momentumLine(date, mom);
   if (m) out.push(m);
   // Momentum 10 and the Steady mix: month-end, change day, and a market-filter cross

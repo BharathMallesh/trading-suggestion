@@ -33,15 +33,32 @@ import { isTradingDay, tradingDaysBetween } from './market-calendar.mjs';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SAVED = () => process.env.FO_STRANGLE_PATH || join(HERE, 'data', 'fo-strangle.json');
 const PAPER = () => process.env.FO_STRANGLE_PAPER_PATH || join(HERE, 'data', 'fo-strangle-paper.json');
+const CONDOR_PAPER = () => process.env.FO_CONDOR_PAPER_PATH || join(HERE, 'data', 'fo-condor-paper.json');
 const FO_DIR = () => process.env.FO_BHAV_DIR || join(HERE, 'data', 'fo-bhav');
 
-export const RULES = { otmPct: 2, slippagePct: 0.5, slippageMinPts: 0.5, brokeragePerOrder: 20, accountShare: 1 / 3, liquidYield: 0.06, split: '2023-01-01' };
+export const RULES = { wing: 0, otmPct: 2, slippagePct: 0.5, slippageMinPts: 0.5, brokeragePerOrder: 20, accountShare: 1 / 3, liquidYield: 0.06, split: '2023-01-01' };
 // NIFTY lot size and margin over time (NSE circulars)
 export const lotOn = (d) => (d < '2021-07-29' ? 75 : d < '2024-04-26' ? 50 : d < '2024-12-26' ? 25 : d < '2026-01-06' ? 75 : 65);
 export const LOT_NOW = 65;
 const sttSell = (d) => (d < '2023-04-01' ? 0.05 : d < '2024-10-01' ? 0.0625 : 0.1);
 const exch = (d) => (d < '2024-10-01' ? 0.05 : 0.03503);
 export const marginPct = (d) => (d < '2024-11-20' ? 13 : 15);
+
+/**
+ * Iron condor version (paper, from 4 Nov 2026): the same short strangle plus a BOUGHT call and put
+ * 500 points farther out, so the worst week is capped at (500 − credit) × lot. In the 2019–26
+ * tests this cut the worst week from about −₹38k–1.4 lakh to about −₹10k a lot but made about
+ * nothing after charges; tracked next to the strangle to show that trade-off week by week.
+ */
+export const CONDOR = { ...RULES, wing: 500 };
+
+/** Costs (index points per unit) to open one bought wing: no STT on the buy; STT on exercise if it ends in the money (at settle). */
+export function wingCost(prem, d, r = RULES) {
+  const brk = r.brokeragePerOrder / lotOn(d);
+  const ex = (prem * exch(d)) / 100;
+  const stamp = prem * 0.00003;
+  return brk + ex + stamp + 0.18 * (brk + ex) + Math.max((prem * r.slippagePct) / 100, r.slippageMinPts);
+}
 
 /** Costs (index points per unit) to open one short leg. */
 export function legCost(prem, d, r = RULES) {
@@ -74,13 +91,30 @@ export function openTrade(date, day, r = RULES, spotClose = null) {
   const ce = ch[ck].CE;
   const pe = ch[pk].PE;
   const costs = legCost(ce, date, r) + legCost(pe, date, r);
-  return { entryDate: date, expiry, spot, callStrike: ck, putStrike: pk, callPrem: ce, putPrem: pe, credit: ce + pe, costs, lot: lotOn(date), margin: (spot * marginPct(date)) / 100 };
+  const base = { entryDate: date, expiry, spot, callStrike: ck, putStrike: pk, callPrem: ce, putPrem: pe, credit: ce + pe, costs, lot: lotOn(date), margin: (spot * marginPct(date)) / 100 };
+  if (!r.wing) return base;
+  // iron condor: buy the wings `wing` points farther out (traded strikes only)
+  const wc = nearest(ch, ck + r.wing, 'CE');
+  const wp = nearest(ch, pk - r.wing, 'PE');
+  if (wc == null || wp == null || wc <= ck || wp >= pk) return null;
+  const wce = ch[wc].CE;
+  const wpe = ch[wp].PE;
+  const credit = ce + pe - wce - wpe;
+  if (!(credit > 0)) return null;
+  // margin for a defined-risk position ≈ its maximum loss
+  return { ...base, wingCall: wc, wingPut: wp, wingCallPrem: wce, wingPutPrem: wpe, credit, costs: costs + wingCost(wce, date, r) + wingCost(wpe, date, r), margin: Math.max(wc - ck, pk - wp) - credit };
 }
 
 /** Settle at NIFTY's close on expiry (points per unit after costs). */
 export function settle(t, close) {
-  const intrinsic = Math.max(close - t.callStrike, 0) + Math.max(t.putStrike - close, 0);
-  const pts = t.credit - intrinsic - t.costs;
+  let intrinsic = Math.max(close - t.callStrike, 0) + Math.max(t.putStrike - close, 0);
+  let stt = 0;
+  if (t.wingCall != null) {
+    const back = Math.max(close - t.wingCall, 0) + Math.max(t.wingPut - close, 0); // the bought wings pay back beyond them
+    intrinsic -= back;
+    stt = back * 0.00125; // STT on exercise of the bought wing
+  }
+  const pts = t.credit - intrinsic - t.costs - stt;
   return { ...t, open: false, settle: close, intrinsic, pts, retOnMargin: pts / t.margin, rupees: pts * t.lot, rupeesNowLot: pts * LOT_NOW, move: close / t.spot - 1, breached: close > t.callStrike ? 'call' : close < t.putStrike ? 'put' : null };
 }
 
@@ -90,7 +124,14 @@ export function markOpen(t, date, day) {
   const c = ch?.[t.callStrike]?.CE;
   const p = ch?.[t.putStrike]?.PE;
   if (!(c >= 0) || !(p >= 0)) return t;
-  const pts = t.credit - (c + p) - t.costs;
+  let wings = 0;
+  if (t.wingCall != null) {
+    const wc = ch?.[t.wingCall]?.CE;
+    const wp = ch?.[t.wingPut]?.PE;
+    if (!(wc >= 0) || !(wp >= 0)) return t;
+    wings = wc + wp;
+  }
+  const pts = t.credit - (c + p - wings) - t.costs;
   return { ...t, markDate: date, markCall: c, markPut: p, markSpot: day.underlying || null, pts, retOnMargin: pts / t.margin, rupees: pts * t.lot, rupeesNowLot: pts * LOT_NOW };
 }
 
@@ -151,7 +192,7 @@ export async function foStrangleTest({ loadCandles = candles, now = new Date(), 
     trades.push(settle(t, close.get(t.expiry)));
   }
   const marginNow = ([...close].pop()?.[1] || 0) * LOT_NOW * (marginPct(today) / 100); // one lot's margin at today's NIFTY level
-  for (const t of trades) t.rsAtTodaysSize = t.retOnMargin * marginNow;
+  for (const t of trades) t.rsAtTodaysSize = r.wing ? t.rupeesNowLot : t.retOnMargin * marginNow; // a condor's margin is its own maximum loss
   const nifty = [...close].filter(([d]) => trades.length && d >= trades[0].entryDate && d <= trades[trades.length - 1].expiry);
   const yrs = nifty.length > 1 ? (Date.parse(nifty[nifty.length - 1][0]) - Date.parse(nifty[0][0])) / (365.25 * 86400000) : 0;
   const niftyCagr = yrs > 0 ? (nifty[nifty.length - 1][1] / nifty[0][1]) ** (1 / yrs) * 1.013 - 1 : null; // + ~1.3%/yr dividends
@@ -175,12 +216,12 @@ export const loadFoStranglePaper = () => readJ(PAPER());
  * date; each run downloads any missing NSE days (published in the evening, so
  * a day may be picked up on the next run), opens / marks / settles trades.
  */
-export async function foStranglePaperUpdate({ loadCandles = candles, now = new Date(), fetchFn = fetch, getDay = (d) => foBhav(d, { fetchFn }) } = {}) {
+export async function foStranglePaperUpdate({ loadCandles = candles, now = new Date(), fetchFn = fetch, getDay = (d) => foBhav(d, { fetchFn }), rules = RULES, file = PAPER() } = {}) {
   const t0 = new Date(now.getTime() + 19800_000);
   const today = t0.toISOString().slice(0, 10);
   // NSE publishes the day's F&O file in the evening; asking earlier would cache "no file" for good
   const lastAsk = t0.getUTCHours() >= 20 ? today : new Date(Date.parse(`${today}T00:00:00Z`) - 86400000).toISOString().slice(0, 10);
-  const st = loadFoStranglePaper() || { startedAt: today, trades: [], waitAfter: null };
+  const st = readJ(file) || { startedAt: today, trades: [], waitAfter: null };
   const close = await niftyCloses(loadCandles, st.startedAt < '2026-01-01' ? st.startedAt : '2026-01-01');
   const days = tradingDaysBetween(st.startedAt, lastAsk).filter((d) => isTradingDay(d));
   let last = null;
@@ -202,7 +243,7 @@ export async function foStranglePaperUpdate({ loadCandles = candles, now = new D
     }
     open = st.trades.find((t) => t.open);
     if (!open && d > st.waitAfter && !st.trades.some((t) => t.entryDate === d)) {
-      const t = openTrade(d, day, RULES, close.get(d));
+      const t = openTrade(d, day, rules, close.get(d));
       if (t) {
         st.trades.push({ ...t, open: true, pts: -t.costs, retOnMargin: -t.costs / t.margin, rupees: -t.costs * t.lot, rupeesNowLot: -t.costs * LOT_NOW });
         st.waitAfter = t.expiry;
@@ -213,13 +254,16 @@ export async function foStranglePaperUpdate({ loadCandles = candles, now = new D
   st.trades = st.trades.map((t) => (t.open && close.has(t.expiry) && t.expiry <= today ? settle(t, close.get(t.expiry)) : t));
   const open = st.trades.find((t) => t.open) || null;
   st.status = open
-    ? { message: `Holding: short ${open.callStrike} call + ${open.putStrike} put, expiry ${open.expiry}. ${open.markDate ? `Value on ${open.markDate}: ${open.rupees >= 0 ? '+' : '−'}₹${Math.abs(Math.round(open.rupees)).toLocaleString('en-IN')} per lot.` : 'Opened at the close.'}`, open }
-    : { message: `No position. The next strangle opens at the close of the first session after the ${st.waitAfter || 'next'} expiry.`, open: null };
+    ? { message: `Holding: short ${open.callStrike} call + ${open.putStrike} put${open.wingCall != null ? `, bought ${open.wingCall} call + ${open.wingPut} put` : ''}, expiry ${open.expiry}. ${open.markDate ? `Value on ${open.markDate}: ${open.rupees >= 0 ? '+' : '−'}₹${Math.abs(Math.round(open.rupees)).toLocaleString('en-IN')} per lot.` : 'Opened at the close.'}`, open }
+    : { message: `No position. The next ${rules.wing ? 'iron condor' : 'strangle'} opens at the close of the first session after the ${st.waitAfter || 'next'} expiry.`, open: null };
   st.lastDataDate = last || st.lastDataDate || null;
   st.updatedAt = now.toISOString();
-  writeJsonAtomic(PAPER(), st);
+  writeJsonAtomic(file, st);
   return { startedAt: st.startedAt, summary: summarise(st.trades), status: st.status, lastDataDate: st.lastDataDate };
 }
+/** The iron condor paper record (same rules + 500-point bought wings), in its own file. */
+export const foCondorPaperUpdate = (o = {}) => foStranglePaperUpdate({ ...o, rules: CONDOR, file: CONDOR_PAPER() });
+export const loadFoCondorPaper = () => readJ(CONDOR_PAPER());
 
 // CLI
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
@@ -228,19 +272,25 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   if (process.argv.includes('--paper')) {
     foStranglePaperUpdate()
       .then((r) => console.log(`NIFTY short strangle paper: since ${r.startedAt} · ${r.summary.trades} closed · NSE data up to ${r.lastDataDate || '–'} · ${r.status.message}`))
+      .then(() => foCondorPaperUpdate())
+      .then((r) => console.log(`NIFTY iron condor paper: since ${r.startedAt} · ${r.summary.trades} closed · ${r.status.message}`))
       .catch((err) => {
         console.error('Error:', err.message);
         process.exit(1);
       });
   } else {
-    foStrangleTest()
-      .then((r) => {
+    Promise.all([foStrangleTest(), foStrangleTest({ r: CONDOR })])
+      .then(([r, c]) => {
+        r.condor = { all: c.all, early: c.early, later: c.later, worstWeeks: c.worstWeeks, marginNow: c.marginNow, note: 'Iron condor: the same strangle plus bought wings 500 points farther out (margin ≈ the maximum loss).' };
         saveFoStrangle(r);
         const line = (n, x) => console.log(`${n.padEnd(12)} ${String(x.trades).padStart(3)} weeks · won ${pc(x.winRate, 0)} · avg ${rs(x.avgRsNowLot)}/lot · ${x.avgRetOnMarginPct?.toFixed(2)}% of margin · t ${x.tStat?.toFixed(2)} · worst ${rs(x.worst?.rsNowLot)} (${x.worst?.date}) · account ${pc(x.accountCagr)}/yr, max fall ${pc(x.accountMaxDrawdown, 0)}`);
         console.log(`\nNIFTY WEEKLY SHORT STRANGLE ±${r.rules.otmPct}% · ${r.from} → ${r.to}`);
         line('All', r.all);
         line('2019–2022', r.early);
         line('2023 onward', r.later);
+        line('Condor all', c.all);
+        line('Condor 19–22', c.early);
+        line('Condor 2023→', c.later);
         console.log(`NIFTY held over the same span: ${pc(r.niftyCagr)}/yr`);
         console.log(`\n${r.note}`);
       })

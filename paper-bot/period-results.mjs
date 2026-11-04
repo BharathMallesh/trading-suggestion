@@ -8,7 +8,7 @@ import { loadPaper } from './vwap-pullback.mjs';
 import { loadBreakfastPaper, isFlatOpen } from './breakfast.mjs';
 import { loadAthPaper, activeRules, RULES as ATH_RULES } from './ath-swing.mjs';
 import { loadNiftyDipPaper, ofVersion } from './nifty-dip.mjs';
-import { loadFoStranglePaper } from './fo-strangle.mjs';
+import { loadFoStranglePaper, loadFoCondorPaper } from './fo-strangle.mjs';
 import { isTradingDay, lastSessionDate } from './market-calendar.mjs';
 import { loadCoreSatellite } from './core-satellite.mjs';
 
@@ -66,7 +66,7 @@ const inRange = (d, p) => d && d >= p.from && d <= p.to;
 const sumNet = (a) => a.reduce((x, t) => x + (t.net ?? 0), 0);
 
 /** Every strategy's result over a period. */
-export function periodResults(period, { vwap = loadPaper(), breakfast = loadBreakfastPaper(), swing = loadAthPaper(), dip = loadNiftyDipPaper(), fo = loadFoStranglePaper(), cs = loadCoreSatellite(), swingVersion = activeRules() !== ATH_RULES ? 'improved' : 'original' } = {}) {
+export function periodResults(period, { vwap = loadPaper(), breakfast = loadBreakfastPaper(), swing = loadAthPaper(), dip = loadNiftyDipPaper(), fo = loadFoStranglePaper(), condor = loadFoCondorPaper(), cs = loadCoreSatellite(), swingVersion = activeRules() !== ATH_RULES ? 'improved' : 'original' } = {}) {
   const rows = [];
   const byDay = new Map(); // date → { strategy → ₹ }
   const addDay = (d, k, v) => {
@@ -117,6 +117,12 @@ export function periodResults(period, { vwap = loadPaper(), breakfast = loadBrea
     const p = all.filter((t) => inRange(t.expiry, period));
     for (const t of p) addDay(t.expiry, 'NIFTY short strangle', t.rupees);
     rows.push({ label: 'NIFTY short strangle (1 lot)', unit: '₹', trades: p.length, wins: p.filter((t) => t.pts > 0).length, result: p.reduce((a, t) => a + t.rupees, 0), totalTrades: all.length, total: all.reduce((a, t) => a + t.rupees, 0), detail: p.length ? p.map((t) => `${t.putStrike}/${t.callStrike} expiry ${t.expiry.slice(5)} ${rs(t.rupees)}`) : [fo?.status?.message || 'no position'] });
+  }
+  // iron condor version of the strangle (a separate paper record; shown, not added to the totals)
+  if (condor?.trades) {
+    const all = condor.trades.filter((t) => !t.open);
+    const p = all.filter((t) => inRange(t.expiry, period));
+    rows.push({ label: 'NIFTY iron condor (1 lot, paper version)', unit: '₹', version: true, trades: p.length, wins: p.filter((t) => t.pts > 0).length, result: p.reduce((a, t) => a + t.rupees, 0), totalTrades: all.length, total: all.reduce((a, t) => a + t.rupees, 0), detail: p.length ? p.map((t) => `${t.putStrike}/${t.callStrike} + wings expiry ${t.expiry.slice(5)} ${rs(t.rupees)}`) : [condor.status?.message || 'no position'] });
   }
   const rupeeRows = rows.filter((r) => r.unit === '₹' && !r.version); // versions re-count the same trades
   // the 80/20 paper account: change in value over the period (not a trade count)
