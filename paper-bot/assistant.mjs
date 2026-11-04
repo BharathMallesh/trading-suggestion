@@ -12,7 +12,7 @@
 // Research / education only — not investment advice.
 
 import { quote, candles } from '../market-data.mjs';
-import { isResultsQuestion, resultsAnswer } from './period-results.mjs';
+import { isResultsQuestion, resultsAnswer, parsePeriod } from './period-results.mjs';
 import { investResearch } from './invest-research.mjs';
 import { bigMove } from './big-move.mjs';
 import { volCheck } from './volatility.mjs';
@@ -311,7 +311,18 @@ export async function ask(question, { symbols = [] } = {}) {
   if (q.length > 300) throw badRequest('Please keep the question under 300 characters.');
   const symbol = await resolveSymbol(q);
   const intent = detectIntent(q, symbol);
-  if (intent === 'results') return resultsAnswer(q);
+  if (intent === 'results') {
+    // before the evening run, today's live intraday trades too (the same view as Trading strategies)
+    let live = null;
+    if (parsePeriod(q).notYet) {
+      try {
+        live = await todaySignals({});
+      } catch {
+        live = null; // the saved record is still shown
+      }
+    }
+    return resultsAnswer(q, { live });
+  }
   if (intent === 'invest') return investResearch();
   if (intent === 'strategy') return strategyAnswer(symbol && symbol !== '^NSEI' ? symbol : null);
   if (intent === 'stock') return stockReport(symbol);

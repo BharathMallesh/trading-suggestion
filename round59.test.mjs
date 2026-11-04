@@ -68,3 +68,40 @@ test('levels follow the fixed rule lists', () => {
   assert.equal(tt.levelOf('swing', { vixHigh: true }), 'careful');
   assert.equal(tt.levelOf('invest', { vixJump: true, bigFall: true }), 'go');
 });
+
+test('"today\'s results" before the evening run: today\'s live intraday trades on top, then the latest saved day', async () => {
+  const { resultsAnswer } = await import('./paper-bot/period-results.mjs');
+  const now = new Date('2026-11-04T09:50:00Z'); // 15:20 IST, before the 4:05 PM run
+  const live = { date: '2026-11-04', lastBar: '15:15', variants: { video: { label: 'Video rules', netRs: 3616, trades: [{ symbol: 'TRENT.NS', side: 'long', time: '09:35', reason: 'target', net: 1805 }, { symbol: 'TITAN.NS', side: 'long', time: '11:20', reason: 'target', net: 1811 }] } } };
+  const empty = { vwap: { trades: [] }, breakfast: { trades: [] }, swing: { trades: [] }, dip: { trades: [] }, fo: { trades: [] }, condor: { trades: [] }, cs: null };
+  const a = resultsAnswer("Today's results", { now, live, ...empty });
+  assert.match(a.title, /today so far \(Wed, 4 Nov, live\)/);
+  assert.match(a.summary[0], /Video rules \+₹3,616/);
+  assert.match(a.sections[0].heading, /live/);
+  assert.match(a.sections[0].rows[0][3], /TRENT long 09:35 target \+₹1,805/);
+  const old = resultsAnswer("Today's results", { now, live: { ...live, date: '2026-11-03' }, ...empty });
+  assert.doesNotMatch(old.title, /live/, 'a live view of another day is not used');
+});
+
+test('results include the investing portfolios, RSI / Imbalance swing and the spread tracker', async () => {
+  const { periodResults, resultsAnswer } = await import('./paper-bot/period-results.mjs');
+  const empty = { vwap: { trades: [] }, breakfast: { trades: [] }, swing: { trades: [] }, dip: { trades: [] }, fo: { trades: [] }, condor: { trades: [] }, cs: null };
+  const port = (startedAt, curve) => ({ startedAt, capital: 100000, curve, rebalances: [{ holdings: [{}, {}] }] });
+  const papers = {
+    ...empty,
+    m20: port('2026-10-28', [{ date: '2026-11-03', value: 99662 }]),
+    m10: port('2026-10-30', [{ date: '2026-11-03', value: 101000 }, { date: '2026-11-10', value: 102500 }]),
+    steady: null, india: null,
+    rsi: { version: 'b', trades: [{ symbol: 'VMM.NS', version: 'b', open: false, exitDate: '2026-11-03', r: -1.65 }, { symbol: 'X.NS', version: 'a', open: false, exitDate: '2026-11-03', r: 9 }] },
+    imb: { trades: [] },
+    spread: { trades: [{ symbol: 'PFC', open: false, settleDate: '2026-11-20', pnl: 1200, legs: [{ k: 310, t: 'PE' }, { k: 305, t: 'PE' }] }] },
+  };
+  const nov = periodResults({ from: '2026-11-01', to: '2026-11-30', kind: 'month' }, papers);
+  assert.equal(nov.portfolios.find((x) => x.label === 'Momentum 10 + buffer').change, 2500, 'from the capital to the last value in the period');
+  assert.equal(nov.rows.find((x) => x.label === 'RSI swing').result, -1.65, 'only the tracked version');
+  assert.equal(nov.rows.find((x) => x.label.startsWith('F&O spread')).result, 1200);
+  const oct = periodResults({ from: '2026-10-01', to: '2026-10-31', kind: 'month' }, papers);
+  assert.equal(oct.portfolios.find((x) => x.label === 'Momentum 20').change, null, 'no value inside October yet');
+  const a = resultsAnswer('results 2026-11-10', { now: new Date('2026-11-12T12:00:00Z'), ...papers });
+  assert.ok(a.sections.some((s) => /Investing portfolios/.test(s.heading)));
+});

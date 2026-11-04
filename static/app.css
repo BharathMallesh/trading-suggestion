@@ -34,6 +34,15 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap:
 .card h2 { color: #2b3270; }
 .kv > div { min-width: 0; overflow-wrap: anywhere; }
 .card h2 { margin: 0 0 4px; font-size: 15px; }
+/* folding cards: a folded card shows only its title; click the title to open it */
+.card > h2 { cursor: pointer; }
+.card > h2::before { content: '▾ '; color: var(--muted); font-size: 12px; }
+.card.folded > h2::before { content: '▸ '; }
+.card.folded > h2 { margin: 0; }
+.card.folded > :not(h2) { display: none !important; }
+.card.folded { padding-top: 12px; padding-bottom: 12px; }
+.foldBar { display: flex; gap: 8px; justify-content: flex-end; margin: 4px 0 0; }
+.foldBar button { margin: 0; padding: 4px 10px; font-size: 12px; width: auto; background: var(--soft); color: var(--ink); border: 1px solid var(--line); }
 .card p.hint { margin: 0 0 12px; color: var(--muted); font-size: 12.5px; }
 .span2 { grid-column: 1 / -1; }
 label { display: block; font-size: 12px; color: var(--muted); margin: 8px 0 3px; }
@@ -78,12 +87,14 @@ th:first-child, td:first-child { text-align: left; }
 .tabbar .help { margin-left: auto; font-weight: 600; color: var(--accent); text-decoration: none; font-size: 14px; white-space: nowrap; }
 #subTabs { padding: 4px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
 #viewNote { padding: 8px 24px 0; }
+.foldBar { padding: 0 24px; }
 
 /* ===================== tablets and phones ===================== */
 @media (max-width: 860px) {
   header { padding: calc(14px + env(safe-area-inset-top, 0px)) 16px 10px; }
   .tabbar { padding: 6px 12px; padding-top: 6px; }
   #viewNote { padding: 8px 16px 0; font-size: 12px; }
+  .foldBar { padding: 0 16px; }
   /* one swipeable row instead of three wrapped rows */
   #viewTabs, #subTabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; scroll-snap-type: x proximity; }
   #viewTabs::-webkit-scrollbar, #subTabs::-webkit-scrollbar { display: none; }

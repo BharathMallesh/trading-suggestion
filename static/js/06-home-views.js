@@ -106,9 +106,15 @@ function showView(v) {
   $('viewNote').textContent = VIEWS.find((x) => x.key === v).note;
   try { localStorage.setItem('view', v); } catch { /* storage unavailable */ }
   if (location.hash.slice(1) !== v) history.replaceState(null, '', `#${v}`);
+  // a view with a single card (a strategy sub-tab) shows it open
+  initFolds();
+  const shown = [...document.querySelectorAll('main > section.card')].filter((s) => s.style.display !== 'none');
+  if (shown.length === 1 && shown[0].classList.contains('folded')) shown[0].classList.remove('folded');
   LAZY_READY = true;
   runLazy(); // first view of a card: load its data now
 }
+$('openAllBtn').addEventListener('click', () => foldAll(true));
+$('foldAllBtn').addEventListener('click', () => foldAll(false));
 $('viewTabs').addEventListener('click', (e) => {
   if (e.target.dataset?.view) {
     showView(e.target.dataset.view);

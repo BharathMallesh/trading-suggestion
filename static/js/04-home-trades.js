@@ -3,16 +3,25 @@
 // --- Ask the app ---
 function aaRender(r) {
   let html = `<div style="font-size:16px;font-weight:700;margin-bottom:6px">${esc(r.title)}</div>`;
-  if (r.summary?.length) html += '<ul style="margin:0 0 8px 18px;padding:0;font-size:14px;line-height:1.5">' + r.summary.map((x) => `<li>${esc(x)}</li>`).join('') + '</ul>';
+  // short view (results): a few numbers on top, every table folded
+  const short = !!r.highlights;
+  if (short) {
+    const col = (t) => (t > 0 ? 'var(--up)' : t < 0 ? 'var(--down)' : 'var(--muted)');
+    html += `<div style="display:flex;flex-wrap:wrap;gap:8px;margin:4px 0 8px">${r.highlights.map((h) => `<div style="flex:1 1 150px;padding:8px 10px;border:1px solid var(--line);border-radius:10px"><div class="note" style="margin:0">${esc(h.label)}</div><div style="font-size:20px;font-weight:700;color:${col(h.tone)}">${esc(h.value)}</div><div class="note" style="margin:0">${esc(h.sub)}</div></div>`).join('')}</div>`;
+    if (r.brief?.length) html += `<div style="font-size:13px;line-height:1.5">${r.brief.map(esc).join('<br>')}</div>`;
+  } else if (r.summary?.length) html += '<ul style="margin:0 0 8px 18px;padding:0;font-size:14px;line-height:1.5">' + r.summary.map((x) => `<li>${esc(x)}</li>`).join('') + '</ul>';
   for (const sec of r.sections || []) {
-    html += `<div style="font-size:13px;margin-top:10px"><b>${esc(sec.heading)}</b></div>`;
+    if (short) html += `<details style="margin-top:6px"><summary style="cursor:pointer;font-size:13px"><b>${esc(sec.heading)}</b></summary>`;
+    else html += `<div style="font-size:13px;margin-top:10px"><b>${esc(sec.heading)}</b></div>`;
     if (sec.kind === 'table') html += `<table><thead><tr>${sec.columns.map((c, i) => `<th${i === 0 ? ' style="text-align:left"' : ''}>${esc(c)}</th>`).join('')}</tr></thead><tbody>${sec.rows.map((row) => `<tr>${row.map((c, i) => `<td${i === 0 ? ' style="text-align:left"' : ''}>${esc(String(c ?? ''))}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
     else if (sec.kind === 'kv') html += `<div class="kv">${sec.rows.map(([k, v]) => `<div>${esc(k)}</div><div>${esc(v)}</div>`).join('')}</div>`;
     else if (sec.kind === 'list') html += '<ul style="margin:4px 0 0 18px;padding:0;font-size:13px">' + sec.items.map((x) => `<li>${esc(x)}</li>`).join('') + '</ul>';
     else html += `<div style="font-size:13px">${esc(sec.text || '')}</div>`;
     if (sec.note) html += `<div class="note">${esc(sec.note)}</div>`;
+    if (short) html += '</details>';
   }
-  if (r.caveat) html += `<div class="note" style="margin-top:10px;border-left:3px solid var(--warn);padding-left:8px">${esc(r.caveat)}</div>`;
+  if (short && r.caveat) html += `<details style="margin-top:6px"><summary class="note" style="cursor:pointer">About these numbers</summary><div class="note">${esc(r.caveat)}</div></details>`;
+  else if (r.caveat) html += `<div class="note" style="margin-top:10px;border-left:3px solid var(--warn);padding-left:8px">${esc(r.caveat)}</div>`;
   $('aaOut').innerHTML = html + '<div class="note">Research / education only — not investment advice.</div>';
 }
 async function aaAsk(question) {
@@ -128,7 +137,10 @@ $('jnOut').addEventListener('click', async (e) => {
       const inp = $('jnOut').querySelector(`input[data-exit="${CSS.escape(c)}"]`);
       if (!inp.value) return (inp.style.outline = '2px solid var(--down)');
       const r = await post('/api/journal/close', { id: c, exit: inp.value });
-      if (r.limitJustHit) $('jnToday').scrollIntoView({ behavior: 'smooth' });
+      if (r.limitJustHit) {
+        openCard($('jnToday'));
+        $('jnToday').scrollIntoView({ behavior: 'smooth' });
+      }
       jnLoad();
     } else if (del) {
       e.target.textContent = 'Sure?';

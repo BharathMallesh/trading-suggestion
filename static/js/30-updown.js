@@ -84,6 +84,7 @@ function udRender(d) {
     setTimeout(() => {
       $('frSym').value = a.dataset.fr;
       $('frStrat').value = a.dataset.lean === 'weak' ? 'buy-put' : 'buy-call';
+      openCard($('foRiskCard')?.querySelector('h2'));
       $('foRiskCard')?.scrollIntoView();
       frLoad();
     }, 300);

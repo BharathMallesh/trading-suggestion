@@ -41,6 +41,7 @@ async function fbLoad() {
       $('frAcct').value = $('fbCap').value;
       // judge it against the per-trade limit set here (e.g. ₹3,000 of ₹10,000 = 30%), not the 2% default
       $('frMax').value = Math.min(50, Math.max(0.5, Math.ceil((Number($('fbPer').value) / Number($('fbCap').value)) * 100)));
+      openCard($('foRiskCard').querySelector('h2'));
       $('foRiskCard').scrollIntoView();
       frLoad();
     });

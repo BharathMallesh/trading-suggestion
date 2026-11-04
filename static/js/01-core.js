@@ -14,13 +14,67 @@ function runLazy() {
   for (const x of LAZY) {
     if (x.done) continue;
     const el = cardEl(x.title);
-    if (el && el.style.display !== 'none') {
+    if (el && el.style.display !== 'none' && !el.classList.contains('folded')) {
       x.done = true;
       Promise.resolve().then(x.fn).catch(() => {});
     }
   }
 }
 const $ = (id) => document.getElementById(id);
+
+// --- Folding cards: every card starts folded to its title; the ones you open are remembered ---
+const FOLD_KEY = 'open-cards';
+let OPEN_CARDS = new Set();
+try {
+  OPEN_CARDS = new Set(JSON.parse(localStorage.getItem(FOLD_KEY) || '[]'));
+} catch {
+  /* storage blocked: all folded */
+}
+const cardKey = (s) => s.id || (s.querySelector('h2')?.childNodes[0]?.textContent.trim() ?? '');
+function setFold(sec, open) {
+  sec.classList.toggle('folded', !open);
+  sec.querySelector('h2')?.setAttribute('aria-expanded', String(open));
+  const k = cardKey(sec);
+  if (open) OPEN_CARDS.add(k);
+  else OPEN_CARDS.delete(k);
+  try {
+    localStorage.setItem(FOLD_KEY, JSON.stringify([...OPEN_CARDS]));
+  } catch {
+    /* this visit only */
+  }
+  if (open && LAZY_READY) runLazy(); // a card's data loads the first time it is opened
+}
+/** Open the card that contains `el` (used before scrolling to a card from a link). */
+function openCard(el) {
+  const sec = el?.closest?.('section.card');
+  if (sec?.classList.contains('folded')) setFold(sec, true);
+}
+function initFolds() {
+  for (const sec of document.querySelectorAll('main > section.card')) {
+    const h = sec.querySelector(':scope > h2');
+    if (!h || h.dataset.fold) continue;
+    h.dataset.fold = '1';
+    h.tabIndex = 0;
+    h.setAttribute('role', 'button');
+    sec.classList.toggle('folded', !OPEN_CARDS.has(cardKey(sec)));
+    h.setAttribute('aria-expanded', String(!sec.classList.contains('folded')));
+    const toggle = (e) => {
+      if (e.target.closest('a, button, input, select')) return;
+      setFold(sec, sec.classList.contains('folded'));
+    };
+    h.addEventListener('click', toggle);
+    h.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        toggle(e);
+      }
+    });
+  }
+}
+/** Open / fold every card in the current view. */
+function foldAll(open) {
+  for (const sec of document.querySelectorAll('main > section.card')) if (sec.style.display !== 'none') setFold(sec, open);
+}
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 // Map the range dropdown to Yahoo range+interval. "Today (5-min)" is

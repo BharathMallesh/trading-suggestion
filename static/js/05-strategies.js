@@ -175,6 +175,7 @@ function planFrom(t) {
   $('plStop').value = t.stop.toFixed(2);
   $('plTarget').value = '';
   showView('trades');
+  openCard($('planCard').querySelector('h2'));
   $('planCard').scrollIntoView({ behavior: 'smooth' });
   $('plBtn').click();
 }
