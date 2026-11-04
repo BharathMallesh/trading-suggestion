@@ -9,8 +9,9 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { candles } from '../market-data.mjs';
-import { nearest, legCost, wingCost, LOT_NOW, marginPct } from './fo-strangle.mjs';
+import { nearest, legCost, wingCost, LOT_NOW, marginPct, sttSell, sttExercise } from './fo-strangle.mjs';
 import { foStocksDir } from './vol-premium.mjs';
+import { tradingDaysBetween } from './market-calendar.mjs';
 import { outlookFor, loadUpdownTable, loadUpdownLive, features } from './updown-outlook.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -47,12 +48,13 @@ export function latestChain() {
 export function latestStockChain(symbol) {
   const dir = foStocksDir();
   if (!existsSync(dir)) return null;
-  for (const f of readdirSync(dir).filter((x) => x.endsWith('.json')).sort().reverse()) {
+  for (const f of readdirSync(dir).filter((x) => x.endsWith('.json')).sort().reverse().slice(0, 1)) { // the latest day only
     try {
       const o = JSON.parse(readFileSync(join(dir, f), 'utf8'))[symbol];
       const date = f.slice(0, 10);
       const expiry = o && Object.keys(o.expiries).filter((e) => e > date).sort()[0];
-      if (expiry && o.underlying > 0 && o.lot > 0) return { date, spot: o.underlying, expiry, chain: o.expiries[expiry], lot: o.lot };
+      const lot = o?.lots?.[expiry] ?? o?.lot; // the lot of this expiry (NSE revises lots; the two months can differ)
+      if (expiry && o.underlying > 0 && lot > 0) return { date, spot: o.underlying, expiry, chain: o.expiries[expiry], lot };
     } catch {
       /* skip */
     }
@@ -82,12 +84,8 @@ export function stockSymbols() {
   }
 }
 
-/** Trading sessions between two dates (weekdays; close enough for the move length). */
-export const sessionsBetween = (a, b) => {
-  let n = 0;
-  for (let t = Date.parse(`${a}T00:00:00Z`) + 86400000; t <= Date.parse(`${b}T00:00:00Z`); t += 86400000) if (new Date(t).getUTCDay() % 6) n++;
-  return Math.max(1, n);
-};
+/** NSE trading sessions after `a` up to and including `b` (holidays excluded). */
+export const sessionsBetween = (a, b) => Math.max(1, tradingDaysBetween(a, b).filter((d) => d > a).length);
 
 /** Every n-session NIFTY move since 2010 (overlapping windows). */
 export function moves(niftyRows, n) {
@@ -121,15 +119,18 @@ export function legsFor(strategy, { spot, chain }, { distancePct = 2, wing = 500
   return legs;
 }
 
-/** Points per unit at expiry for a final price, after charges. For a stock: its own lot and wider slippage. */
+/** Charges (points per unit) for one order at price `p`: q < 0 = a sale (STT), q > 0 = a purchase. For a stock: its own lot and wider slippage. */
+export function legCharges(p, q, date, stock = null) {
+  if (!stock) return q < 0 ? legCost(p, date) : wingCost(p, date);
+  return (20 / stock.lot) * 1.18 + (q < 0 ? (p * sttSell(date)) / 100 : p * 0.00003) + p * 0.0003503 * 1.18 + Math.max(p * 0.01, 0.1);
+}
+
+/** Points per unit at expiry for a final price, after charges (STT on exercise for bought legs that finish in the money). */
 export function payoff(legs, settle, date, stock = null) {
   let pts = 0;
   for (const l of legs) {
     const intr = l.t === 'CE' ? Math.max(settle - l.k, 0) : Math.max(l.k - settle, 0);
-    const cost = stock
-      ? (20 / stock.lot) * 1.18 + l.p * (l.q < 0 ? 0.001 : 0.00003) + l.p * 0.0003503 * 1.18 + Math.max(l.p * 0.01, 0.1)
-      : l.q < 0 ? legCost(l.p, date) : wingCost(l.p, date);
-    pts += l.q * (intr - l.p) - cost - (l.q > 0 ? intr * 0.00125 : 0);
+    pts += l.q * (intr - l.p) - legCharges(l.p, l.q, date, stock) - (l.q > 0 ? (intr * sttExercise(date)) / 100 : 0);
   }
   return pts;
 }
@@ -139,7 +140,7 @@ const q = (sorted, p) => sorted[Math.max(0, Math.min(sorted.length - 1, Math.flo
 export function riskCheck({ strategy = 'strangle', account = 500000, lots = 1, distancePct = 2, wing = 500, wingPct = 4, maxLossPct = 2, chain = latestChain(), niftyRows, symbol = 'NIFTY' }) {
   const stock = symbol !== 'NIFTY' ? chain : null; // a stock chain carries its own lot
   if (stock) wing = (chain.spot * wingPct) / 100; // wings for a stock: a share of its price, not NIFTY points
-  if (!STRATEGIES[strategy]) throw new Error('Unknown strategy.');
+  if (!Object.hasOwn(STRATEGIES, strategy)) throw new Error('Unknown strategy.');
   if (!chain) throw new Error('No NSE option prices cached yet (they arrive with the evening job).');
   const legs = legsFor(strategy, chain, { distancePct, wing });
   if (legs.some((l) => l.k == null || !(l.p > 0))) throw new Error('No traded price for one of the strikes; try another distance.');
@@ -151,9 +152,13 @@ export function riskCheck({ strategy = 'strangle', account = 500000, lots = 1, d
   const per = ms.map((m) => payoff(legs, chain.spot * (1 + m), chain.date, stock) * lot).sort((a, b) => a - b); // ₹ for 1 lot
   const sold = strategy === 'strangle' || strategy === 'condor';
   const credit = -legs.reduce((a, l) => a + l.q * l.p, 0); // + received, − paid
-  const definedLoss = strategy === 'condor' ? (Math.max(legs[2].k - legs[0].k, legs[1].k - legs[3].k) - credit) * lot : strategy.startsWith('buy') || isSpread ? -credit * lot : null;
-  const maxProfit = isSpread ? (Math.abs(legs[1].k - legs[0].k) + credit) * lot : null; // width less the net cost
-  const margin = strategy === 'strangle' ? (chain.spot * lot * (stock ? 20 : marginPct(chain.date))) / 100 : strategy === 'condor' ? definedLoss : -credit * lot;
+  // the true worst and best results, charges included: the payoff is piecewise linear in the expiry price, so
+  // check every strike and the far ends (0 and 2 × the price); a sold strangle has no loss limit
+  const at = (s) => payoff(legs, s, chain.date, stock) * lot;
+  const pts = [0, chain.spot * 2, ...legs.map((l) => l.k)];
+  const definedLoss = strategy === 'strangle' ? null : -Math.min(...pts.map(at));
+  const maxProfit = isSpread || strategy === 'condor' ? Math.max(...pts.map(at)) : null;
+  const margin = strategy === 'strangle' ? (chain.spot * lot * (stock ? 20 : marginPct(chain.date))) / 100 : strategy === 'condor' ? definedLoss : -credit * lot; // money blocked / paid
   const bad20 = q(per, 0.05);
   const bad100 = q(per, 0.01);
   const allowed = (account * maxLossPct) / 100;
@@ -165,12 +170,17 @@ export function riskCheck({ strategy = 'strangle', account = 500000, lots = 1, d
   if (!ok && fitLots < 1) tips.push(`Even 1 lot can lose more than ${maxLossPct}% of this account in a 1-in-100 bad case${strategy === 'strangle' ? ' — add wings (iron condor) or skip' : ' — use a smaller trade or skip'}.`);
   if (strategy === 'strangle') tips.push(stock ? 'A sold strangle on a single stock has no loss limit — results, news or a block deal can move it 10–20% in a day. Wings (iron condor) cap it.' : 'A sold strangle has no loss limit: one 5% week cost −₹38,151 a lot on 3 Nov 2026. Wings (iron condor) cap it.');
   if (stock) tips.push('Check the results date and NSE\'s F&O ban list before trading a stock option; stock options are less liquid than NIFTY\'s (wider spreads).');
-  if (margin * lots > account * 0.5) tips.push('The margin would tie up more than half the account; a gap could force the broker to close it.');
+  if (margin * lots > account * 0.5) tips.push(sold ? 'The margin would tie up more than half the account; a gap could force the broker to close it.' : 'This one trade would use more than half the account.');
+  // improvement: short histories (a recent listing) make the odds less reliable
+  const years = ms.length / 250;
+  if (years < 5) tips.push(`Only about ${years.toFixed(1)} years of ${symbol} prices: the odds rest on few cases.`);
   return {
     symbol, date: chain.date, expiry: chain.expiry, spot: chain.spot, sessions: n, samples: ms.length, strategy, label: STRATEGIES[strategy], lots, lot, account,
     legs: legs.map((l) => ({ strike: l.k, type: l.t, side: l.q < 0 ? 'sell' : 'buy', price: l.p })),
     premium: credit * lot * lots, sold, maxProfit: maxProfit != null ? maxProfit * lots : null,
     chanceOfProfit: per.filter((x) => x > 0).length / per.length,
+    average: total(per.reduce((a, b) => a + b, 0) / per.length), // the average result over every replayed move
+    historyYears: ms.length / 250,
     typical: total(q(per, 0.5)), bad20: total(bad20), bad100: total(bad100), worstEver: total(per[0]), best: total(per.at(-1)),
     definedMaxLoss: definedLoss != null ? definedLoss * lots : null, margin: margin * lots,
     allowedLoss: allowed, fitLots, ok,
@@ -234,7 +244,7 @@ export async function affordable({ capital = 10000, perTrade = 3000, live = load
   const out = [];
   for (const p of picks) {
     const yahoo = p.symbol === 'NIFTY' ? '^NSEI' : `${p.symbol}.NS`;
-    let rows = histCache.get(yahoo)?.rows;
+    let rows = histCache.get(yahoo) && Date.now() - histCache.get(yahoo).at < 6 * 3600_000 ? histCache.get(yahoo).rows : null;
     try {
       if (!rows) {
         rows = (await loadCandles(yahoo, { period1: Math.floor(Date.parse('2009-06-01') / 1000), interval: '1d' })).filter((x) => x.close > 0);
@@ -260,17 +270,23 @@ export async function affordable({ capital = 10000, perTrade = 3000, live = load
         continue;
       }
       const cost = -r.premium;
-      if (!(cost > 0) || cost > perTrade) continue;
+      const maxLoss = r.definedMaxLoss; // charges included
+      if (!(cost > 0) || !(maxLoss <= perTrade)) continue;
+      // best = the highest chance of profit. The average result is shown too, but not used to rank: for cheap far-away
+      // options it is driven by a few past crashes / rallies that paid many times the cost (most cases lose it all),
+      // and real-price NIFTY tests found bought options lost money over time
       if (!best[t.kind] || r.chanceOfProfit > best[t.kind].chanceOfProfit) {
-        best[t.kind] = { ...p, kind: t.kind, strategy: t.strategy, distancePct: t.distancePct, wing: t.wing ?? null, wingPct: t.wingPct ?? null, legs: r.legs, strike: r.legs[0].strike, type: r.legs[0].type, price: r.legs[0].price, lot: r.lot, cost, maxProfit: r.maxProfit, chanceOfProfit: r.chanceOfProfit, typical: r.typical, best: r.best, expiry: r.expiry, sessions: r.sessions, spot: r.spot };
+        const vols = r.legs.map((l) => chain.chain[l.strike]?.[l.type === 'CE' ? 'ceVol' : 'peVol'] ?? 0);
+        const charges = r.legs.reduce((a, l) => a + legCharges(l.price, l.side === 'sell' ? -1 : 1, chain.date, p.symbol === 'NIFTY' ? null : chain), 0) * r.lot;
+        best[t.kind] = { ...p, date: chain.date, charges, minVolume: Math.min(...vols), kind: t.kind, strategy: t.strategy, distancePct: t.distancePct, wing: t.wing ?? null, wingPct: t.wingPct ?? null, legs: r.legs, strike: r.legs[0].strike, type: r.legs[0].type, price: r.legs[0].price, lot: r.lot, cost, maxLoss, maxProfit: r.maxProfit, chanceOfProfit: r.chanceOfProfit, average: r.average, historyYears: r.historyYears, typical: r.typical, best: r.best, expiry: r.expiry, sessions: r.sessions, spot: r.spot };
       }
     }
     for (const b of Object.values(best)) out.push(b);
   }
   out.sort((a, b) => b.chanceOfProfit - a.chanceOfProfit);
   return {
-    capital, perTrade, date: latestChain()?.date || null, rows: out,
+    capital, perTrade, date: out.map((x) => x.date).sort().pop() || latestChain()?.date || null, rows: out,
     tries: Math.floor(capital / perTrade),
-    note: `Plain options and spreads (buy one, sell one farther out — about half the cost, profit capped; in the 2019–26 NIFTY test spreads lost about ¼–½ as much as plain buys but were still about break-even) whose one-lot cost is within ₹${perTrade.toLocaleString('en-IN')} — the most you can lose on each is that cost. Calls for today's STRONG stocks, puts for WEAK ones (a small 1–3 month lean, not a forecast), NIFTY both ways. Chance of profit = how often the stock's own moves since 2010 would have finished beyond the strike plus the premium by expiry, after charges. With ₹${capital.toLocaleString('en-IN')} that is about ${Math.floor(capital / perTrade)} tries; most bought options expire worthless.`,
+    note: `Plain options and spreads (buy one, sell one farther out — about half the cost, profit capped; in the 2019–26 NIFTY test spreads lost about ¼–½ as much as plain buys but were still about break-even) whose most-you-can-lose (the cost plus charges) is within ₹${perTrade.toLocaleString('en-IN')}. Sorted by chance of profit. The average result is lifted by a few past crashes or rallies that paid many times the cost — most cases lose the whole cost — so don't read a positive average as an edge. Calls for today's STRONG stocks, puts for WEAK ones (a small 1–3 month lean, not a forecast), NIFTY both ways. Chance of profit = how often the stock's own moves since 2010 would have finished beyond the strike plus the premium by expiry, after charges. With ₹${capital.toLocaleString('en-IN')} that is about ${Math.floor(capital / perTrade)} tries; most bought options expire worthless.`,
   };
 }

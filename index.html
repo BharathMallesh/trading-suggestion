@@ -50,6 +50,14 @@
     <div class="note" id="viewNote"></div>
 
     <main>
+      <!-- Trade today?: Go / Be careful / Stay out for each kind of trading, from tested warning signs (risk, not direction) -->
+      <section class="card span2" id="tradeTodayCard">
+        <h2>Trade today? <span style="font-size:12px;color:var(--warn);font-weight:500">GO · BE CAREFUL · STAY OUT · FROM THE LAST CLOSE · TESTED SINCE 2010 · NOT ADVICE</span></h2>
+        <p class="hint">Before you trade: warning signs at the last close (NIFTY and India VIX) that came before wild days and big weeks in 16 years of NIFTY history. It can't say whether the market goes up or down —
+          nothing tested can — but it tells you when the risk is high enough to sit out.</p>
+        <div id="ttOut" style="margin-top:10px">Loading…</div>
+      </section>
+
       <!-- Up/Down outlook: a 1–3 month lean with honest odds (not a next-day call) -->
       <section class="card span2" id="updownCard">
         <h2>Up/Down outlook <span style="font-size:12px;color:var(--warn);font-weight:500">1–3 MONTH LEAN · STRONG / NEUTRAL / WEAK · ODDS FROM 16 YEARS OF NSE DATA · NOT A NEXT-DAY CALL</span></h2>
@@ -436,13 +444,21 @@
 
       <!-- F&O for a small account: options whose one-lot cost fits the budget -->
       <section class="card span2" id="foBudgetCard">
-        <h2>Fits my budget (F&amp;O) <span style="font-size:12px;color:var(--warn);font-weight:500">SMALL ACCOUNT · BUY ONLY · MAX LOSS = WHAT YOU PAY · STRONG → CALLS · WEAK → PUTS · NOT ADVICE</span></h2>
+        <h2>Fits my budget (F&amp;O) <span style="font-size:12px;color:var(--warn);font-weight:500">SMALL ACCOUNT · BUY ONLY · MAX LOSS = COST + CHARGES · STRONG → CALLS · WEAK → PUTS · NOT ADVICE</span></h2>
         <p class="hint">With a small account only buying options fits (selling needs ₹20,000+ margin a lot). This lists the calls on today's STRONG F&amp;O stocks, puts on WEAK ones and NIFTY both ways whose
           one-lot cost is within your per-trade limit — the most you can lose on each — with the chance of profit from the stock's own moves since 2010. Most bought options expire worthless: treat it as learning money.</p>
         <div class="row" style="gap:8px;align-items:flex-end"><div style="flex:0 0 150px"><label>F&amp;O money (₹)</label><input id="fbCap" type="number" min="1000" step="1000" value="10000" /></div>
           <div style="flex:0 0 150px"><label>Most per trade (₹)</label><input id="fbPer" type="number" min="200" step="500" value="3000" /></div>
           <div style="flex:0 0 auto"><button id="fbBtn" type="button" style="margin-top:0">Find options</button></div></div>
         <div id="fbOut" style="margin-top:10px">Press Find options.</div>
+      </section>
+
+      <!-- Spread paper tracker: ₹10,000 practice account trading the Fits-my-budget spreads -->
+      <section class="card span2" id="spreadPaperCard">
+        <h2>Spread paper tracker <span style="font-size:12px;color:var(--warn);font-weight:500">₹10,000 PRACTICE MONEY · UP TO 3 SPREADS · BEST ODDS FROM "FITS MY BUDGET" · STOCKS SOLD 2 SESSIONS BEFORE EXPIRY · PAPER ONLY</span></h2>
+        <p class="hint">Before risking real money: each evening this "buys", on paper, the best-odds spreads from Fits my budget (up to 3 at a time, at most ₹3,000 to lose each, one per stock, at most 2 the same way) at that day's NSE closing prices.
+          Stock options settle by delivery, so stock spreads are sold 2 sessions before expiry; NIFTY spreads are held to expiry. All after charges. In a few months it shows what this way of trading really earns.</p>
+        <div id="spOut" style="margin-top:10px">Loading…</div>
       </section>
 
       <!-- F&O risk check: before a trade, how bad can one week get for this account? -->
@@ -453,7 +469,7 @@
         <div class="row" style="gap:8px;align-items:flex-end;flex-wrap:wrap">
           <div style="flex:0 0 140px"><label>Index / stock</label><input id="frSym" list="frSyms" value="NIFTY" autocomplete="off" /><datalist id="frSyms"></datalist></div>
           <div style="flex:0 0 220px"><label>…or pick a Strong / Weak stock</label><select id="frPick"><option value="">— choose —</option></select></div>
-          <div style="flex:0 0 150px"><label>Account (₹)</label><input id="frAcct" type="number" min="10000" step="50000" value="500000" /></div>
+          <div style="flex:0 0 150px"><label>Account (₹)</label><input id="frAcct" type="number" min="1000" step="1000" value="10000" /></div>
           <div style="flex:0 0 250px"><label>Trade</label><select id="frStrat"><option value="strangle">Sell a strangle (no protection)</option><option value="condor">Iron condor (strangle + wings)</option><option value="buy-call">Buy a call</option><option value="buy-put">Buy a put</option><option value="call-spread">Call spread (buy a call, sell a higher one)</option><option value="put-spread">Put spread (buy a put, sell a lower one)</option></select></div>
           <div style="flex:0 0 80px"><label>Lots</label><input id="frLots" type="number" min="1" max="50" value="1" /></div>
           <div style="flex:0 0 110px"><label>Strikes away (%)</label><input id="frDist" type="number" min="0" max="8" step="0.5" value="2" /></div>
@@ -1052,6 +1068,8 @@
     <script src="/static/js/30-updown.js"></script>
     <script src="/static/js/31-fo-riskcheck.js"></script>
     <script src="/static/js/32-fo-budget.js"></script>
+    <script src="/static/js/33-spread-paper.js"></script>
+    <script src="/static/js/34-trade-today.js"></script>
     <script src="/static/js/19-my-plan.js"></script>
     <script src="/static/js/20-rsi-swing.js"></script>
   </body>

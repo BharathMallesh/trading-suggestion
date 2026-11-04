@@ -22,6 +22,7 @@ import { loadMomentum10Paper } from './momentum10.mjs';
 import { loadSteadyMixPaper } from './steady-mix.mjs';
 import { loadImbalancePaper } from './imbalance-swing.mjs';
 import { saveSwingScan, tradePlan } from './trade-plan.mjs';
+import { tradeToday } from './trade-today.mjs';
 
 const rs = (v) => `${v < 0 ? '−' : '+'}₹${Math.abs(Math.round(v)).toLocaleString('en-IN')}`;
 
@@ -146,6 +147,14 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     if (scan) {
       const p = tradePlan({ scan });
       if (p.counts.buy || p.counts.sell || p.hold.some((h) => h.stopRaised)) lines.push({ title: 'Swing plan', short: `Swing plan: buy ${p.counts.buy}, sell ${p.counts.sell}, hold ${p.counts.hold}`, detail: [...p.buy.filter((b) => b.action === 'buy').map((b) => `BUY ${b.symbol} at the open (stop ₹${b.stop.toFixed(1)})`), ...p.hold.filter((h) => h.action === 'sell').map((h) => `SELL ${h.symbol} at the open (closed below ₹${h.stop.toFixed(1)})`), ...p.hold.filter((h) => h.action === 'hold').map((h) => `${h.symbol} stop ₹${h.stop.toFixed(1)}`)].join(' · ') });
+    }
+    // tomorrow's risk check: which kinds of trading to sit out (risk, not direction)
+    try {
+      const t = await tradeToday();
+      const word = { go: 'GO', careful: 'BE CAREFUL', stay: 'STAY OUT' };
+      if (t.overall !== 'go') lines.unshift({ title: 'Trade tomorrow?', short: `Tomorrow: ${t.kinds.filter((k) => k.level === 'stay').map((k) => k.kind === 'intraday' ? 'no intraday' : k.kind === 'fnoSell' ? 'no option selling' : k.kind).join(', ') || 'be careful'}`, detail: `${t.signs.map((s) => s.text).join('; ')} → ${t.kinds.filter((k) => k.level !== 'go').map((k) => `${word[k.level]}: ${k.name}`).join(' · ')}` });
+    } catch (err) {
+      console.log(`Trade-today check failed: ${err.message}`);
     }
     for (const l of lines) console.log(`${l.title}: ${l.detail}`);
     if (process.argv.includes('--notify') && afterClose) {

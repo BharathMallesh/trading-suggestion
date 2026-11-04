@@ -36,6 +36,7 @@ do_collect() {
   node paper-bot/breakfast.mjs --paper
   node paper-bot/nifty-dip.mjs --paper
   node paper-bot/fo-strangle.mjs --paper   # F&O: NSE files arrive in the evening, so this records up to yesterday
+  node --max-old-space-size=4000 paper-bot/spread-paper.mjs   # ₹10,000 practice account: Fits-my-budget spreads (settles / marks; opens only if today's NSE file is out)
   node paper-bot/core-satellite.mjs --update   # the 80/20 index fund + swing paper account
   node --max-old-space-size=8000 paper-bot/rsi-swing.mjs --paper   # RSI swing (Rathod): live scan + paper record
   # Momentum 20: add the day's NSE file, then this month's list + the paper portfolio
@@ -171,6 +172,8 @@ case "${1:-}" in
   backup)
     caffeinate -i -w $$ & # keep the Mac awake until this job finishes
     echo "$(date '+%F %T') backup"; node paper-bot/backup.mjs
+    # spread paper again once NSE's evening F&O file is out (it opens trades only on the day's own closing prices)
+    node --max-old-space-size=4000 paper-bot/spread-paper.mjs
     # catch up a failed evening run / weekly refit, then the watchdog with the fresh backup
     catchup
     node paper-bot/watchdog.mjs --notify ;;

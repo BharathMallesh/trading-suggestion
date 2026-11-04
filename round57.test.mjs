@@ -112,7 +112,7 @@ test('fits my budget: only options whose one-lot cost is within the per-trade li
   assert.equal(r.tries, 3);
 });
 
-test('spreads: buy one option and sell one farther out — net cost is the most you can lose, profit is capped at the width less the cost', () => {
+test('spreads: buy one option and sell one farther out — the most you can lose is the cost plus charges, profit is capped at the width less cost and charges', () => {
   const c = chainAt(20000);
   for (const strategy of ['call-spread', 'put-spread']) {
     const r = rc.riskCheck({ strategy, account: 1e7, chain: c, niftyRows: nifty, distancePct: 0, wing: 250 });
@@ -121,13 +121,27 @@ test('spreads: buy one option and sell one farther out — net cost is the most 
     assert.equal(r.legs[1].side, 'sell');
     assert.equal(Math.abs(r.legs[1].strike - r.legs[0].strike), 250);
     assert.ok(r.premium < 0, 'a net cost');
-    assert.ok(Math.abs(r.definedMaxLoss + r.premium) < 1e-9, 'max loss = the net cost');
-    assert.ok(Math.abs(r.maxProfit - (250 * r.lot + r.premium)) < 1e-6, 'max profit = width − cost');
-    assert.ok(r.worstEver >= r.premium - 600, 'never loses (much) more than the cost — only charges on top');
-    assert.ok(r.best <= r.maxProfit, 'never makes more than the cap');
+    // the most you can lose is the net cost PLUS the charges, and no replayed move ever loses more
+    assert.ok(r.definedMaxLoss > -r.premium && r.definedMaxLoss < -r.premium + 1000, `max loss = cost + charges: ${r.definedMaxLoss}`);
+    assert.ok(r.worstEver >= -r.definedMaxLoss - 1e-6, 'no move loses more than the stated maximum');
+    // the most you can make is the width less the cost and charges, and no move makes more
+    assert.ok(r.maxProfit < 250 * r.lot + r.premium && r.maxProfit > 250 * r.lot + r.premium - 1000, `max profit = width − cost − charges: ${r.maxProfit}`);
+    assert.ok(r.best <= r.maxProfit + 1e-6, 'never makes more than the cap');
   }
   // a spread costs less than the plain option it starts from
   const buy = rc.riskCheck({ strategy: 'buy-put', account: 1e7, chain: c, niftyRows: nifty, distancePct: 0 });
   const sp = rc.riskCheck({ strategy: 'put-spread', account: 1e7, chain: c, niftyRows: nifty, distancePct: 0, wing: 250 });
   assert.ok(-sp.premium < -buy.premium);
+});
+
+
+test('move length counts NSE trading sessions (holidays excluded), and unknown strategies are refused', () => {
+  assert.equal(rc.sessionsBetween('2026-11-03', '2026-11-23'), 13, '10 Nov 2026 is an NSE holiday');
+  assert.throws(() => rc.riskCheck({ strategy: 'toString', chain: chainAt(20000), niftyRows: nifty }), /Unknown strategy/);
+});
+
+test('a bought option\'s most-you-can-lose includes its charges; buys get no margin-call warning', () => {
+  const b = rc.riskCheck({ strategy: 'buy-call', account: 3000, chain: chainAt(20000), niftyRows: nifty, distancePct: 4 });
+  assert.ok(b.definedMaxLoss > -b.premium);
+  assert.ok(!b.tips.some((t) => /force the broker/.test(t)));
 });

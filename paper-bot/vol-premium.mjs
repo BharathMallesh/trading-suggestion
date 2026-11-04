@@ -37,7 +37,7 @@ import { isTradingDay } from './market-calendar.mjs';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { readFileSync, writeFileSync, mkdirSync, existsSync, unlinkSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, unlinkSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { candles } from '../market-data.mjs';
@@ -305,7 +305,8 @@ export function parseStockChains(text, date) {
     const s = f[c.sym];
     const exp = f[c.exp];
     if (!(exp > date)) continue;
-    const o = (out[s] ||= { underlying: Number(f[c.und]) || null, lot: Number(f[c.lot]) || null, expiries: {} });
+    const o = (out[s] ||= { underlying: Number(f[c.und]) || null, lot: Number(f[c.lot]) || null, lots: {}, expiries: {} });
+    o.lots[exp] ||= Number(f[c.lot]) || null; // lot per expiry (they differ while NSE revises lot sizes)
     const k = Number(f[c.k]);
     if (o.underlying && Math.abs(k / o.underlying - 1) > 0.25) continue;
     const typ = f[c.opt];
@@ -317,6 +318,8 @@ export function parseStockChains(text, date) {
   for (const o of Object.values(out)) {
     const keep = Object.keys(o.expiries).sort().slice(0, 2);
     o.expiries = Object.fromEntries(keep.map((e) => [e, o.expiries[e]]));
+    o.lots = Object.fromEntries(keep.map((e) => [e, o.lots[e]]));
+    o.lot = o.lots[keep[0]] ?? o.lot; // the nearest expiry's lot
   }
   return Object.keys(out).length ? out : null;
 }
@@ -395,6 +398,9 @@ export async function foBhav(date, { fetchFn = fetch } = {}) {
       if (stocks) {
         mkdirSync(FO_STOCKS_DIR, { recursive: true });
         writeFileSync(join(FO_STOCKS_DIR, `${date}.json`), JSON.stringify(stocks));
+        // keep about 30 days (≈ 0.6 MB a day)
+        const old = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+        for (const f of readdirSync(FO_STOCKS_DIR)) if (f.endsWith('.json') && f.slice(0, 10) < old) unlinkSync(join(FO_STOCKS_DIR, f));
       }
     }
   } catch {

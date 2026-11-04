@@ -40,7 +40,9 @@ export const RULES = { wing: 0, otmPct: 2, slippagePct: 0.5, slippageMinPts: 0.5
 // NIFTY lot size and margin over time (NSE circulars)
 export const lotOn = (d) => (d < '2021-07-29' ? 75 : d < '2024-04-26' ? 50 : d < '2024-12-26' ? 25 : d < '2026-01-06' ? 75 : 65);
 export const LOT_NOW = 65;
-const sttSell = (d) => (d < '2023-04-01' ? 0.05 : d < '2024-10-01' ? 0.0625 : 0.1);
+// STT on option sales, % of premium (Budget 2026 raised it to 0.15% from 1 Apr 2026), and on exercise, % of intrinsic value
+export const sttSell = (d) => (d < '2023-04-01' ? 0.05 : d < '2024-10-01' ? 0.0625 : d < '2026-04-01' ? 0.1 : 0.15);
+export const sttExercise = (d) => (d < '2023-04-01' ? 0.125 : d < '2026-04-01' ? 0.125 : 0.15);
 const exch = (d) => (d < '2024-10-01' ? 0.05 : 0.03503);
 export const marginPct = (d) => (d < '2024-11-20' ? 13 : 15);
 
@@ -112,7 +114,7 @@ export function settle(t, close) {
   if (t.wingCall != null) {
     const back = Math.max(close - t.wingCall, 0) + Math.max(t.wingPut - close, 0); // the bought wings pay back beyond them
     intrinsic -= back;
-    stt = back * 0.00125; // STT on exercise of the bought wing
+    stt = (back * sttExercise(t.expiry || t.entryDate)) / 100; // STT on exercise of the bought wing
   }
   const pts = t.credit - intrinsic - t.costs - stt;
   return { ...t, open: false, settle: close, intrinsic, pts, retOnMargin: pts / t.margin, rupees: pts * t.lot, rupeesNowLot: pts * LOT_NOW, move: close / t.spot - 1, breached: close > t.callStrike ? 'call' : close < t.putStrike ? 'put' : null };

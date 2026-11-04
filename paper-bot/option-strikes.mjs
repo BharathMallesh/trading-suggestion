@@ -18,13 +18,13 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { candles } from '../market-data.mjs';
 import { writeJsonAtomic } from '../util.mjs';
-import { lotOn, LOT_NOW, nearest } from './fo-strangle.mjs';
+import { lotOn, LOT_NOW, nearest, sttExercise } from './fo-strangle.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FO_DIR = () => process.env.FO_BHAV_DIR || join(HERE, 'data', 'fo-bhav');
 const SAVED = () => process.env.OPTION_STRIKES_PATH || join(HERE, 'data', 'option-strikes.json');
 
-export const RULES = { deltas: { ITM: 0.7, ATM: 0.5, OTM: 0.3 }, slippagePct: 0.5, slippageMinPts: 0.5, brokeragePerOrder: 20, sttExercisePct: 0.125, trendDays: 20 };
+export const RULES = { deltas: { ITM: 0.7, ATM: 0.5, OTM: 0.3 }, slippagePct: 0.5, slippageMinPts: 0.5, brokeragePerOrder: 20, sttExercisePct: null, trendDays: 20 }; // STT on exercise: by date (0.125%, 0.15% from 1 Apr 2026)
 export const BUCKETS = [['within 0.1%', 0, 0.001], ['0.1–0.5%', 0.001, 0.005], ['0.5–1%', 0.005, 0.01], ['1–2%', 0.01, 0.02], ['over 2%', 0.02, Infinity]];
 
 /** Inverse standard normal (Abramowitz & Stegun 26.2.23, error < 0.0005) — enough for delta targets. */
@@ -49,7 +49,7 @@ export function buyCosts(prem, intrinsic, date, r = RULES) {
   const exch = prem * (date < '2024-10-01' ? 0.0005 : 0.0003503);
   const stamp = prem * 0.00003;
   const slip = Math.max((prem * r.slippagePct) / 100, r.slippageMinPts);
-  return brk + exch + stamp + 0.18 * (brk + exch) + slip + (intrinsic * r.sttExercisePct) / 100;
+  return brk + exch + stamp + 0.18 * (brk + exch) + slip + (intrinsic * (r.sttExercisePct ?? sttExercise(date))) / 100;
 }
 
 /** Build one weekly cycle: entry chain day → strikes and premiums for ITM / ATM / OTM calls and puts. */
@@ -155,7 +155,7 @@ export async function optionStrikesTest({ loadCandles = candles, r = RULES } = {
     verdict: anyPositive
       ? 'One way of guessing the direction made money after charges in both halves — see the table.'
       : 'With the direction known in hindsight every strike looks good on big moves, as in the video. Without knowing the direction in advance, every strike lost money after charges — the strike choice changes how you lose, not whether you win.',
-    note: `Real NSE NIFTY weekly option closes; bought at the close of the first session after each expiry and held to expiry (settled at NIFTY's close). ITM / ATM / OTM ≈ delta 0.70 / 0.50 / 0.30 from the ATM straddle's implied move. % of premium after brokerage, exchange, stamp, 0.5% (min 0.5 pt) slippage and 0.125% STT on exercise. ₹ use today's lot of ${LOT_NOW}. The video's 9:20→3:25 and expiry-day tests need intraday option prices (not available). Research only.`,
+    note: `Real NSE NIFTY weekly option closes; bought at the close of the first session after each expiry and held to expiry (settled at NIFTY's close). ITM / ATM / OTM ≈ delta 0.70 / 0.50 / 0.30 from the ATM straddle's implied move. % of premium after brokerage, exchange, stamp, 0.5% (min 0.5 pt) slippage and STT on exercise (0.125%, 0.15% from 1 Apr 2026). ₹ use today's lot of ${LOT_NOW}. The video's 9:20→3:25 and expiry-day tests need intraday option prices (not available). Research only.`,
   };
 }
 
