@@ -15,6 +15,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { candles } from '../market-data.mjs';
 import { mapLimit, writeJsonAtomic } from '../util.mjs';
+import { marketCalendar, cuts } from './calendar-study.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SAVED = () => process.env.DAY_PATTERNS_PATH || join(HERE, 'data', 'day-patterns.json');
@@ -181,7 +182,7 @@ export async function dayPatternsStudy({ loadCandles = candles, now = new Date()
     })).filter(Boolean);
     const trades = vp.accountTrades(data.flatMap(({ s, rows, daily }) => vp.backtestStock(s, rows, v.rules, { daily })), v.rules.maxPerDay).filter((t) => t.date < today);
     const byDay = groupBy(trades, (t) => weekdayOf(t.date), (t) => t.net);
-    strategies.push({ key: `vwap-${key}`, tab: 'vwap', name: vwapLabels[key] || key, unit: '₹', period: `${sessions.toLocaleString('en-IN')} trading days of 5-minute bars (from ${[...gap.keys()].sort()[0]})`, all: stats(trades.map((t) => t.net)), byDay, byGap: byGap(trades, (t) => t.net), byStock: byStockDay(trades, (t) => weekdayOf(t.date), (t) => t.net), verdict: verdictFor(byDay) });
+    strategies.push({ _cal: trades.map((t) => ({ d: t.date, v: t.net })), key: `vwap-${key}`, tab: 'vwap', name: vwapLabels[key] || key, unit: '₹', period: `${sessions.toLocaleString('en-IN')} trading days of 5-minute bars (from ${[...gap.keys()].sort()[0]})`, all: stats(trades.map((t) => t.net)), byDay, byGap: byGap(trades, (t) => t.net), byStock: byStockDay(trades, (t) => weekdayOf(t.date), (t) => t.net), verdict: verdictFor(byDay) });
   }
 
   // Breakfast (the backtest loop, keeping the trades)
@@ -210,7 +211,7 @@ export async function dayPatternsStudy({ loadCandles = candles, now = new Date()
     }
     const byDay = groupBy(trades, (t) => weekdayOf(t.date), (t) => t.net);
     const bySector = byStockDay(trades.map((t) => ({ ...t, symbol: t.sector || 'Other' })), (t) => weekdayOf(t.date), (t) => t.net);
-    strategies.push({ key: 'breakfast', tab: 'breakfast', name: 'Breakfast strategy', unit: '₹', period: `${sessions.toLocaleString('en-IN')} trading days of 5-minute bars (from ${[...gap.keys()].sort()[0]})`, all: stats(trades.map((t) => t.net)), byDay, byGap: byGap(trades, (t) => t.net), byStock: byStockDay(trades, (t) => weekdayOf(t.date), (t) => t.net), bySector, verdict: verdictFor(byDay) });
+    strategies.push({ _cal: trades.map((t) => ({ d: t.date, v: t.net })), key: 'breakfast', tab: 'breakfast', name: 'Breakfast strategy', unit: '₹', period: `${sessions.toLocaleString('en-IN')} trading days of 5-minute bars (from ${[...gap.keys()].sort()[0]})`, all: stats(trades.map((t) => t.net)), byDay, byGap: byGap(trades, (t) => t.net), byStock: byStockDay(trades, (t) => weekdayOf(t.date), (t) => t.net), bySector, verdict: verdictFor(byDay) });
   }
 
   // Strong-stock swing, survivorship-free, by the weekday of the buy; plus the Monday tests
@@ -231,7 +232,7 @@ export async function dayPatternsStudy({ loadCandles = candles, now = new Date()
         const late = groupBy(trades.filter((t) => t.entryDate >= '2018-01-01'), (t) => weekdayOf(t.entryDate), (t) => t.r);
         // per stock: only names with 8+ trades, to keep the file small
         const many = trades.filter((t) => trades.filter((x) => x.symbol === t.symbol).length >= 8);
-        strategies.push({ key, tab: 'ath', name, unit: 'R', period: '2010 → now, full NSE history (incl. stocks that later disappeared)', all: stats(trades.map((t) => t.r)), byDay, byDayEarly: early, byDayLate: late, byStock: byStockDay(many, (t) => weekdayOf(t.entryDate), (t) => t.r), verdict: verdictFor(byDay, { early, late }) });
+        strategies.push({ _cal: trades.map((t) => ({ d: t.entryDate, v: t.r })), key, tab: 'ath', name, unit: 'R', period: '2010 → now, full NSE history (incl. stocks that later disappeared)', all: stats(trades.map((t) => t.r)), byDay, byDayEarly: early, byDayLate: late, byStock: byStockDay(many, (t) => weekdayOf(t.entryDate), (t) => t.r), verdict: verdictFor(byDay, { early, late }) });
         for (const [label, r] of [['all days', rules], ['Monday buys moved to Tuesday', { ...rules, shiftEntryDays: [1] }], ['no Monday buys', { ...rules, skipEntryDays: [1] }]]) {
           const x = ath.survivorshipRun(series, universe, market, { rulesList: { x: r }, nifty: niftyD, splitYear: '2018-01-01' }).results.x;
           monday.swing.push({ version: name, label, trades: x.all.trades, avgR: x.all.avgR, tStat: x.all.tStat, cagr: x.portfolioCagr, cagrAfterTax: x.portfolioCagrAfterTax, early: x.halves?.before, late: x.halves?.after, maxDrawdown: x.maxDrawdown });
@@ -247,7 +248,7 @@ export async function dayPatternsStudy({ loadCandles = candles, now = new Date()
     const rows = (await loadCandles('^NSEI', { period1: Math.floor(Date.parse('2007-01-01') / 1000), interval: '1d' })).filter((x) => x.open > 0 && x.close > 0);
     const trades = dip.simulate(rows).filter((t) => !t.open && !t.pending);
     const byDay = groupBy(trades, (t) => weekdayOf(t.entryDate), (t) => t.retPct);
-    strategies.push({ key: 'nifty-dip', tab: 'dip', name: 'NIFTY dip-buy', unit: '%', period: '2008 → now', all: stats(trades.map((t) => t.retPct)), byDay, verdict: verdictFor(byDay, { minN: 30 }) });
+    strategies.push({ _cal: trades.map((t) => ({ d: t.entryDate, v: t.retPct })), key: 'nifty-dip', tab: 'dip', name: 'NIFTY dip-buy', unit: '%', period: '2008 → now', all: stats(trades.map((t) => t.retPct)), byDay, verdict: verdictFor(byDay, { minN: 30 }) });
     const sma = (i, n) => (i >= n - 1 ? rows.slice(i - n + 1, i + 1).reduce((a, x) => a + x.close, 0) / n : null);
     const day = (d) => new Date(`${d}T00:00:00Z`).getUTCDay();
     for (const trend of [false, true]) {
@@ -293,11 +294,12 @@ export async function dayPatternsStudy({ loadCandles = candles, now = new Date()
       if (close.has(t.expiry)) trades.push(fo.settle(t, close.get(t.expiry)));
     }
     const byDay = groupBy(trades, (t) => weekdayOf(t.expiry), (t) => t.retOnMargin * 100);
-    strategies.push({ key: 'fo-strangle', tab: 'fo', name: 'NIFTY short strangle (F&O)', unit: '% of margin', period: 'weekly since 2019, by the weekday of the expiry', all: stats(trades.map((t) => t.retOnMargin * 100)), byDay, verdict: { ...verdictFor(byDay, { minN: 30 }), note: 'NIFTY expiry was Thursday until Aug 2025 and Tuesday since Sep 2025, so the weekday mostly shows the era (the calm recent period), not a day effect.' } });
+    strategies.push({ _cal: trades.map((t) => ({ d: t.entryDate, v: t.retOnMargin * 100 })), key: 'fo-strangle', tab: 'fo', name: 'NIFTY short strangle (F&O)', unit: '% of margin', period: 'weekly since 2019, by the weekday of the expiry', all: stats(trades.map((t) => t.retOnMargin * 100)), byDay, verdict: { ...verdictFor(byDay, { minN: 30 }), note: 'NIFTY expiry was Thursday until Aug 2025 and Tuesday since Sep 2025, so the weekday mostly shows the era (the calm recent period), not a day effect.' } });
   }
 
   // 16 years of open → close from NSE daily prices, and whether it can be traded (hourly bars)
   let long = null;
+  let calendar = null;
   try {
     const { loadSeries, pointInTimeUniverse } = await import('./bhav-history.mjs');
     const series = loadSeries();
@@ -305,13 +307,25 @@ export async function dayPatternsStudy({ loadCandles = candles, now = new Date()
       const uni = pointInTimeUniverse(series);
       long = longIntraday(series, uni);
       const latest = uni.get([...uni.keys()].sort().at(-1)) || new Set();
+      // the calendar: NIFTY and the average stock by month / weekday / holiday / part of the month, and each strategy
+      const niftyAll = (await loadCandles('^NSEI', { period1: Math.floor(Date.parse('2007-06-01') / 1000), interval: '1d' })).filter((x) => x.close > 0);
+      const mc = marketCalendar({ series, uni, nifty: niftyAll });
+      for (const s of strategies) {
+        if (!s._cal) continue;
+        const c = cuts(s._cal, mc.cal);
+        s.calendar = { month: c.month, phase: c.phase, holiday: c.holiday, turn: c.turn };
+      }
+      calendar = { ...mc };
+      delete calendar.cal; // the per-day table is only needed here
       long.tradable = await gapTradability([...latest].filter((s) => !/BEES$|ETF/.test(s)).map((s) => `${s}.NS`), { loadCandles, now });
     }
   } catch (err) {
     long = { error: err.message };
   }
 
+  for (const s of strategies) delete s._cal;
   return {
+    calendar,
     at: new Date().toISOString(), intradaySessions: sessions, intradayFrom: [...gap.keys()].sort()[0] ?? null, strategies, monday, long,
     note: 'Average result per trade by the weekday of the buy (intraday: the trading day; swing and dip-buy: the day the position was bought; strangle: the expiry day). ₹ per trade after charges at the standard size; R = multiples of the risk taken. A cell with |t| ≥ 2 is marked; with 5 days × many strategies, one or two such cells appear by chance. Only a pattern that held in both halves of the history is called consistent. F&O spreads are left out: their prices come from a model.',
   };

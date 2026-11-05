@@ -31,6 +31,7 @@
         <button type="button" data-view="options" title="Call / Put odds and prediction, big moves, volatility">Options &amp; risk</button>
         <button type="button" data-view="foplan" title="The ₹10,000 F&amp;O plan: practise on paper, then decide from the record">My F&amp;O plan</button>
         <button type="button" data-view="intraday" title="Rule-based strategies (swing, YouTube intraday, Breakfast, NIFTY dip-buy, F&amp;O strangle), live and on paper">Trading strategies</button>
+        <button type="button" data-view="calendar" title="Month of the year, weekday, market holidays, start / middle / end of the month — since 2008">Calendar</button>
         <button type="button" data-view="days" title="Which strategy did better or worse on which weekday, after a gap or a flat open, and the Monday tests">Day patterns</button>
         <button type="button" data-view="lab" title="Every experiment, including the ones that found no edge">Research lab</button>
         <a class="help" href="/guide" target="_blank" rel="noopener" title="Step-by-step guide to every card, for beginners">? Help &amp; guide</a>
@@ -311,6 +312,14 @@
         <p class="hint">The few documented ways to beat the index over long periods are "tilts": owning stocks with strong recent momentum, high quality, low volatility or low valuations.
           This uses NSE's own month-end index values, each only from when NSE started publishing it (no back-filled history), and shows the price you pay: deeper falls and years of lagging NIFTY.</p>
         <div id="flOut">Loading…</div>
+      </section>
+
+      <!-- Calendar: month of the year, weekday, market holidays, start / middle / end of the month (NSE since 2008) -->
+      <section class="card span2" id="calendarCard">
+        <h2>Calendar <span style="font-size:12px;color:var(--warn);font-weight:500">MONTH · WEEKDAY · HOLIDAYS · START / MIDDLE / END OF MONTH · NSE SINCE 2008</span></h2>
+        <p class="hint">Which months, weekdays and parts of the month have been better or worse — for NIFTY, the average NSE top-200 stock and each of your strategies —
+          and what happens the day before and after a market holiday. Every answer checked in 2008–16 and 2017 → separately, so chance patterns show up.</p>
+        <div id="calOut" style="margin-top:10px">Loading…</div>
       </section>
 
       <!-- Day patterns: every strategy by weekday and opening gap, plus the Monday tests -->
@@ -1081,6 +1090,7 @@
     <script src="/static/js/33-spread-paper.js"></script>
     <script src="/static/js/34-trade-today.js"></script>
     <script src="/static/js/35-fo-plan.js"></script>
+    <script src="/static/js/36-calendar.js"></script>
     <script src="/static/js/19-my-plan.js"></script>
     <script src="/static/js/20-rsi-swing.js"></script>
   </body>
