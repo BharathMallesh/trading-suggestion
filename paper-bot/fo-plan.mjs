@@ -7,6 +7,8 @@
 
 import { candles } from '../market-data.mjs';
 import { loadSpreadPaper, RULES } from './spread-paper.mjs';
+import { loadFoStockTest } from './fo-stock-backtest.mjs';
+import { loadFoIntradayTest } from './fo-intraday-backtest.mjs';
 
 export const PLAN = { early: 20, decide: 30, stopAtPct: 30 };
 const rs = (v) => `${v < 0 ? '−' : '+'}₹${Math.abs(Math.round(v)).toLocaleString('en-IN')}`;
@@ -31,7 +33,7 @@ const tStat = (xs) => {
 };
 
 /** The plan's state from the paper record (+ NIFTY's change over the same time when given). */
-export function foPlanFrom(st, { niftyRet = null, today = null } = {}) {
+export function foPlanFrom(st, { niftyRet = null, today = null, history = null, intraday = null } = {}) {
   const rules = { ...RULES, ...(st?.rules || {}) };
   const capital = rules.capital;
   if (!st?.trades) return { ready: false, capital, plan: PLAN, rules, note: 'The practice account starts with the next evening job.' };
@@ -78,8 +80,10 @@ export function foPlanFrom(st, { niftyRet = null, today = null } = {}) {
     { rule: 'Stock spreads sold 2 sessions before expiry (no delivery)', ok: true, detail: open.filter((x) => x.exitBy).map((x) => `${x.symbol} by ${x.exitBy}`).join(', ') || '–' },
   ];
   const manual = ['Skip a stock on its results day (check the company\'s announcements)', 'Skip F&O on RBI policy days and the Budget', 'Check NSE\'s F&O ban list before a stock trade', 'Never sell naked options with a small account'];
+  // the same rules on real NSE option prices since Jul 2024 (no trade lists here)
+  const hist = history?.variants ? { from: history.from, to: history.to, cycles: history.cycles, at: history.at, verdict: history.verdict, variants: Object.fromEntries(Object.entries(history.variants).map(([k, v]) => [k, { label: v.label, all: v.all, dev: v.dev, holdout: v.holdout, stoppedAt: v.stoppedAt, monthsUp: v.monthsUp, months: v.months, calls: v.calls, puts: v.puts, end: v.curve?.at(-1)?.value ?? null }])) } : null;
   return {
-    ready: true, capital, plan: PLAN, rules, startedAt: st.startedAt,
+    ready: true, capital, plan: PLAN, rules, startedAt: st.startedAt, history: hist, intraday: intraday?.results ? { from: intraday.from, to: intraday.to, weeks: intraday.weeks, lot: intraday.lot, results: intraday.results } : null,
     progress: { closed: n, early: PLAN.early, decide: PLAN.decide, wins: closed.filter((x) => x.pnl > 0).length, winRate: n ? closed.filter((x) => x.pnl > 0).length / n : null, net, value, ret, niftyRet, worstFall: fall, tStat: t, open: open.length, skippedDays: (st.skipped || []).length },
     decision: { status, text },
     checklist, manual,
@@ -110,5 +114,5 @@ export async function foPlan({ paper = loadSpreadPaper(), loadCandles = candles,
   } catch {
     today = null;
   }
-  return foPlanFrom(paper, { niftyRet, today });
+  return foPlanFrom(paper, { niftyRet, today, history: loadFoStockTest(), intraday: loadFoIntradayTest() });
 }

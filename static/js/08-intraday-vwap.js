@@ -7,7 +7,7 @@ function vpbRender(d) {
   const row = (name, x) => !x || !x.trades ? '' : `<tr><td style="text-align:left">${esc(name)}</td><td>${x.trades}</td><td>${Math.round(x.winRate * 100)}%</td><td>${rs(x.avgGrossRs)}</td><td>${rs(x.avgChargesRs)}</td>
     <td style="color:${x.avgNetRs >= 0 ? 'var(--up)' : 'var(--down)'}"><b>${rs(x.avgNetRs)}</b></td><td style="color:${x.totalNetRs >= 0 ? 'var(--up)' : 'var(--down)'}">${rs(x.totalNetRs)}</td><td>${x.tStat?.toFixed(1) ?? '–'}</td></tr>`;
   const head = '<table><thead><tr><th style="text-align:left">Version</th><th>Trades</th><th>Win</th><th>Avg before costs</th><th>Avg charges</th><th>Avg after costs</th><th>Total</th><th>t</th></tr></thead><tbody>';
-  let html = '';
+  let html = fiveYearBox(d.fiveYear);
   if (b) {
     html += `<div style="font-size:14px"><b>Backtest verdict: ${esc(b.verdict)}</b></div>
       <div class="note">${b.sessions} sessions (${esc(b.from)} → ${esc(b.to)}) · risk ₹${b.rules.riskRs.toLocaleString('en-IN')} per trade</div>` + head +

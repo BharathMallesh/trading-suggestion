@@ -59,6 +59,8 @@ do_collect() {
 do_refit() {
   wait_online; node paper-bot/evaluate.mjs --interval 1d --save && node paper-bot/evaluate.mjs --interval 60m --save \
     && node paper-bot/evaluate.mjs --interval 15m --save && node paper-bot/evaluate.mjs --interval 5m --save
+  # F&O stock spreads on real NSE option prices (new months only; shown in My F&O plan)
+  node --max-old-space-size=12000 paper-bot/fo-stock-backtest.mjs 2>/dev/null
   # Weekly NIFTY option IV vs VIX from new NSE days (independent of the refits above).
   node paper-bot/vol-premium.mjs --save
   # Re-test the probability improvements (adopted only if they still pass out of sample).
@@ -106,7 +108,11 @@ do_refit() {
   # Matrix calendar: adds the new weeks' NSE option files (cached) and re-runs the test
   node paper-bot/matrix-calendar.mjs >/dev/null
   # Day patterns: every strategy by weekday / opening gap, and the Monday tests (~2 minutes)
-  node --max-old-space-size=12000 paper-bot/day-patterns.mjs >/dev/null
+  # Groww 5-minute history since 2020 (new days only, ~2 min; needs the Groww Trading API) and the intraday strategies on it
+  GROWW_API_KEY="$(key trading-research-groww-key)" GROWW_API_SECRET="$(key trading-research-groww-secret)" node --max-old-space-size=4000 paper-bot/groww-history.mjs >/dev/null 2>&1 \
+    && node --max-old-space-size=14000 paper-bot/intraday-5y.mjs >/dev/null \
+    && GROWW_API_KEY="$(key trading-research-groww-key)" GROWW_API_SECRET="$(key trading-research-groww-secret)" node --max-old-space-size=8000 paper-bot/fo-intraday-backtest.mjs >/dev/null 2>&1
+  node --max-old-space-size=14000 paper-bot/day-patterns.mjs >/dev/null
 }
 
 # One job at a time: the scheduled runs and the catch-up share a lock (a stale one,
@@ -172,8 +178,13 @@ case "${1:-}" in
   backup)
     caffeinate -i -w $$ & # keep the Mac awake until this job finishes
     echo "$(date '+%F %T') backup"; node paper-bot/backup.mjs
-    # spread paper again once NSE's evening F&O file is out (it opens trades only on the day's own closing prices)
-    node --max-old-space-size=4000 paper-bot/spread-paper.mjs
+    # spread paper again once NSE's evening F&O file is out (it opens trades only on the day's own closing prices):
+    # NSE often publishes it late, so try every 15 minutes until about 21:30
+    for i in 1 2 3 4 5 6 7 8 9 10 11 12 13; do
+      node --max-old-space-size=4000 paper-bot/spread-paper.mjs
+      node -e "import('./paper-bot/market-calendar.mjs').then((m) => { const d = m.lastSessionDate(); process.exit(require('node:fs').existsSync('paper-bot/data/fo-stocks/' + d + '.json') ? 0 : 1); })" && break
+      sleep 900
+    done
     # catch up a failed evening run / weekly refit, then the watchdog with the fresh backup
     catchup
     node paper-bot/watchdog.mjs --notify ;;

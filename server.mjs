@@ -77,6 +77,7 @@ import { loadSwingOrb } from './paper-bot/swing-orb.mjs';
 import { riskCheckLive, stockSymbols, stockLots, affordable } from './paper-bot/fo-riskcheck.mjs';
 import { loadSpreadPaper } from './paper-bot/spread-paper.mjs';
 import { tradeToday } from './paper-bot/trade-today.mjs';
+import { loadIntraday5y } from './paper-bot/intraday-5y.mjs';
 import { foPlan } from './paper-bot/fo-plan.mjs';
 const affordableCache = new Map();
 import { outlookFor, loadUpdownLive, loadUpdownTable, features as udFeatures } from './paper-bot/updown-outlook.mjs';
@@ -649,7 +650,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === 'GET' && url.pathname === '/api/vwap-pullback') {
       const sizing = parseSizing(url.searchParams.get('capital') ?? undefined, url.searchParams.get('riskPct') ?? undefined);
-      return json(res, 200, { backtest: loadVwapPullback(), paper: paperSummary(undefined, sizing), improve: loadImprove(), odds: loadOdds() });
+      return json(res, 200, { backtest: loadVwapPullback(), paper: paperSummary(undefined, sizing), improve: loadImprove(), odds: loadOdds(), fiveYear: loadIntraday5y()?.vwap || null });
     }
     // --- trade planner, journal, daily loss limit, price alerts ---
     if (req.method === 'GET' && url.pathname === '/api/journal') {
@@ -669,7 +670,8 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/api/strategies/compare') return json(res, 200, compareStrategies());
     if (req.method === 'GET' && url.pathname === '/api/breakfast') {
       const paper = loadBreakfastPaper();
-      return json(res, 200, { backtest: loadBreakfast(), paper: paper ? { startedAt: paper.startedAt, updatedAt: paper.updatedAt, summary: bfSummarise(paper.trades), flatSummary: bfSummarise(paper.trades.filter((t) => isFlatOpen(t))), trades: paper.trades.slice(-20).reverse() } : null });
+      const fy = loadIntraday5y()?.breakfast;
+      return json(res, 200, { fiveYear: fy ? { breakfast: fy, flat: { ...fy.flatOpen, label: 'Breakfast · flat opens only' } } : null, backtest: loadBreakfast(), paper: paper ? { startedAt: paper.startedAt, updatedAt: paper.updatedAt, summary: bfSummarise(paper.trades), flatSummary: bfSummarise(paper.trades.filter((t) => isFlatOpen(t))), trades: paper.trades.slice(-20).reverse() } : null });
     }
     if (req.method === 'POST' && url.pathname === '/api/breakfast') {
       await readJson(req);

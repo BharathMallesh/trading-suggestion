@@ -36,11 +36,25 @@ function dpRender(r) {
   const gaps = r.strategies.filter((s) => s.byGap);
   if (gaps.length) {
     const kinds = ['gap up', 'flat open', 'gap down'];
-    html += `<div style="font-size:14px;margin-top:14px"><b>Intraday strategies by how NIFTY opened</b> <span class="note" style="display:inline">(last ${r.intradaySessions} trading days; gap = more than 0.3% from the previous close)</span></div>
+    html += `<div style="font-size:14px;margin-top:14px"><b>Intraday strategies by how NIFTY opened</b> <span class="note" style="display:inline">(${Number(r.intradaySessions).toLocaleString('en-IN')} trading days of 5-minute bars from ${esc(r.intradayFrom || '–')} — Groww's history since 2020 plus the bars saved each day; gap = more than 0.3% from the previous close)</span></div>
       <div style="overflow-x:auto"><table style="font-size:12px"><thead><tr><th style="text-align:left">Strategy</th>${kinds.map((k) => `<th>${k}</th>`).join('')}</tr></thead><tbody>${gaps.map((s) =>
         `<tr><td style="text-align:left">${esc(s.name)}</td>${kinds.map((k) => dpCell(s.byGap[k], s.unit)).join('')}</tr>`).join('')}</tbody></table></div>
       <div class="note">How NIFTY opens is known at 9:15, so this is usable — but the samples are small. Breakfast losing on gap days is the clearest pattern; it has a "flat opens only" paper version.</div>`;
   }
+
+  const L = r.long;
+  if (L?.cells) {
+    const kinds = ['gap up', 'flat open', 'gap down', 'all'];
+    const cell = (c) => (c ? `<span style="color:${dpCol(c.late.avg)}">${c.early.avg >= 0 ? '+' : ''}${c.early.avg.toFixed(2)}% / <b>${c.late.avg >= 0 ? '+' : ''}${c.late.avg.toFixed(2)}%</b></span>${c.consistent ? ' ✓' : ''}` : '–');
+    html += `<div style="font-size:14px;margin-top:14px"><b>16 years: a stock's move from the open to the close</b> <span class="note" style="display:inline">(NSE top 200, ${L.days.toLocaleString('en-IN')} trading days since 2010; 2010–18 / <b>2019 →</b>; ✓ = same direction, |t| ≥ 2 in both)</span></div>
+      <div style="overflow-x:auto"><table style="font-size:12px"><thead><tr><th style="text-align:left">Day</th>${kinds.map((k) => `<th>${({ 'gap up': 'opened up (> 0.3%)', 'flat open': 'opened flat', 'gap down': 'opened down (> 0.3%)', all: 'any open' })[k]}</th>`).join('')}</tr></thead><tbody>${[...DP_DAYS, 'All days'].map((d) =>
+        `<tr><td style="text-align:left">${d === 'All days' ? '<b>All days</b>' : d}</td>${kinds.map((k) => `<td>${cell(L.cells[d]?.[k])}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+    const yrs = Object.entries(L.byYear);
+    html += `<details style="margin-top:6px"><summary style="cursor:pointer;font-size:13px">Year by year (is it fading?)</summary><table style="font-size:12px"><thead><tr><th>Year</th><th>opened up</th><th>opened down</th></tr></thead><tbody>${yrs.map(([y, v]) => `<tr><td>${y}</td><td style="color:${dpCol(v['gap up'])}">${v['gap up'] >= 0 ? '+' : ''}${(v['gap up'] ?? 0).toFixed(2)}%</td><td style="color:${dpCol(v['gap down'])}">${v['gap down'] >= 0 ? '+' : ''}${(v['gap down'] ?? 0).toFixed(2)}%</td></tr>`).join('')}</tbody></table></details>`;
+    const T = L.tradable;
+    const tv = (s) => (s?.n ? `${s.avg >= 0 ? '+' : ''}${s.avg.toFixed(2)}% (t ${s.t?.toFixed(1)}, ${s.n} days)` : '–');
+    html += `<div class="note">Stocks that open up have tended to drift down by the close, and stocks that open down to recover — in every weekday, both halves of the history. But it is shrinking (see the years), and it mostly happens in the first minutes:${T?.stocks ? ` on hourly prices since ${esc(T.from)} (${T.stocks} stocks), an opened-up stock moved ${tv(T['gap up'].fromOpen)} from the open but ${tv(T['gap up'].fromFirstHour)} after the first hour; opened-down: ${tv(T['gap down'].fromOpen)} / ${tv(T['gap down'].fromFirstHour)}.` : ''} NSE's official open is the pre-open auction price and the close is a 30-minute average; after about 0.1% round-trip charges (more when shorting) there is little left for a trade you can actually place. The weekday matters far less than the gap.</div>`;
+  } else if (L?.error) html += `<div class="note">16-year view unavailable: ${esc(L.error)}</div>`;
 
   const m = r.monday || {};
   if (m.swing?.length) {

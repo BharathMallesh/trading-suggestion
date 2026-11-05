@@ -23,11 +23,24 @@ lazy('Strategy comparison', async () => {
 });
 
 // --- Breakfast strategy ---
+/** "5 years on real 5-minute data" box (Groww history since 2020): one row per version, 2020–22 vs 2023 →, by year. */
+function fiveYearBox(rows) {
+  const list = Object.values(rows || {}).filter((x) => x?.all?.trades);
+  if (!list.length) return '';
+  const rs = (v) => `${v < 0 ? '−' : '+'}₹${Math.abs(Math.round(v || 0)).toLocaleString('en-IN')}`;
+  const col = (v) => (v > 0 ? 'var(--up)' : v < 0 ? 'var(--down)' : 'var(--muted)');
+  const years = [...new Set(list.flatMap((x) => Object.keys(x.byYear || {})))].sort();
+  const lost = list.every((x) => x.all.total < 0);
+  return `<div style="margin:0 0 10px;padding:10px 12px;border-radius:10px;border:1px solid ${lost ? 'var(--down)' : 'var(--line)'};font-size:13px"><b>5 years on real 5-minute data</b> <span class="note" style="display:inline">(Groww, ${esc(list[0].from)} → ${esc(list[0].to)}; the rules unchanged, after charges)</span>
+    <div style="overflow-x:auto"><table style="font-size:12px;margin-top:4px;white-space:nowrap"><thead><tr><th style="text-align:left">Version</th><th>Trades</th><th>Won</th><th>Result</th><th>Per trade</th><th>2020–22</th><th>2023 →</th>${years.map((y) => `<th>${y}</th>`).join('')}</tr></thead><tbody>${list.map((x) =>
+      `<tr><td style="text-align:left">${esc(x.label)}</td><td>${x.all.trades.toLocaleString('en-IN')}</td><td>${Math.round(x.all.winRate * 100)}%</td><td style="color:${col(x.all.total)}"><b>${rs(x.all.total)}</b></td><td>${rs(x.all.avg)} <span class="note" style="display:inline">t ${x.all.tStat?.toFixed(1)}</span></td><td style="color:${col(x.early.total)}">${rs(x.early.total)}</td><td style="color:${col(x.late.total)}">${rs(x.late.total)}</td>${years.map((y) => `<td style="color:${col(x.byYear[y]?.total)}">${x.byYear[y] ? rs(x.byYear[y].total) : '–'}</td>`).join('')}</tr>`).join('')}</tbody></table></div>
+    <div class="note" style="margin:4px 0 0">${lost ? 'Every version lost money over the 5 years — in both halves and in every year. The short paper record is too small to judge; this is the long test. ' : ''}Today's stock lists are used for the whole period (stocks that left the lists are missing). One day of bad data from Groww (12 May 2025) is left out.</div></div>`;
+}
 function bfRender(d) {
   const b = d.backtest;
   const rs = (v) => (v == null ? '–' : (v < 0 ? '−₹' : '₹') + Math.abs(Math.round(v)).toLocaleString('en-IN'));
   const pc = (x) => (x == null ? '–' : Math.round(x * 100) + '%');
-  let html = '';
+  let html = fiveYearBox(d.fiveYear);
   if (b) {
     const row = (n, x) => !x?.trades ? '' : `<tr><td style="text-align:left">${esc(n)}</td><td>${x.trades}</td><td>${pc(x.winRate)}</td><td>${rs(x.avgGrossRs)}</td><td>${rs(x.avgChargesRs)}</td><td style="color:${x.avgNetRs >= 0 ? 'var(--up)' : 'var(--down)'}"><b>${rs(x.avgNetRs)}</b></td><td style="color:${x.totalNetRs >= 0 ? 'var(--up)' : 'var(--down)'}">${rs(x.totalNetRs)}</td><td>${x.exits.target}/${x.exits.stop}/${x.exits['9:45']}</td><td>${x.tStat?.toFixed(1) ?? '–'}</td></tr>`;
     html += `<div style="font-size:14px"><b>Backtest: ${b.stocks} stocks, ${b.sessions} sessions (${esc(b.from)} → ${esc(b.to)})</b> · ₹1 lakh at 5× = ₹5 lakh per trade</div>

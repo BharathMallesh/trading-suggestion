@@ -56,6 +56,84 @@ export function verdictFor(byDay, { early = null, late = null, minN = 30 } = {})
   return { best, worst, consistent, enough };
 }
 
+// ------------------------------------------- 16 years of open → close (NSE daily) ---
+/**
+ * The intraday basics on 16 years of NSE daily prices: each top-200 stock's move from the official open to the official
+ * close, grouped by weekday and by its own opening gap (> 0.3% up / down vs the previous close, else flat), averaged
+ * across stocks each day and then over days (so one busy day can't dominate). 2010–18 vs 2019 → and year by year.
+ * NSE's official open comes from the 9:00–9:08 pre-open auction and the close is the last 30 minutes' average, so the
+ * real-price check below tests what can actually be traded.
+ */
+export function longIntraday(series, uni, { from = '2010-01-01', split = '2019-01-01' } = {}) {
+  const byDate = new Map();
+  for (const [s, rows] of series) {
+    for (let i = 1; i < rows.length; i++) {
+      const r = rows[i];
+      const p = rows[i - 1];
+      if (r.date < from || !(r.open > 0) || !(p.close > 0) || !uni.get(r.date.slice(0, 7))?.has(s)) continue;
+      const gap = r.open / p.close - 1;
+      const oc = r.close / r.open - 1;
+      if (Math.abs(gap) > 0.2 || Math.abs(oc) > 0.25) continue; // a corporate action / bad print
+      if (!byDate.has(r.date)) byDate.set(r.date, []);
+      byDate.get(r.date).push({ gap, oc });
+    }
+  }
+  const kinds = ['gap up', 'flat open', 'gap down', 'all'];
+  const kindOf = (g) => (g > 0.003 ? 'gap up' : g < -0.003 ? 'gap down' : 'flat open');
+  const cells = {}; // weekday|kind → { early: [], late: [] }
+  const years = {}; // year → kind → [daily means]
+  for (const [d, xs] of byDate) {
+    const wd = weekdayOf(d);
+    if (!WEEKDAYS.includes(wd)) continue;
+    const half = d < split ? 'early' : 'late';
+    for (const k of kinds) {
+      const ys = k === 'all' ? xs : xs.filter((x) => kindOf(x.gap) === k);
+      if (ys.length < 10) continue;
+      const m = (ys.reduce((a, x) => a + x.oc, 0) / ys.length) * 100;
+      for (const key of [`${wd}|${k}`, `All days|${k}`]) ((cells[key] ||= { early: [], late: [] })[half]).push(m);
+      ((years[d.slice(0, 4)] ||= {})[k] ||= []).push(m);
+    }
+  }
+  const out = {};
+  for (const [key, v] of Object.entries(cells)) {
+    const [day, kind] = key.split('|');
+    const early = stats(v.early);
+    const late = stats(v.late);
+    ((out[day] ||= {})[kind] = { early, late, consistent: early.n > 0 && late.n > 0 && Math.sign(early.avg) === Math.sign(late.avg) && Math.abs(early.t) >= 2 && Math.abs(late.t) >= 2 });
+  }
+  return { from, split, days: byDate.size, cells: out, byYear: Object.fromEntries(Object.entries(years).sort().map(([y, k]) => [y, Object.fromEntries(Object.entries(k).map(([kk, v]) => [kk, v.reduce((a, b) => a + b, 0) / v.length]))])) };
+}
+
+/** Can it be traded? Hourly bars (Yahoo keeps ~2 years): the gap stocks' move from the day's first price vs from the end of the first hour. */
+export async function gapTradability(symbols, { loadCandles = candles, now = new Date() } = {}) {
+  const p1 = Math.floor(now.getTime() / 1000) - 725 * 86400;
+  const acc = { 'gap up': { open: new Map(), hour: new Map() }, 'gap down': { open: new Map(), hour: new Map() } };
+  const push = (m, d, v) => m.set(d, [...(m.get(d) || []), v]);
+  let used = 0;
+  await mapLimit(symbols, 4, async (s) => {
+    try {
+      const rows = (await loadCandles(s, { period1: p1, interval: '60m' })).filter((b) => b.close > 0);
+      const by = {};
+      for (const b of rows) (by[String(b.date).slice(0, 10)] ||= []).push(b);
+      const days = Object.keys(by).sort();
+      for (let i = 1; i < days.length; i++) {
+        const cur = by[days[i]];
+        if (cur.length < 3) continue;
+        const g = cur[0].open / by[days[i - 1]].at(-1).close - 1;
+        const k = g > 0.003 ? 'gap up' : g < -0.003 ? 'gap down' : null;
+        if (!k) continue;
+        push(acc[k].open, days[i], (cur.at(-1).close / cur[0].open - 1) * 100);
+        push(acc[k].hour, days[i], (cur.at(-1).close / cur[0].close - 1) * 100);
+      }
+      used++;
+    } catch {
+      /* a stock without hourly data */
+    }
+  });
+  const daily = (m) => stats([...m.values()].filter((v) => v.length >= 3).map((v) => v.reduce((a, b) => a + b, 0) / v.length));
+  return { stocks: used, from: new Date(p1 * 1000).toISOString().slice(0, 10), 'gap up': { fromOpen: daily(acc['gap up'].open), fromFirstHour: daily(acc['gap up'].hour) }, 'gap down': { fromOpen: daily(acc['gap down'].open), fromFirstHour: daily(acc['gap down'].hour) } };
+}
+
 // --------------------------------------------------------------- the study ---
 export async function dayPatternsStudy({ loadCandles = candles, now = new Date() } = {}) {
   const vp = await import('./vwap-pullback.mjs');
@@ -64,7 +142,11 @@ export async function dayPatternsStudy({ loadCandles = candles, now = new Date()
   const dip = await import('./nifty-dip.mjs');
   const fo = await import('./fo-strangle.mjs');
   const { loadIndexList } = await import('./ranking.mjs');
-  const get = vp.withStore(loadCandles);
+  // 5-minute bars: the Groww long history (from 2020, when downloaded) merged with the live store
+  const { readHist } = await import('./groww-history.mjs');
+  const { mergeBars } = await import('./collector.mjs');
+  const live = vp.withStore(loadCandles);
+  const get = async (s, o) => (o.interval === '5m' ? mergeBars(readHist(s), await live(s, o)) : live(s, o));
   const p1 = Math.floor(now.getTime() / 1000) - 59 * 86400;
   const today = new Date(now.getTime() + 19800_000).toISOString().slice(0, 10);
   const strategies = [];
@@ -92,14 +174,14 @@ export async function dayPatternsStudy({ loadCandles = candles, now = new Date()
     const data = (await mapLimit(list, 4, async (s) => {
       try {
         const rows = (await get(s, { period1: p1, interval: '5m' })).filter((r) => r.close > 0 && r.high > 0);
-        return { s, rows, daily: await vp.dailyContext(loadCandles, s) };
+        return { s, rows, daily: vp.dailyTrendLookup((await loadCandles(s, { period1: Math.floor(Date.parse('2019-01-01') / 1000), interval: '1d' })).filter((x) => x.close > 0)) /* daily trend for the whole 5-minute history */ };
       } catch {
         return null;
       }
     })).filter(Boolean);
     const trades = vp.accountTrades(data.flatMap(({ s, rows, daily }) => vp.backtestStock(s, rows, v.rules, { daily })), v.rules.maxPerDay).filter((t) => t.date < today);
     const byDay = groupBy(trades, (t) => weekdayOf(t.date), (t) => t.net);
-    strategies.push({ key: `vwap-${key}`, tab: 'vwap', name: vwapLabels[key] || key, unit: '₹', period: `last ${sessions} trading days`, all: stats(trades.map((t) => t.net)), byDay, byGap: byGap(trades, (t) => t.net), byStock: byStockDay(trades, (t) => weekdayOf(t.date), (t) => t.net), verdict: verdictFor(byDay) });
+    strategies.push({ key: `vwap-${key}`, tab: 'vwap', name: vwapLabels[key] || key, unit: '₹', period: `${sessions.toLocaleString('en-IN')} trading days of 5-minute bars (from ${[...gap.keys()].sort()[0]})`, all: stats(trades.map((t) => t.net)), byDay, byGap: byGap(trades, (t) => t.net), byStock: byStockDay(trades, (t) => weekdayOf(t.date), (t) => t.net), verdict: verdictFor(byDay) });
   }
 
   // Breakfast (the backtest loop, keeping the trades)
@@ -128,7 +210,7 @@ export async function dayPatternsStudy({ loadCandles = candles, now = new Date()
     }
     const byDay = groupBy(trades, (t) => weekdayOf(t.date), (t) => t.net);
     const bySector = byStockDay(trades.map((t) => ({ ...t, symbol: t.sector || 'Other' })), (t) => weekdayOf(t.date), (t) => t.net);
-    strategies.push({ key: 'breakfast', tab: 'breakfast', name: 'Breakfast strategy', unit: '₹', period: `last ${sessions} trading days`, all: stats(trades.map((t) => t.net)), byDay, byGap: byGap(trades, (t) => t.net), byStock: byStockDay(trades, (t) => weekdayOf(t.date), (t) => t.net), bySector, verdict: verdictFor(byDay) });
+    strategies.push({ key: 'breakfast', tab: 'breakfast', name: 'Breakfast strategy', unit: '₹', period: `${sessions.toLocaleString('en-IN')} trading days of 5-minute bars (from ${[...gap.keys()].sort()[0]})`, all: stats(trades.map((t) => t.net)), byDay, byGap: byGap(trades, (t) => t.net), byStock: byStockDay(trades, (t) => weekdayOf(t.date), (t) => t.net), bySector, verdict: verdictFor(byDay) });
   }
 
   // Strong-stock swing, survivorship-free, by the weekday of the buy; plus the Monday tests
@@ -214,8 +296,23 @@ export async function dayPatternsStudy({ loadCandles = candles, now = new Date()
     strategies.push({ key: 'fo-strangle', tab: 'fo', name: 'NIFTY short strangle (F&O)', unit: '% of margin', period: 'weekly since 2019, by the weekday of the expiry', all: stats(trades.map((t) => t.retOnMargin * 100)), byDay, verdict: { ...verdictFor(byDay, { minN: 30 }), note: 'NIFTY expiry was Thursday until Aug 2025 and Tuesday since Sep 2025, so the weekday mostly shows the era (the calm recent period), not a day effect.' } });
   }
 
+  // 16 years of open → close from NSE daily prices, and whether it can be traded (hourly bars)
+  let long = null;
+  try {
+    const { loadSeries, pointInTimeUniverse } = await import('./bhav-history.mjs');
+    const series = loadSeries();
+    if (series.size) {
+      const uni = pointInTimeUniverse(series);
+      long = longIntraday(series, uni);
+      const latest = uni.get([...uni.keys()].sort().at(-1)) || new Set();
+      long.tradable = await gapTradability([...latest].filter((s) => !/BEES$|ETF/.test(s)).map((s) => `${s}.NS`), { loadCandles, now });
+    }
+  } catch (err) {
+    long = { error: err.message };
+  }
+
   return {
-    at: new Date().toISOString(), intradaySessions: sessions, strategies, monday,
+    at: new Date().toISOString(), intradaySessions: sessions, intradayFrom: [...gap.keys()].sort()[0] ?? null, strategies, monday, long,
     note: 'Average result per trade by the weekday of the buy (intraday: the trading day; swing and dip-buy: the day the position was bought; strangle: the expiry day). ₹ per trade after charges at the standard size; R = multiples of the risk taken. A cell with |t| ≥ 2 is marked; with 5 days × many strategies, one or two such cells appear by chance. Only a pattern that held in both halves of the history is called consistent. F&O spreads are left out: their prices come from a model.',
   };
 }
