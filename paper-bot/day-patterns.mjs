@@ -15,7 +15,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { candles } from '../market-data.mjs';
 import { mapLimit, writeJsonAtomic } from '../util.mjs';
-import { marketCalendar, cuts } from './calendar-study.mjs';
+import { marketCalendar, cuts, totals } from './calendar-study.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SAVED = () => process.env.DAY_PATTERNS_PATH || join(HERE, 'data', 'day-patterns.json');
@@ -145,7 +145,9 @@ export async function dayPatternsStudy({ loadCandles = candles, now = new Date()
   const { loadIndexList } = await import('./ranking.mjs');
   // 5-minute bars: the Groww long history (from 2020, when downloaded) merged with the live store
   const { readHist } = await import('./groww-history.mjs');
-  const { mergeBars } = await import('./collector.mjs');
+  const { mergeBars, readStore } = await import('./collector.mjs');
+  // the recent window = the live 5-minute history the app saves each day (since 17 Aug 2026), shown on its own
+  const recentFrom = readStore('^NSEI', '5m').map((b) => String(b.date).slice(0, 10)).sort()[0] || null;
   const live = vp.withStore(loadCandles);
   const get = async (s, o) => (o.interval === '5m' ? mergeBars(readHist(s), await live(s, o)) : live(s, o));
   const p1 = Math.floor(now.getTime() / 1000) - 59 * 86400;
@@ -166,6 +168,12 @@ export async function dayPatternsStudy({ loadCandles = candles, now = new Date()
     prevClose = b.close;
   }
   const byGap = (trades, f) => groupBy(trades.filter((t) => gapKind(gap.get(t.date))), (t) => gapKind(gap.get(t.date)), f);
+  const recent = [];
+  const addRecent = (key, name, trades) => {
+    if (!recentFrom) return;
+    const xs = trades.filter((t) => t.date >= recentFrom);
+    recent.push({ key, name, unit: '₹', all: stats(xs.map((t) => t.net)), byDay: groupBy(xs, (t) => weekdayOf(t.date), (t) => t.net), byGap: byGap(xs, (t) => t.net) });
+  };
   const sessions = gap.size;
 
   // YouTube intraday (the three paper versions, on the saved 5-minute history)
@@ -182,6 +190,7 @@ export async function dayPatternsStudy({ loadCandles = candles, now = new Date()
     })).filter(Boolean);
     const trades = vp.accountTrades(data.flatMap(({ s, rows, daily }) => vp.backtestStock(s, rows, v.rules, { daily })), v.rules.maxPerDay).filter((t) => t.date < today);
     const byDay = groupBy(trades, (t) => weekdayOf(t.date), (t) => t.net);
+    addRecent(`vwap-${key}`, vwapLabels[key] || key, trades);
     strategies.push({ _cal: trades.map((t) => ({ d: t.date, v: t.net })), key: `vwap-${key}`, tab: 'vwap', name: vwapLabels[key] || key, unit: '₹', period: `${sessions.toLocaleString('en-IN')} trading days of 5-minute bars (from ${[...gap.keys()].sort()[0]})`, all: stats(trades.map((t) => t.net)), byDay, byGap: byGap(trades, (t) => t.net), byStock: byStockDay(trades, (t) => weekdayOf(t.date), (t) => t.net), verdict: verdictFor(byDay) });
   }
 
@@ -210,6 +219,7 @@ export async function dayPatternsStudy({ loadCandles = candles, now = new Date()
       }
     }
     const byDay = groupBy(trades, (t) => weekdayOf(t.date), (t) => t.net);
+    addRecent('breakfast', 'Breakfast strategy', trades);
     const bySector = byStockDay(trades.map((t) => ({ ...t, symbol: t.sector || 'Other' })), (t) => weekdayOf(t.date), (t) => t.net);
     strategies.push({ _cal: trades.map((t) => ({ d: t.date, v: t.net })), key: 'breakfast', tab: 'breakfast', name: 'Breakfast strategy', unit: '₹', period: `${sessions.toLocaleString('en-IN')} trading days of 5-minute bars (from ${[...gap.keys()].sort()[0]})`, all: stats(trades.map((t) => t.net)), byDay, byGap: byGap(trades, (t) => t.net), byStock: byStockDay(trades, (t) => weekdayOf(t.date), (t) => t.net), bySector, verdict: verdictFor(byDay) });
   }
@@ -313,7 +323,7 @@ export async function dayPatternsStudy({ loadCandles = candles, now = new Date()
       for (const s of strategies) {
         if (!s._cal) continue;
         const c = cuts(s._cal, mc.cal);
-        s.calendar = { month: c.month, phase: c.phase, holiday: c.holiday, turn: c.turn };
+        s.calendar = { month: c.month, phase: c.phase, holiday: c.holiday, turn: c.turn, totals: totals(s._cal) };
       }
       calendar = { ...mc };
       delete calendar.cal; // the per-day table is only needed here
@@ -326,6 +336,7 @@ export async function dayPatternsStudy({ loadCandles = candles, now = new Date()
   for (const s of strategies) delete s._cal;
   return {
     calendar,
+    recent: recentFrom ? { from: recentFrom, sessions: [...gap.keys()].filter((d) => d >= recentFrom).length, strategies: recent } : null,
     at: new Date().toISOString(), intradaySessions: sessions, intradayFrom: [...gap.keys()].sort()[0] ?? null, strategies, monday, long,
     note: 'Average result per trade by the weekday of the buy (intraday: the trading day; swing and dip-buy: the day the position was bought; strangle: the expiry day). ₹ per trade after charges at the standard size; R = multiples of the risk taken. A cell with |t| ≥ 2 is marked; with 5 days × many strategies, one or two such cells appear by chance. Only a pattern that held in both halves of the history is called consistent. F&O spreads are left out: their prices come from a model.',
   };

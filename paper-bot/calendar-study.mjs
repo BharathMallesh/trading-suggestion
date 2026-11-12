@@ -78,6 +78,21 @@ function group(rows, keyOf, keys) {
   return Object.fromEntries([...g].map(([k, v]) => [k, tag(split(v))]));
 }
 
+/** Totals of dated values by "YYYY-MM" and by day: { month: { ym: [total, count] }, day: { date: [total, count] } }. */
+export function totals(rows) {
+  const month = {};
+  const day = {};
+  for (const r of rows) {
+    const m = r.d.slice(0, 7);
+    (month[m] ||= [0, 0])[0] += r.v;
+    month[m][1]++;
+    (day[r.d] ||= [0, 0])[0] += r.v;
+    day[r.d][1]++;
+  }
+  const round = (o) => Object.fromEntries(Object.entries(o).map(([k, [t, n]]) => [k, [Math.round(t * 100) / 100, n]]));
+  return { month: round(month), day: round(day) };
+}
+
 /** Calendar cuts of dated values ({ d, v }): weekday, month, part of month, holiday, turn of the month. */
 export function cuts(rows, cal) {
   const known = rows.filter((r) => cal.info.has(r.d));
@@ -163,7 +178,23 @@ export function marketCalendar({ series, uni, nifty, from = '2008-01-01' }) {
   }
   const stockDaily = [...sum].filter(([, o]) => o.n >= 20).map(([d, o]) => ({ d, v: o.s / o.n })).sort((a, b) => a.d.localeCompare(b.d));
   const niftyMonthly = monthlyReturns(n);
+  // year × month and day by day (for the tables you can browse): NIFTY's month % and each day's %, the average stock's month %
+  const r2 = (x) => Math.round(x * 100) / 100;
+  const stockMonth = {};
+  for (const x of stockDaily) stockMonth[x.d.slice(0, 7)] = (stockMonth[x.d.slice(0, 7)] ?? 1) * (1 + x.v / 100);
+  const holidays = [];
+  for (let t = Date.parse(`${cal.dates[0]}T00:00:00Z`); t <= Date.parse(`${cal.dates.at(-1)}T00:00:00Z`); t += DAY) {
+    const d = iso(t);
+    if (isWeekday(d) && !cal.info.has(d)) holidays.push(d);
+  }
+  const detail = {
+    niftyMonth: Object.fromEntries(niftyMonthly.map((x) => [x.d.slice(0, 7), r2(x.v)])),
+    stockMonth: Object.fromEntries(Object.entries(stockMonth).map(([m, g]) => [m, r2((g - 1) * 100)])),
+    niftyDay: Object.fromEntries(niftyDaily.map((x) => [x.d, r2(x.v)])),
+    holidays,
+  };
   return {
+    detail,
     from: cal.dates[0], to: cal.dates.at(-1), days: cal.dates.length, split: SPLIT,
     holidays: (() => {
       let c = 0;

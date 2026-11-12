@@ -47,6 +47,7 @@
         <button type="button" data-sub="rsi" title="RSI + price action swing (daily RSI below 30, hourly RSI below 25, hourly candle entry), 2–6 day holds">RSI swing</button>
         <button type="button" data-sub="mc" title="Matrix Calendar: hedged NIFTY option selling with monthly calendar legs, Monday close to Tuesday">Matrix calendar</button>
         <button type="button" data-sub="imb" title="Big move on heavy volume, quiet base, breakout; 1% risk, breakeven at +1R, trailing stop">Imbalance swing</button>
+        <button type="button" data-sub="e2" title="52-week-high breakouts in momentum leaders, 5-ATR trailing stop — from the multi-agent search; paper only">Momentum breakout</button>
       </div>
     </nav>
     <div class="note" id="viewNote"></div>
@@ -862,6 +863,14 @@
         <div id="mcOut" style="margin-top:10px">Loading…</div>
       </section>
 
+      <!-- Momentum breakout swing (E2): the one rule that reached the final test in the multi-agent search; paper only -->
+      <section class="card span2" id="e2Card">
+        <h2>Momentum breakout swing (E2) <span style="font-size:12px;color:var(--warn);font-weight:500">52-WEEK HIGH · TOP-25% MOMENTUM · 5-ATR TRAIL · ₹5 LAKH · PAPER ONLY</span></h2>
+        <p class="hint">Buys, on paper, a stock's first close at a new 52-week high when it is among the strongest quarter of the NSE top 200 by 12-month momentum; stop below the last
+          10 days' low, then a 5-ATR trailing stop (sold at the next open after a close below it). It came out best of ~20,000 ideas, but FAILED the final test on per-trade strength — tracked here to see how it does live.</p>
+        <div id="e2Out" style="margin-top:10px">Loading…</div>
+      </section>
+
       <section class="card span2" id="imbCard">
         <h2>Imbalance swing (move → base → breakout) <span style="font-size:12px;color:var(--warn);font-weight:500">30% MOVE ON 3× VOLUME · QUIET BASE · BREAKOUT · 1% RISK · TESTED · PAPER</span></h2>
         <p class="hint">The three-step setup from a fund-managing trader's interview: a <b>sharp move (30%+ in up to 20 days) on heavy volume</b>, then a <b>quiet base</b> that gives back no more than half of it on lighter volume,
@@ -1091,6 +1100,7 @@
     <script src="/static/js/34-trade-today.js"></script>
     <script src="/static/js/35-fo-plan.js"></script>
     <script src="/static/js/36-calendar.js"></script>
+    <script src="/static/js/37-momentum-breakout.js"></script>
     <script src="/static/js/19-my-plan.js"></script>
     <script src="/static/js/20-rsi-swing.js"></script>
   </body>

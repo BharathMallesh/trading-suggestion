@@ -18,6 +18,7 @@ import { loadIndiaMixPaper } from './india-mix.mjs';
 import { loadRsiSwingPaper } from './rsi-swing.mjs';
 import { loadImbalancePaper } from './imbalance-swing.mjs';
 import { loadSpreadPaper } from './spread-paper.mjs';
+import { loadE2Paper } from './e2-swing.mjs';
 
 const MON = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 const iso = (d) => d.toISOString().slice(0, 10);
@@ -73,7 +74,7 @@ const inRange = (d, p) => d && d >= p.from && d <= p.to;
 const sumNet = (a) => a.reduce((x, t) => x + (t.net ?? 0), 0);
 
 /** Every strategy's result over a period. */
-export function periodResults(period, { vwap = loadPaper(), breakfast = loadBreakfastPaper(), swing = loadAthPaper(), dip = loadNiftyDipPaper(), fo = loadFoStranglePaper(), condor = loadFoCondorPaper(), cs = loadCoreSatellite(), m20 = loadMomentumPaper(), m10 = loadMomentum10Paper(), steady = loadSteadyMixPaper(), india = loadIndiaMixPaper(), rsi = loadRsiSwingPaper(), imb = loadImbalancePaper(), spread = loadSpreadPaper(), swingVersion = activeRules() !== ATH_RULES ? 'improved' : 'original' } = {}) {
+export function periodResults(period, { vwap = loadPaper(), breakfast = loadBreakfastPaper(), swing = loadAthPaper(), dip = loadNiftyDipPaper(), fo = loadFoStranglePaper(), condor = loadFoCondorPaper(), cs = loadCoreSatellite(), m20 = loadMomentumPaper(), m10 = loadMomentum10Paper(), steady = loadSteadyMixPaper(), india = loadIndiaMixPaper(), rsi = loadRsiSwingPaper(), imb = loadImbalancePaper(), spread = loadSpreadPaper(), e2 = loadE2Paper(), swingVersion = activeRules() !== ATH_RULES ? 'improved' : 'original' } = {}) {
   const rows = [];
   const byDay = new Map(); // date → { strategy → ₹ }
   const addDay = (d, k, v) => {
@@ -143,6 +144,13 @@ export function periodResults(period, { vwap = loadPaper(), breakfast = loadBrea
       totalTrades: all.filter((t) => !t.open).length, total: all.filter((t) => !t.open).reduce((a, t) => a + t.r, 0),
       detail: [...closed.map((t) => `sold ${t.symbol.replace('.NS', '')} ${t.exitDate.slice(5)} ${t.r >= 0 ? '+' : ''}${t.r.toFixed(2)} R`), ...(open.length ? [`holding now: ${open.map((t) => `${t.symbol.replace('.NS', '')} ${t.r >= 0 ? '+' : ''}${(t.r ?? 0).toFixed(2)} R`).join(', ')}`] : [])],
     });
+  }
+  // Momentum breakout swing (E2) paper account (R per trade, by exit date; open positions listed)
+  if (e2?.closed) {
+    const p = e2.closed.filter((t) => inRange(t.exitDate, period));
+    for (const t of p) addDay(t.exitDate, 'Momentum breakout (R)', t.r);
+    rows.push({ label: 'Momentum breakout swing (E2, paper)', unit: 'R', trades: p.length, wins: p.filter((t) => t.r > 0).length, result: p.reduce((a, t) => a + t.r, 0), totalTrades: e2.closed.length, total: e2.closed.reduce((a, t) => a + t.r, 0),
+      detail: [...p.map((t) => `sold ${t.symbol} ${t.exitDate.slice(5)} ${t.r >= 0 ? '+' : ''}${t.r.toFixed(2)} R`), ...(e2.open?.length ? [`holding now: ${e2.open.map((x) => x.symbol).join(', ')}`] : [])] });
   }
   // the ₹10,000 spread paper tracker (₹, settled / sold in the period)
   if (spread?.trades) {

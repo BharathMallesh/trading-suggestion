@@ -42,6 +42,16 @@ function dpRender(r) {
       <div class="note">How NIFTY opens is known at 9:15, so this is usable — but the samples are small. Breakfast losing on gap days is the clearest pattern; it has a "flat opens only" paper version.</div>`;
   }
 
+  const R = r.recent;
+  if (R?.strategies?.length) {
+    const kinds = ['gap up', 'flat open', 'gap down'];
+    html += `<div style="font-size:14px;margin-top:14px"><b>Recent only: the last ${R.sessions} trading days</b> <span class="note" style="display:inline">(from ${esc(R.from)} — the live 5-minute data the app saves each day; same rules, a separate short window to compare with the 5 years above)</span></div>
+      <div style="overflow-x:auto"><table style="font-size:12px"><thead><tr><th style="text-align:left">Strategy</th>${DP_DAYS.map((d) => `<th>${d}</th>`).join('')}<th>All days</th></tr></thead><tbody>${R.strategies.map((x) =>
+        `<tr><td style="text-align:left">${esc(x.name)}</td>${DP_DAYS.map((d) => dpCell(x.byDay[d], x.unit)).join('')}${dpCell(x.all, x.unit)}</tr>`).join('')}</tbody></table></div>
+      <div style="overflow-x:auto"><table style="font-size:12px;margin-top:6px"><thead><tr><th style="text-align:left">By how NIFTY opened</th>${kinds.map((k) => `<th>${k}</th>`).join('')}</tr></thead><tbody>${R.strategies.map((x) =>
+        `<tr><td style="text-align:left">${esc(x.name)}</td>${kinds.map((k) => dpCell(x.byGap?.[k], x.unit)).join('')}</tr>`).join('')}</tbody></table></div>
+      <div class="note">A few dozen trades per cell: a good or bad weekday here is mostly chance — the 5-year rows above are the reliable answer. This window grows by one day each trading day.</div>`;
+  }
   const L = r.long;
   if (L?.cells) {
     const kinds = ['gap up', 'flat open', 'gap down', 'all'];

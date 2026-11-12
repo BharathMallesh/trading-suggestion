@@ -22,7 +22,7 @@ function calRender(d) {
   const worst = [...months].sort((a, b) => a.x.all.avg - b.x.all.avg).slice(0, 2);
   const tom = c.turnOfMonth;
   const pct = (x) => (x == null ? '–' : `${(x * 100).toFixed(1)}%`);
-  let html = `<div style="padding:10px 12px;border-radius:10px;border:1px solid var(--line);font-size:13px;line-height:1.6"><b>In short</b> (NSE ${esc(c.from)} → ${esc(c.to)}: ${c.days.toLocaleString('en-IN')} trading days, ${c.holidays} market holidays)
+  let html = `<div style="padding:10px 12px;border-radius:10px;border:1px solid var(--line);font-size:13px;line-height:1.6"><b>In short</b> (NSE ${esc(c.from)} → ${esc(c.to)}: ${c.days.toLocaleString('en-IN')} trading days, ${c.detail?.holidays?.length ?? c.holidays} market holidays)
     <ul style="margin:4px 0 0 18px;padding:0">
       <li><b>Months:</b> best on average ${best.map((o) => `${o.m} (${calPc(o.x.all.avg, 1)}, up ${Math.round(o.x.all.win * 100)}% of years)`).join(', ')}; weakest ${worst.map((o) => `${o.m} (${calPc(o.x.all.avg, 1)})`).join(', ')}. ${CAL_MONTHS.filter((m) => s.month[m]?.consistent).length ? `Held in both halves for the average stock: <b>${CAL_MONTHS.filter((m) => s.month[m]?.consistent).join(', ')}</b>.` : ''} Only ~18 of each month, so treat these as tilts.</li>
       <li><b>Part of the month:</b> the last trading day and the first 1–2 days carry most of the gains (first day: NIFTY ${calPc(n.turn['1']?.all?.avg)}, average stock ${calPc(s.turn['1']?.all?.avg)} vs ${calPc(s.all.all.avg, 3)} on an average day); the middle (days 6–15) is about zero.</li>
@@ -41,7 +41,7 @@ function calRender(d) {
       <tr><td style="text-align:left">Average stock</td>${[-5, -4, -3, -2, -1, 1, 2, 3, 4, 5].map((t) => `<td>${calCell(s.turn[t]?.all, 2)}${s.turn[t]?.consistent ? ' ✓' : ''}</td>`).join('')}</tr></tbody></table></div>
     <div class="note">"last" = the month's last trading day, "last −2" = two days before it; "day 1" = the next month's first trading day.</div>`;
   const H = ['day before a holiday', 'day after a holiday', 'other days'];
-  html += `<div style="font-size:14px;margin-top:12px"><b>Around market holidays</b> <span class="note" style="display:inline">(NSE closed on a weekday; ${c.holidays} since 2008)</span></div>
+  html += `<div style="font-size:14px;margin-top:12px"><b>Around market holidays</b> <span class="note" style="display:inline">(NSE closed on a weekday; ${c.detail?.holidays?.length ?? c.holidays} since 2008)</span></div>
     <div style="overflow-x:auto"><table style="font-size:12px;white-space:nowrap">${calHead('Day', 'NIFTY')}<tbody>${H.map((h) => calRow(h, n.holiday[h], 3)).join('')}</tbody></table></div>
     <details open style="margin-top:4px"><summary style="cursor:pointer;font-size:13px">The average stock around holidays</summary><table style="font-size:12px;white-space:nowrap">${calHead('Day', 'stock')}<tbody>${H.map((h) => calRow(h, s.holiday[h], 3)).join('')}</tbody></table></details>`;
   html += `<div style="font-size:14px;margin-top:12px"><b>Weekday</b></div>
@@ -57,8 +57,128 @@ function calRender(d) {
         `<tr><td style="text-align:left">${esc(x.name)}</td>${CAL_MONTHS.map((m) => `<td>${v(x.calendar.month[m], x.unit)}</td>`).join('')}</tr>`).join('')}</tbody></table></div></details>
       <div class="note">The intraday strategies lost in every month and every part of the month — no timing rescues them. The strong-stock swing did best on buys in the second half of the month. A month has few trades per strategy, so single cells are noisy.</div>`;
   }
+  if (c.detail) html += '<div id="calYm" style="margin-top:14px"></div><div id="calDays" style="margin-top:14px"></div>';
   html += `<div class="note" style="margin-top:8px">Market holidays and trading days are NSE's own (a weekday without an NSE file). NIFTY = daily closes; the average stock = the NSE top 200 of that month, equal weight. "both" ✓ = same direction with |t| ≥ 2 in 2008–16 and in 2017 →. Calculated ${esc(String(d.at).slice(0, 10))}. Research only.</div>`;
   $('calOut').innerHTML = html;
+  if (c.detail) {
+    CAL_DATA = d;
+    calYm();
+    calDays();
+  }
+}
+
+// ---- year × month, and day by day (browse any month) ----
+let CAL_DATA = null;
+const CAL_SEL = { series: 'nifty', year: null, month: null };
+/** The series to show: NIFTY / the average stock (month % from the study) or one strategy (sum per month / day). */
+function calSeries() {
+  const d = CAL_DATA;
+  const det = d.calendar.detail;
+  const strat = (d.strategies || []).filter((x) => x.calendar?.totals);
+  const list = [
+    { key: 'nifty', name: 'NIFTY (% for the month)', unit: '%', month: Object.fromEntries(Object.entries(det.niftyMonth).map(([k, v]) => [k, [v, null]])), day: Object.fromEntries(Object.entries(det.niftyDay).map(([k, v]) => [k, [v, null]])), compound: true },
+    { key: 'stocks', name: 'Average NSE top-200 stock (% for the month)', unit: '%', month: Object.fromEntries(Object.entries(det.stockMonth).map(([k, v]) => [k, [v, null]])), day: {}, compound: true },
+    ...strat.map((x) => ({ key: x.key, name: `${x.name} (${x.unit === '₹' ? '₹ result' : x.unit === 'R' ? 'R, multiples of the risk' : x.unit} by the trade's start day)`, unit: x.unit, month: x.calendar.totals.month, day: x.calendar.totals.day })),
+  ];
+  return { list, cur: list.find((x) => x.key === CAL_SEL.series) || list[0] };
+}
+const calFmt = (v, unit) => (v == null ? '' : unit === '₹' ? `${v < 0 ? '−' : '+'}₹${Math.abs(Math.round(v)).toLocaleString('en-IN')}` : unit === 'R' ? `${v >= 0 ? '+' : ''}${v.toFixed(1)}R` : `${v >= 0 ? '+' : ''}${v.toFixed(unit === '%' ? 1 : 2)}%`);
+const calBg = (v, scale) => (v == null || !scale ? '' : `background:${v >= 0 ? 'rgba(22,163,74,' : 'rgba(220,38,38,'}${Math.min(0.35, (Math.abs(v) / scale) * 0.35).toFixed(2)})`);
+
+function calYm() {
+  const { list, cur } = calSeries();
+  const keys = Object.keys(cur.month).sort();
+  if (!keys.length) {
+    $('calYm').innerHTML = '';
+    return;
+  }
+  const years = [...new Set(keys.map((k) => k.slice(0, 4)))];
+  const vals = keys.map((k) => Math.abs(cur.month[k][0]));
+  const scale = vals.sort((a, b) => a - b)[Math.floor(vals.length * 0.9)] || 1;
+  const yearTotal = (y) => {
+    const ms = keys.filter((k) => k.startsWith(y)).map((k) => cur.month[k][0]);
+    if (!ms.length) return null;
+    return cur.compound ? (ms.reduce((a, v) => a * (1 + v / 100), 1) - 1) * 100 : ms.reduce((a, v) => a + v, 0);
+  };
+  const n = (k) => (cur.month[k]?.[1] != null ? `<div class="note" style="margin:0">${cur.month[k][1]} trade${cur.month[k][1] === 1 ? '' : 's'}</div>` : '');
+  $('calYm').innerHTML = `<div style="font-size:14px"><b>Year × month: how much was made</b></div>
+    <div class="row" style="gap:8px;align-items:flex-end;margin:4px 0"><div style="flex:0 1 420px"><label>Show</label><select id="calSeries">${list.map((x) => `<option value="${esc(x.key)}"${x.key === cur.key ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select></div></div>
+    <div style="overflow-x:auto"><table style="font-size:12px;white-space:nowrap"><thead><tr><th style="text-align:left">Year</th>${CAL_MONTHS.map((m) => `<th>${m}</th>`).join('')}<th>Year</th></tr></thead><tbody>${years.map((y) => {
+      const t = yearTotal(y);
+      return `<tr><td style="text-align:left"><b>${y}</b></td>${CAL_MONTHS.map((m, i) => {
+        const k = `${y}-${String(i + 1).padStart(2, '0')}`;
+        const v = cur.month[k]?.[0];
+        return `<td style="${calBg(v, scale)};cursor:${cur.day && Object.keys(cur.day).some((dd) => dd.startsWith(k)) ? 'pointer' : 'default'}" data-ym="${k}">${calFmt(v, cur.unit)}${n(k)}</td>`;
+      }).join('')}<td style="color:${calCol(t)}"><b>${calFmt(t, cur.unit)}</b></td></tr>`;
+    }).join('')}</tbody></table></div>
+    <div class="note">Green = up / profit, red = down / loss (darker = bigger). Click a month to see it day by day below.${cur.compound ? ' The year column compounds the months.' : ' The year column adds the months.'}</div>`;
+  $('calSeries').addEventListener('change', (e) => {
+    CAL_SEL.series = e.target.value;
+    calYm();
+    calDays();
+  });
+  for (const td of document.querySelectorAll('#calYm [data-ym]')) td.addEventListener('click', () => {
+    CAL_SEL.year = td.dataset.ym.slice(0, 4);
+    CAL_SEL.month = td.dataset.ym.slice(5, 7);
+    calDays();
+    $('calDays').scrollIntoView({ behavior: 'smooth' });
+  });
+}
+
+function calDays() {
+  const { cur } = calSeries();
+  const det = CAL_DATA.calendar.detail;
+  const allDays = Object.keys(det.niftyDay).sort();
+  const last = (Object.keys(cur.day).sort().at(-1) || allDays.at(-1)).slice(0, 7);
+  if (!CAL_SEL.year) [CAL_SEL.year, CAL_SEL.month] = last.split('-');
+  const ym = `${CAL_SEL.year}-${CAL_SEL.month}`;
+  const years = [...new Set(allDays.map((x) => x.slice(0, 4)))];
+  const hol = new Set(det.holidays);
+  // the weekdays of the month in rows of Mon–Fri
+  const first = new Date(`${ym}-01T00:00:00Z`);
+  const weeks = [];
+  let week = [null, null, null, null, null];
+  for (let t = first.getTime(); new Date(t).getUTCMonth() === first.getUTCMonth(); t += 86400000) {
+    const dt = new Date(t);
+    const wd = dt.getUTCDay();
+    if (wd === 0 || wd === 6) continue;
+    week[wd - 1] = dt.toISOString().slice(0, 10);
+    if (wd === 5) {
+      weeks.push(week);
+      week = [null, null, null, null, null];
+    }
+  }
+  if (week.some(Boolean)) weeks.push(week);
+  const isNifty = cur.key === 'nifty';
+  let sumN = 1;
+  let sumS = 0;
+  let cntS = 0;
+  const cell = (d) => {
+    if (!d) return '<td></td>';
+    const nv = det.niftyDay[d];
+    const sv = isNifty ? null : cur.day[d];
+    if (nv != null) sumN *= 1 + nv / 100;
+    if (sv) {
+      sumS += sv[0];
+      cntS += sv[1];
+    }
+    const label = hol.has(d) ? '<div class="note" style="margin:0">holiday</div>' : nv == null ? '<div class="note" style="margin:0">–</div>' : '';
+    return `<td style="vertical-align:top;${isNifty ? calBg(nv, 1.5) : calBg(sv?.[0], cur.unit === '₹' ? 3000 : cur.unit === 'R' ? 2 : 2)}"><div style="font-weight:600">${Number(d.slice(8))}</div>${label}${nv != null ? `<div style="color:${calCol(nv)}">NIFTY ${calFmt(nv, 'day %')}</div>` : ''}${sv ? `<div style="color:${calCol(sv[0])}"><b>${calFmt(sv[0], cur.unit)}</b> <span class="note" style="display:inline">(${sv[1]})</span></div>` : ''}</td>`;
+  };
+  const body = weeks.map((w) => `<tr>${w.map(cell).join('')}</tr>`).join('');
+  $('calDays').innerHTML = `<div style="font-size:14px"><b>Day by day</b> <span class="note" style="display:inline">(${esc(cur.name)})</span></div>
+    <div class="row" style="gap:8px;align-items:flex-end;margin:4px 0"><div style="flex:0 0 110px"><label>Year</label><select id="calYear">${years.map((y) => `<option${y === CAL_SEL.year ? ' selected' : ''}>${y}</option>`).join('')}</select></div>
+      <div style="flex:0 0 110px"><label>Month</label><select id="calMonth">${CAL_MONTHS.map((m, i) => `<option value="${String(i + 1).padStart(2, '0')}"${String(i + 1).padStart(2, '0') === CAL_SEL.month ? ' selected' : ''}>${m}</option>`).join('')}</select></div></div>
+    <div style="overflow-x:auto"><table style="font-size:12px;table-layout:fixed;min-width:520px"><thead><tr>${['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].map((w) => `<th>${w}</th>`).join('')}</tr></thead><tbody>${body}</tbody></table></div>
+    <div class="note">${CAL_MONTHS[Number(CAL_SEL.month) - 1]} ${CAL_SEL.year}: NIFTY ${calFmt((sumN - 1) * 100, '%')} for the month${isNifty ? '' : ` · ${esc(cur.name.split(' (')[0])}: ${cntS ? `${calFmt(sumS, cur.unit)} from ${cntS} trade${cntS === 1 ? '' : 's'}` : 'no trades'}`}. Each day: NIFTY's close-to-close move${isNifty ? '' : ' and the strategy\'s result for trades started that day (count in brackets)'}.</div>`;
+  $('calYear').addEventListener('change', (e) => {
+    CAL_SEL.year = e.target.value;
+    calDays();
+  });
+  $('calMonth').addEventListener('change', (e) => {
+    CAL_SEL.month = e.target.value;
+    calDays();
+  });
 }
 lazy('Calendar', async () => {
   try { calRender(await api('/api/day-patterns')); } catch (e) { $('calOut').innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`; }

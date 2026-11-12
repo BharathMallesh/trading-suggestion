@@ -51,8 +51,9 @@ test('fitLots is the number of lots whose 1-in-100 week stays within the limit',
 });
 
 test('a recent trading day with no NSE file yet is not cached as missing (retried next time)', async () => {
+  const { isTradingDay } = await import('./paper-bot/market-calendar.mjs');
   const d = new Date(Date.now() + 19800_000 - 86400000);
-  while ([0, 6].includes(d.getUTCDay())) d.setUTCDate(d.getUTCDate() - 1);
+  while (!isTradingDay(d.toISOString().slice(0, 10))) d.setUTCDate(d.getUTCDate() - 1); // the last TRADING day (a holiday is cached as "no file")
   const day = d.toISOString().slice(0, 10);
   const notFound = async () => ({ ok: false, status: 404, arrayBuffer: async () => new ArrayBuffer(0), text: async () => '' });
   const r = await vp.foBhav(day, { fetchFn: notFound });

@@ -51,6 +51,8 @@ do_collect() {
   node paper-bot/india-mix.mjs --paper
   # Imbalance swing: paper record + scan from the NSE daily files added above
   node --max-old-space-size=12000 paper-bot/imbalance-swing.mjs --paper
+  # Momentum breakout swing (E2, from the multi-agent search): paper account + today's signals (needs today's NSE file above)
+  node --max-old-space-size=12000 paper-bot/e2-swing.mjs --paper
   # one evening notification for all strategies + this week's scorecard refreshed
   node paper-bot/evening.mjs --notify
 }

@@ -77,6 +77,7 @@ import { loadSwingOrb } from './paper-bot/swing-orb.mjs';
 import { riskCheckLive, stockSymbols, stockLots, affordable } from './paper-bot/fo-riskcheck.mjs';
 import { loadSpreadPaper } from './paper-bot/spread-paper.mjs';
 import { tradeToday } from './paper-bot/trade-today.mjs';
+import { loadE2Paper } from './paper-bot/e2-swing.mjs';
 import { loadIntraday5y } from './paper-bot/intraday-5y.mjs';
 import { foPlan } from './paper-bot/fo-plan.mjs';
 const affordableCache = new Map();
@@ -781,6 +782,7 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, tradePlan({ capital }));
     }
     if (req.method === 'GET' && url.pathname === '/api/matrix-calendar') return json(res, 200, loadMatrixCalendar() || {});
+    if (req.method === 'GET' && url.pathname === '/api/e2-swing') return json(res, 200, loadE2Paper() || {}); // Trading strategies → Momentum breakout (paper)
     if (req.method === 'GET' && url.pathname === '/api/imbalance-swing') return json(res, 200, { backtest: loadImbalanceSwing(), paper: loadImbalancePaper() });
     if (req.method === 'GET' && url.pathname === '/api/option-strikes') return json(res, 200, loadOptionStrikes() || {});
     if (req.method === 'GET' && url.pathname === '/api/india-mix') return json(res, 200, { backtest: loadIndiaMix(), paper: loadIndiaMixPaper() });
