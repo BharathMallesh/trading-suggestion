@@ -48,6 +48,7 @@
         <button type="button" data-sub="mc" title="Matrix Calendar: hedged NIFTY option selling with monthly calendar legs, Monday close to Tuesday">Matrix calendar</button>
         <button type="button" data-sub="imb" title="Big move on heavy volume, quiet base, breakout; 1% risk, breakeven at +1R, trailing stop">Imbalance swing</button>
         <button type="button" data-sub="e2" title="52-week-high breakouts in momentum leaders, 5-ATR trailing stop — from the multi-agent search; paper only">Momentum breakout</button>
+        <button type="button" data-sub="lbb" title="Best version of the popular YouTube swing strategies: Minervini trend template + Darvas box breakout + Weinstein 30-week exit; paper only">Leader box breakout</button>
       </div>
     </nav>
     <div class="note" id="viewNote"></div>
@@ -871,6 +872,15 @@
         <div id="e2Out" style="margin-top:10px">Loading…</div>
       </section>
 
+      <!-- Leader Box Breakout: the best version built from the popular YouTube swing strategies (Nov 2026); paper only -->
+      <section class="card span2" id="lbbCard">
+        <h2>Leader box breakout <span style="font-size:12px;color:var(--warn);font-weight:500">DARVAS BOX · MINERVINI TEMPLATE · WEINSTEIN 30-WEEK EXIT · ₹5 LAKH · PAPER ONLY</span></h2>
+        <p class="hint">Built from the YouTube swing strategies that showed some edge: buys a breakout from a <b>Darvas box</b> after a 52-week high, only when the stock passes <b>Minervini's trend template</b>, ranks in the
+          <b>top 30% by 6–12-month strength</b>, breaks out on above-average volume, and NIFTY is above its 200-day average. Stop at the box floor (at most 8% away); sold after a <b>weekly close below the 30-week average</b>.
+          About 6% of capital per stock, 0.5% risk a trade. It did NOT pass the agreed bar (behind Momentum 10 on 2010–22) and had no reliable edge in 2025–26 — tracked here to see how it does live. Not advice.</p>
+        <div id="lbbOut" style="margin-top:10px">Loading…</div>
+      </section>
+
       <section class="card span2" id="imbCard">
         <h2>Imbalance swing (move → base → breakout) <span style="font-size:12px;color:var(--warn);font-weight:500">30% MOVE ON 3× VOLUME · QUIET BASE · BREAKOUT · 1% RISK · TESTED · PAPER</span></h2>
         <p class="hint">The three-step setup from a fund-managing trader's interview: a <b>sharp move (30%+ in up to 20 days) on heavy volume</b>, then a <b>quiet base</b> that gives back no more than half of it on lighter volume,
@@ -1101,6 +1111,7 @@
     <script src="/static/js/35-fo-plan.js"></script>
     <script src="/static/js/36-calendar.js"></script>
     <script src="/static/js/37-momentum-breakout.js"></script>
+    <script src="/static/js/38-leader-box.js"></script>
     <script src="/static/js/19-my-plan.js"></script>
     <script src="/static/js/20-rsi-swing.js"></script>
   </body>

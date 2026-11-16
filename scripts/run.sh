@@ -53,6 +53,8 @@ do_collect() {
   node --max-old-space-size=12000 paper-bot/imbalance-swing.mjs --paper
   # Momentum breakout swing (E2, from the multi-agent search): paper account + today's signals (needs today's NSE file above)
   node --max-old-space-size=12000 paper-bot/e2-swing.mjs --paper
+  # Leader Box Breakout (best version of the YouTube swing strategies): paper account + signals for the next open
+  node --max-old-space-size=12000 paper-bot/lbb-swing.mjs --paper
   # one evening notification for all strategies + this week's scorecard refreshed
   node paper-bot/evening.mjs --notify
 }
