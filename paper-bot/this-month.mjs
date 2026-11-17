@@ -9,7 +9,7 @@
 import { loadMomentumPaper } from './momentum.mjs';
 import { loadMomentum10Paper } from './momentum10.mjs';
 import { loadSteadyMixPaper, MIX } from './steady-mix.mjs';
-import { loadIndiaMixPaper } from './india-mix.mjs';
+import { loadIndiaMixPaper, MIX as IMIX } from './india-mix.mjs';
 import { nextTradingDay, lastTradingDayOfMonth } from './my-plan.mjs';
 import { isTradingDay } from './market-calendar.mjs';
 
@@ -71,9 +71,11 @@ export function thisMonth({ now = new Date(), amount = 100000, m20 = loadMomentu
       { part: 'Momentum 10 (⅓)', amount: third, what: `the Momentum 10 stocks, ${amt(third / 10)} each: ${m10plan.hold?.join(', ') || '–'}` },
     ],
     next: m10plan.likelyIn?.length || m10plan.likelyOut?.length ? `At the ${monthEnd} month-end the stock third likely swaps in ${m10plan.likelyIn.join(', ') || 'none'} and out ${m10plan.likelyOut.join(', ') || 'none'}.` : `No stock change expected at the ${monthEnd} month-end on the latest prices.`,
-    rebalanceNote: `Each month, put the three parts back to ⅓ each.${india?.rebalances?.length ? '' : ' Paper record starts at the next change.'}`,
+    rebalanceNote: `At each month-end, buy the new Momentum 10 list with the stock third; put the three parts back to ⅓ each ONLY if one has drifted ${IMIX.bandPts}+ points from ⅓ (fewer trades, less tax — about 0.6 points a year more after tax in testing).`,
+    best: 'best-tested: the only rule that won the untouched 2025–26 test',
+    drift: indiaDrift(india, IMIX),
   };
-  const plans = [steadyPlan, indiaPlan, m10plan, momentumPlan('m20', 'Momentum 20', m20, 20, amount, today)];
+  const plans = [indiaPlan, steadyPlan, m10plan, momentumPlan('m20', 'Momentum 20', m20, 20, amount, today)];
 
   const steps = {
     'month-end': `Today is the last trading day of the month. The new lists are made from today's close; the swap is at the open on ${changeDay}.`,
@@ -84,6 +86,25 @@ export function thisMonth({ now = new Date(), amount = 100000, m20 = loadMomentu
     at: new Date().toISOString(), today, phase, monthEnd, changeDay, amount, filter, plans, steps,
     note: 'What the tested rules would hold, scaled to your amount. Based on the paper records, not a recommendation; decide yourself or with a SEBI-registered adviser.',
   };
+}
+
+/** The India mix paper portfolio's parts now (from its latest marks) and whether the band would reset them. */
+export function indiaDrift(india, w = IMIX) {
+  const marks = india?.marks;
+  if (!marks?.length) return null;
+  const val = (x) => x.amount * (1 + (x.retPct || 0) / 100);
+  let next50 = 0;
+  let gold = 0;
+  let total = 0;
+  for (const x of marks) {
+    total += val(x);
+    if (x.symbol === w.next50Symbol) next50 += val(x);
+    else if (x.symbol === w.goldSymbol) gold += val(x);
+  }
+  if (!(total > 0)) return null;
+  const weights = { next50: next50 / total, gold: gold / total, stocks: (total - next50 - gold) / total };
+  const off = Object.entries(weights).filter(([, v]) => Math.abs(v - 1 / 3) * 100 >= w.bandPts).map(([k]) => k);
+  return { weights, resetLikely: off.length > 0, off, asOf: india.curve?.at(-1)?.date || null };
 }
 
 function addMonths(date, n) {
@@ -115,7 +136,15 @@ export function monthLines(date, { m10 = loadMomentum10Paper(), steady = loadSte
   if (s?.date === date) out.push({ title: 'Steady mix', short: `Steady mix: re-balanced (filter ${s.inMarket ? 'IN' : 'OUT'})`, detail: `Put back to ${MIX.stocks * 100} / ${MIX.gold * 100} / ${MIX.liquid * 100} at today's open; the stock part is ${s.inMarket ? 'in the Momentum 10 stocks' : 'in the liquid fund (filter OUT)'}.` });
   else if (isMonthEnd && steady?.filter) out.push({ title: 'Steady mix', short: `Steady mix: filter ${steady.filter.today ? 'IN' : 'OUT'} at today's close decides tomorrow`, detail: `Tomorrow's re-balance uses the filter reading at today's close: ${steady.filter.today ? 'IN — the 30% goes into the Momentum 10 stocks' : 'OUT — the 30% stays in the liquid fund'}.` });
   const ir = india?.rebalances?.at(-1);
-  if (ir?.date === date) out.push({ title: 'India mix', short: 'India mix: put back to ⅓ each', detail: `Re-balanced at today's open on paper to ⅓ Nifty Next 50 / ⅓ gold / ⅓ Momentum 10 (value ₹${Math.round(ir.value).toLocaleString('en-IN')}).` });
+  if (ir?.date === date) {
+    const reset = ir.putBackToThirds !== false;
+    out.push({ title: 'India mix', short: reset ? 'India mix: put back to ⅓ each' : 'India mix: new stock list, parts left as they were', detail: reset
+      ? `Put back at today's open on paper to ⅓ Nifty Next 50 / ⅓ gold / ⅓ Momentum 10 (a part was ${IMIX.bandPts}+ points off, or the first time; value ₹${Math.round(ir.value).toLocaleString('en-IN')}).`
+      : `All three parts were within ${IMIX.bandPts} points of ⅓, so only the stock third changed to the new Momentum 10 list (value ₹${Math.round(ir.value).toLocaleString('en-IN')}).` });
+  } else if (isMonthEnd) {
+    const d = indiaDrift(india);
+    if (d?.resetLikely) out.push({ title: 'India mix', short: `India mix: ${d.off.join(' & ')} ${IMIX.bandPts}+ points off ⅓ — reset tomorrow`, detail: `Parts now: Next 50 ${(d.weights.next50 * 100).toFixed(0)}% · gold ${(d.weights.gold * 100).toFixed(0)}% · stocks ${(d.weights.stocks * 100).toFixed(0)}%. At the next open the paper portfolio puts them back to ⅓ each.` });
+  }
   const h = steady?.filterHistory || [];
   if (h.length >= 2 && h.at(-1).date === date && h.at(-1).today !== h.at(-2).today) {
     out.push({ title: 'Market filter', short: `NIFTY crossed ${h.at(-1).today ? 'above' : 'below'} its 200-day average`, detail: `The Steady mix filter now reads ${h.at(-1).today ? 'IN' : 'OUT'}; it only acts at the month-end, so nothing changes until then.` });

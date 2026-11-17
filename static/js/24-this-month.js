@@ -15,8 +15,9 @@ function tmRender(r) {
       continue;
     }
     if (p.parts) {
-      html += `<div style="margin-top:12px;padding:10px 12px;border-radius:10px;border:1px solid var(--up)"><div style="font-size:14px"><b>${esc(p.name)}</b> <span class="note" style="display:inline">${p.key === 'steady' ? 'fewest losses in testing' : 'best balance in testing (Indian only)'} · ${tmAmt(p.money)}</span></div>
+      html += `<div style="margin-top:12px;padding:10px 12px;border-radius:10px;border:1px solid var(--up)"><div style="font-size:14px"><b>${esc(p.name)}</b> <span class="note" style="display:inline">${p.best ? `<b style="color:var(--up)">${esc(p.best)}</b>` : p.key === 'steady' ? 'fewest losses in testing' : 'best balance in testing (Indian only)'} · ${tmAmt(p.money)}</span></div>
         <table style="font-size:12px;margin-top:4px"><tbody>${p.parts.map((x) => `<tr><td style="text-align:left;white-space:nowrap"><b>${esc(x.part)}</b></td><td style="white-space:nowrap">${tmAmt(x.amount)}</td><td style="text-align:left">${esc(x.what)}</td></tr>`).join('')}</tbody></table>
+        ${p.drift ? `<div style="font-size:13px;margin-top:4px">Paper portfolio now (${esc(p.drift.asOf || '')}): Next 50 <b>${(p.drift.weights.next50 * 100).toFixed(1)}%</b> · gold <b>${(p.drift.weights.gold * 100).toFixed(1)}%</b> · stocks <b>${(p.drift.weights.stocks * 100).toFixed(1)}%</b> — ${p.drift.resetLikely ? `<b style="color:var(--warn)">${esc(p.drift.off.join(' & '))} 5+ points off: reset to ⅓ at the month-end</b>` : 'all within 5 points of ⅓: no reset needed'}</div>` : ''}
         <div class="note">${esc(p.next)} ${esc(p.rebalanceNote)}</div></div>`;
       continue;
     }

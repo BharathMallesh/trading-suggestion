@@ -56,3 +56,19 @@ test('ML picks book: equal parts of the new list, charges on what changed only, 
   assert.deepEqual(noPrice.missing, ['ZZZ'], 'a stock with no price that day stays in cash');
   assert.ok(noPrice.cash > 0);
 });
+
+test('Do this month: India mix leads with the band rule and the paper drift check; month-end alert when a part is 5+ points off', async () => {
+  const tm = await import('./paper-bot/this-month.mjs');
+  const india = { marks: [
+    { symbol: 'JUNIORBEES.NS', amount: 100, retPct: 30 }, { symbol: 'GOLDBEES.NS', amount: 100, retPct: 0 }, { symbol: 'ABC.NS', amount: 100, retPct: 0 },
+  ], curve: [{ date: '2026-11-27', value: 330 }] };
+  const d = tm.indiaDrift(india);
+  assert.ok(d.resetLikely && d.off.includes('next50'), 'Next 50 at 39% → reset');
+  const calm = tm.indiaDrift({ ...india, marks: india.marks.map((m) => ({ ...m, retPct: 1 })) });
+  assert.equal(calm.resetLikely, false);
+  const r = tm.thisMonth({ now: new Date('2026-11-17T06:00:00Z'), amount: 300000, m20: null, m10: null, steady: null, india });
+  assert.equal(r.plans[0].key, 'india', 'India mix first');
+  assert.match(r.plans[0].rebalanceNote, /5\+ points/);
+  const lines = tm.monthLines('2026-11-30', { m10: null, steady: null, india });
+  assert.ok(lines.some((l) => l.title === 'India mix' && /reset tomorrow/.test(l.short)));
+});
