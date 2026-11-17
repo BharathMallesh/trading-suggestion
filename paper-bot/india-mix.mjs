@@ -113,10 +113,34 @@ export const loadIndiaMixPaper = () => readJ(PAPER());
 /** Money in each part from the previous holdings' current values (prev excludes liquid money, which belongs to the
  *  stock part): Next 50 and gold by symbol, the stock part is the rest of `value`. First time → ⅓ each. */
 export function sleeveValues(prev, value) {
-  if (!prev.size) return { next50: value * MIX.next50, gold: value * MIX.gold, stocks: value * MIX.stocks, fresh: true };
-  const next50 = prev.get(MIX.next50Symbol) || 0;
-  const gold = prev.get(MIX.goldSymbol) || 0;
-  return { next50, gold, stocks: value - next50 - gold };
+  return partValues(prev, value, INDIA_PARTS);
+}
+/** The fund parts and the stock part of a "mix" paper portfolio (India mix; the Global mix reuses this engine). */
+export const INDIA_PARTS = {
+  label: 'India mix', path: () => PAPER(),
+  funds: [
+    { key: 'next50', symbol: MIX.next50Symbol, name: 'Nifty Next 50 (JUNIORBEES)', kind: 'fund', w: MIX.next50 },
+    { key: 'gold', symbol: MIX.goldSymbol, name: 'Gold (GOLDBEES)', kind: 'gold', w: MIX.gold },
+  ],
+  stocks: MIX.stocks, bandPts: MIX.bandPts,
+};
+/** Money in each fund part (by symbol) and the stock part (the rest of `value`, liquid money included). */
+export function partValues(prev, value, cfg) {
+  const out = {};
+  if (!prev.size) {
+    for (const f of cfg.funds) out[f.key] = value * f.w;
+    return { ...out, stocks: value * cfg.stocks, fresh: true };
+  }
+  let funds = 0;
+  for (const f of cfg.funds) { out[f.key] = prev.get(f.symbol) || 0; funds += out[f.key]; }
+  return { ...out, stocks: value - funds };
+}
+/** Re-set to the target weights when it is the first time or any part is ≥ bandPts away from its target. */
+export function partBand(sleeves, value, cfg) {
+  const target = Object.fromEntries([...cfg.funds.map((f) => [f.key, f.w]), ['stocks', cfg.stocks]]);
+  const weights = Object.fromEntries(Object.keys(target).map((k) => [k, sleeves[k] / value]));
+  const rebalance = !!sleeves.fresh || Object.keys(target).some((k) => Math.abs(weights[k] - target[k]) * 100 >= cfg.bandPts);
+  return { rebalance, weights };
 }
 /** Put back to ⅓ when it is the first time or any part is ≥ bandPts away from its target weight. */
 export function bandDecision(sleeves, value, w = MIX) {
@@ -132,9 +156,9 @@ export function bandDecision(sleeves, value, w = MIX) {
  * list for that month-end (in the liquid fund until a list exists). Valued
  * daily at Yahoo closes.
  */
-export async function indiaMixPaperUpdate({ loadCandles = candles, now = new Date(), capital = 100000, m10 = loadMomentum10Paper() } = {}) {
+export async function indiaMixPaperUpdate({ loadCandles = candles, now = new Date(), capital = 100000, m10 = loadMomentum10Paper(), cfg = INDIA_PARTS } = {}) {
   const today = new Date(now.getTime() + 19800_000).toISOString().slice(0, 10);
-  const st = loadIndiaMixPaper() || { startedAt: today, capital, rebalances: [], curve: [] };
+  const st = readJ(cfg.path()) || { startedAt: today, capital, rebalances: [], curve: [] };
   const nifty = (await loadCandles('^NSEI', { range: '1y', interval: '1d' })).filter((x) => x.close > 0);
   const completed = monthEnds(nifty.map((x) => x.date)).filter((d) => nifty.some((x) => x.date > d)).pop();
   const side = (MOM.costPct + 0.3) / 100;
@@ -174,10 +198,10 @@ export async function indiaMixPaperUpdate({ loadCandles = candles, now = new Dat
   // entry prices are the first open after the month-end either way
   const listWait = completed && m10?.monthEnd !== completed && (Date.parse(today) - Date.parse(completed)) / 86400000 <= 7;
   if (completed && !listWait && completed >= st.startedAt.slice(0, 7) + '-00' && (!last || last.monthEnd < completed)) {
-    const gold = await priceOf(MIX.goldSymbol, completed);
-    const next50 = await priceOf(MIX.next50Symbol, completed);
-    if (gold && next50) {
-      const date = gold.date;
+    const fundPx = [];
+    for (const f of cfg.funds) fundPx.push(await priceOf(f.symbol, completed));
+    if (fundPx.every(Boolean)) {
+      const date = fundPx[0].date;
       let value = st.capital;
       let prev = new Map();
       if (last) {
@@ -185,14 +209,11 @@ export async function indiaMixPaperUpdate({ loadCandles = candles, now = new Dat
         value = m.v;
         prev = valuesBySymbol(m.marks);
       }
-      // the 5-point band: keep each part's current money unless one part is 5+ points away from ⅓
-      const sleeves = sleeveValues(prev, value);
-      const band = bandDecision(sleeves, value);
-      const amt = band.rebalance ? { next50: value * MIX.next50, gold: value * MIX.gold, stocks: value * MIX.stocks } : sleeves;
-      const holdings = [
-        { kind: 'fund', symbol: MIX.next50Symbol, name: 'Nifty Next 50 (JUNIORBEES)', amount: amt.next50, entry: next50.px },
-        { kind: 'gold', symbol: MIX.goldSymbol, name: 'Gold (GOLDBEES)', amount: amt.gold, entry: gold.px },
-      ];
+      // the 5-point band: keep each part's current money unless one part is 5+ points away from its target
+      const sleeves = partValues(prev, value, cfg);
+      const band = partBand(sleeves, value, cfg);
+      const amt = band.rebalance ? { ...Object.fromEntries(cfg.funds.map((f) => [f.key, value * f.w])), stocks: value * cfg.stocks } : sleeves;
+      const holdings = cfg.funds.map((f, k) => ({ kind: f.kind, symbol: f.symbol, name: f.name, amount: amt[f.key], entry: fundPx[k].px }));
       const list = m10?.monthEnd === completed ? m10.list : null;
       const stockMoney = amt.stocks;
       if (list?.length) {
@@ -215,7 +236,7 @@ export async function indiaMixPaperUpdate({ loadCandles = candles, now = new Dat
     st.marks = marks;
   }
   st.updatedAt = now.toISOString();
-  writeJsonAtomic(PAPER(), st);
+  writeJsonAtomic(cfg.path(), st);
   return st;
 }
 

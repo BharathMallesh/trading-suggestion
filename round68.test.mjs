@@ -72,3 +72,19 @@ test('Do this month: India mix leads with the band rule and the paper drift chec
   const lines = tm.monthLines('2026-11-30', { m10: null, steady: null, india });
   assert.ok(lines.some((l) => l.title === 'India mix' && /reset tomorrow/.test(l.short)));
 });
+
+test('Global mix: same mix engine with MON100 / GOLDBEES / Momentum 10 thirds and the 5-point band', async () => {
+  const im = await import('./paper-bot/india-mix.mjs');
+  const gm = await import('./paper-bot/global-mix.mjs');
+  const cfg = gm.GLOBAL_PARTS;
+  assert.deepEqual(cfg.funds.map((f) => f.symbol), ['MON100.NS', 'GOLDBEES.NS']);
+  const v = 300000;
+  const fresh = im.partValues(new Map(), v, cfg);
+  assert.ok(fresh.fresh && Math.abs(fresh.nasdaq - 100000) < 1e-6 && Math.abs(fresh.stocks - 100000) < 1e-6);
+  const drift = im.partValues(new Map([['MON100.NS', 125000], ['GOLDBEES.NS', 95000], ['ABC.NS', 80000]]), v, cfg);
+  const d = im.partBand(drift, v, cfg);
+  assert.equal(d.rebalance, true, 'Nasdaq at 41.7% → reset');
+  assert.equal(im.partBand(im.partValues(new Map([['MON100.NS', 104000], ['GOLDBEES.NS', 98000]]), v, cfg), v, cfg).rebalance, false);
+  // the India mix wrappers still give the same answer as before
+  assert.deepEqual(im.sleeveValues(new Map([['JUNIORBEES.NS', 1], ['GOLDBEES.NS', 2]]), 6), { next50: 1, gold: 2, stocks: 3 });
+});
