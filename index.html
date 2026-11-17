@@ -352,7 +352,8 @@
       <section class="card span2" id="indiaCard">
         <h2>India mix <span style="font-size:12px;color:var(--warn);font-weight:500">⅓ NIFTY NEXT 50 · ⅓ GOLD · ⅓ MOMENTUM 10 · INDIAN ONLY · TESTED · PAPER FROM NOV 2026</span></h2>
         <p class="hint">The best balance of return and falls among 62 tested mixes of Indian investments: a Nifty Next 50 index fund, a gold ETF and the Momentum 10 stocks in equal parts,
-          put back to ⅓ each every month. Gold tends to rise when Indian stocks fall, so the monthly re-balance trims what rose and adds to what fell. Not investment advice.</p>
+          put back to ⅓ each at a month-end when any part has drifted <b>5 or more points</b> from ⅓ (the stock part still follows each month's Momentum 10 list). Gold tends to rise when Indian stocks fall, so the re-balance trims what rose and adds to what fell;
+          the 5-point band (added Nov 2026) re-balanced less often and kept about 0.6 points a year more after tax in a 2013–26 walk-forward test, from lower costs and tax. Not investment advice.</p>
         <div id="indiaOut" style="margin-top:10px">Loading…</div>
       </section>
 
@@ -363,6 +364,15 @@
           fund while NIFTY is below its 200-day average (the "stay out when it looks bad" rule) — 10% gold and 60% liquid fund, put back to 30 / 10 / 60 each month.
           It still has small losing months; it is built to avoid big falls, not every loss. Not investment advice.</p>
         <div id="steadyOut" style="margin-top:10px">Loading…</div>
+      </section>
+
+      <!-- ML stock picks: walk-forward machine-learning ranking (Nov 2026 loop 7); paper only, the forward test -->
+      <section class="card span2" id="mlCard">
+        <h2>ML stock picks <span style="font-size:12px;color:var(--warn);font-weight:500">3 MODELS · 32 MEASURES · TOP 10 · KEEP WHILE IN THE TOP 40 · WALK-FORWARD TESTED · PAPER FROM 17 NOV 2026</span></h2>
+        <p class="hint">Each month-end, three machine-learning models (ridge regression, gradient-boosted trees, random forest) rank the NSE top 200 using 32 measures — momentum over several periods,
+          the stock's own strength apart from the market, volatility, distance from the 52-week high, turnover and the share of shares actually delivered — and the average rank picks 10 stocks in equal parts.
+          Retrained every year only on earlier years. In the 2013–26 walk-forward test it picked well (rank IC 0.07) but made 17.9% a year against Momentum 10's 19.5% — below the bar, so this paper record from today is the clean test. Not advice.</p>
+        <div id="mlOut" style="margin-top:10px">Loading…</div>
       </section>
 
       <!-- Momentum 10 + buffer: the candidate from the idea search, tracked on paper next to Momentum 20 -->
@@ -1112,6 +1122,7 @@
     <script src="/static/js/36-calendar.js"></script>
     <script src="/static/js/37-momentum-breakout.js"></script>
     <script src="/static/js/38-leader-box.js"></script>
+    <script src="/static/js/39-ml-picks.js"></script>
     <script src="/static/js/19-my-plan.js"></script>
     <script src="/static/js/20-rsi-swing.js"></script>
   </body>

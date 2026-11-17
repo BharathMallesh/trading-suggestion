@@ -79,6 +79,7 @@ import { loadSpreadPaper } from './paper-bot/spread-paper.mjs';
 import { tradeToday } from './paper-bot/trade-today.mjs';
 import { loadE2Paper } from './paper-bot/e2-swing.mjs';
 import { loadLbbPaper } from './paper-bot/lbb-swing.mjs';
+import { loadMlPaper } from './paper-bot/ml-picks.mjs';
 import { loadIntraday5y } from './paper-bot/intraday-5y.mjs';
 import { foPlan } from './paper-bot/fo-plan.mjs';
 const affordableCache = new Map();
@@ -787,6 +788,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/api/e2-swing') return json(res, 200, loadE2Paper() || {}); // Trading strategies → Momentum breakout (paper)
     if (req.method === 'GET' && url.pathname === '/api/imbalance-swing') return json(res, 200, { backtest: loadImbalanceSwing(), paper: loadImbalancePaper() });
     if (req.method === 'GET' && url.pathname === '/api/option-strikes') return json(res, 200, loadOptionStrikes() || {});
+    if (req.method === 'GET' && url.pathname === '/api/ml-picks') return json(res, 200, loadMlPaper() || {}); // Investing → ML stock picks (paper)
     if (req.method === 'GET' && url.pathname === '/api/india-mix') return json(res, 200, { backtest: loadIndiaMix(), paper: loadIndiaMixPaper() });
     if (req.method === 'GET' && url.pathname === '/api/steady-mix') return json(res, 200, { backtest: loadSteadyMix(), paper: loadSteadyMixPaper() });
     if (req.method === 'GET' && url.pathname === '/api/momentum10') return json(res, 200, { backtest: loadMomentum10(), paper: loadMomentum10Paper() });

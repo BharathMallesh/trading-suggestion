@@ -55,6 +55,9 @@ do_collect() {
   node --max-old-space-size=12000 paper-bot/e2-swing.mjs --paper
   # Leader Box Breakout (best version of the YouTube swing strategies): paper account + signals for the next open
   node --max-old-space-size=12000 paper-bot/lbb-swing.mjs --paper
+  # NSE delivery files (needed by the ML picks), then the ML stock picks paper portfolio (re-ranks once a month)
+  node paper-bot/delivery.mjs 2026-01 || true
+  node --max-old-space-size=12000 paper-bot/ml-picks.mjs --paper
   # one evening notification for all strategies + this week's scorecard refreshed
   node paper-bot/evening.mjs --notify
 }

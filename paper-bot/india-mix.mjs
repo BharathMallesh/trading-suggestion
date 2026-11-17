@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // India mix (library + CLI): Indian investments only, in three equal parts,
-// put back to ⅓ each at the start of every month:
+// put back to ⅓ each at the start of a month when any part has drifted 5+ points from ⅓
+// (the 5-point band, added Nov 2026 after the walk-forward allocation study: +0.6 pts a year after tax
+// over 2013–26 from lower costs and tax; before that it was re-balanced every month):
 //   ⅓ Nifty Next 50 (index fund / JUNIORBEES)
 //   ⅓ gold (GOLDBEES)
 //   ⅓ Momentum 10 + buffer stocks
@@ -25,11 +27,31 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const SAVED = () => process.env.INDIA_MIX_PATH || join(HERE, 'data', 'india-mix.json');
 const PAPER = () => process.env.INDIA_MIX_PAPER_PATH || join(HERE, 'data', 'india-mix-paper.json');
 
-export const MIX = { next50: 1 / 3, gold: 1 / 3, stocks: 1 / 3, next50Symbol: 'JUNIORBEES.NS', goldSymbol: 'GOLDBEES.NS', liquidYield: 0.06, rebalanceDragPct: 0.05 };
+export const MIX = { next50: 1 / 3, gold: 1 / 3, stocks: 1 / 3, next50Symbol: 'JUNIORBEES.NS', goldSymbol: 'GOLDBEES.NS', liquidYield: 0.06, rebalanceDragPct: 0.05, bandPts: 5 };
 
 /** The mix's monthly returns from its three parts (re-balanced monthly, small drag for the re-balance). */
 export function indiaMixReturns(months, parts, w = MIX) {
   return months.map((m) => ({ m, r: w.next50 * (parts.next50.get(m) ?? 0) + w.gold * (parts.gold.get(m) ?? 0) + w.stocks * (parts.stocks.get(m) ?? 0) - w.rebalanceDragPct / 100 }));
+}
+/** Same three parts, but the weights drift with returns and are put back to ⅓ only when one is 5+ points off (the band). */
+export function indiaMixBandedReturns(months, parts, w = MIX) {
+  let wt = [w.next50, w.gold, w.stocks];
+  const target = [w.next50, w.gold, w.stocks];
+  let rebalances = 0;
+  const rs = months.map((m) => {
+    const r = [parts.next50.get(m) ?? 0, parts.gold.get(m) ?? 0, parts.stocks.get(m) ?? 0];
+    const total = wt.reduce((a, x, k) => a + x * r[k], 0);
+    wt = wt.map((x, k) => (x * (1 + r[k])) / (1 + total));
+    let drag = 0;
+    if (wt.some((x, k) => Math.abs(x - target[k]) * 100 >= w.bandPts)) {
+      wt = [...target];
+      drag = w.rebalanceDragPct / 100;
+      rebalances++;
+    }
+    return { m, r: total - drag };
+  });
+  rs.rebalances = rebalances;
+  return rs;
 }
 const byYear = (rs) => {
   const y = {};
@@ -53,6 +75,7 @@ export async function indiaMixTest({ loadCandles = candles } = {}) {
   const months = [...stocks.keys()].filter((m) => m >= '2010-02' && next50.has(m) && gold.has(m)).sort();
   const res = {
     mix: { label: 'India mix (⅓ Nifty Next 50 · ⅓ gold · ⅓ Momentum 10)', rs: indiaMixReturns(months, { next50, gold, stocks }) },
+    banded: { label: 'India mix, put back to ⅓ only when a part drifts 5+ points (how the paper portfolio runs now)', rs: indiaMixBandedReturns(months, { next50, gold, stocks }) },
     simple: { label: '½ Nifty Next 50 · ½ gold (no stock picking)', rs: months.map((m) => ({ m, r: 0.5 * next50.get(m) + 0.5 * gold.get(m) - MIX.rebalanceDragPct / 100 })) },
     nifty: { label: 'NIFTY 50 index fund', rs: months.map((m) => ({ m, r: nifty.get(m) ?? 0 })) },
   };
@@ -87,6 +110,22 @@ export const loadIndiaMix = () => readJ(SAVED());
 export const loadIndiaMixPaper = () => readJ(PAPER());
 
 // --------------------------------------------------------------- paper ---
+/** Money in each part from the previous holdings' current values (prev excludes liquid money, which belongs to the
+ *  stock part): Next 50 and gold by symbol, the stock part is the rest of `value`. First time → ⅓ each. */
+export function sleeveValues(prev, value) {
+  if (!prev.size) return { next50: value * MIX.next50, gold: value * MIX.gold, stocks: value * MIX.stocks, fresh: true };
+  const next50 = prev.get(MIX.next50Symbol) || 0;
+  const gold = prev.get(MIX.goldSymbol) || 0;
+  return { next50, gold, stocks: value - next50 - gold };
+}
+/** Put back to ⅓ when it is the first time or any part is ≥ bandPts away from its target weight. */
+export function bandDecision(sleeves, value, w = MIX) {
+  const weights = { next50: sleeves.next50 / value, gold: sleeves.gold / value, stocks: sleeves.stocks / value };
+  const target = { next50: w.next50, gold: w.gold, stocks: w.stocks };
+  const rebalance = !!sleeves.fresh || Object.keys(target).some((k) => Math.abs(weights[k] - target[k]) * 100 >= w.bandPts);
+  return { rebalance, weights };
+}
+
 /**
  * Paper portfolio from the start date: at the first session after each
  * month-end, put back to ⅓ JUNIORBEES / ⅓ GOLDBEES / ⅓ the Momentum 10 paper
@@ -146,12 +185,16 @@ export async function indiaMixPaperUpdate({ loadCandles = candles, now = new Dat
         value = m.v;
         prev = valuesBySymbol(m.marks);
       }
+      // the 5-point band: keep each part's current money unless one part is 5+ points away from ⅓
+      const sleeves = sleeveValues(prev, value);
+      const band = bandDecision(sleeves, value);
+      const amt = band.rebalance ? { next50: value * MIX.next50, gold: value * MIX.gold, stocks: value * MIX.stocks } : sleeves;
       const holdings = [
-        { kind: 'fund', symbol: MIX.next50Symbol, name: 'Nifty Next 50 (JUNIORBEES)', amount: value * MIX.next50, entry: next50.px },
-        { kind: 'gold', symbol: MIX.goldSymbol, name: 'Gold (GOLDBEES)', amount: value * MIX.gold, entry: gold.px },
+        { kind: 'fund', symbol: MIX.next50Symbol, name: 'Nifty Next 50 (JUNIORBEES)', amount: amt.next50, entry: next50.px },
+        { kind: 'gold', symbol: MIX.goldSymbol, name: 'Gold (GOLDBEES)', amount: amt.gold, entry: gold.px },
       ];
       const list = m10?.monthEnd === completed ? m10.list : null;
-      const stockMoney = value * MIX.stocks;
+      const stockMoney = amt.stocks;
       if (list?.length) {
         const per = stockMoney / list.length;
         for (const x of list) {
@@ -162,7 +205,7 @@ export async function indiaMixPaperUpdate({ loadCandles = candles, now = new Dat
       // charges only on what changed, taken pro rata from every part
       const cost = turnoverCost(prev, holdings, side);
       for (const h of holdings) h.amount *= (value - cost) / value;
-      st.rebalances.push({ monthEnd: completed, date, value: value - cost, cost, holdings });
+      st.rebalances.push({ monthEnd: completed, date, value: value - cost, cost, holdings, putBackToThirds: band.rebalance, weightsBefore: band.weights });
     }
   }
   const cur = st.rebalances.at(-1);
