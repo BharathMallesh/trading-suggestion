@@ -79,6 +79,7 @@ import { loadSpreadPaper } from './paper-bot/spread-paper.mjs';
 import { tradeToday } from './paper-bot/trade-today.mjs';
 import { loadE2Paper } from './paper-bot/e2-swing.mjs';
 import { loadLbbPaper } from './paper-bot/lbb-swing.mjs';
+import { loadBonusRunupPaper } from './paper-bot/bonus-runup.mjs';
 import { loadMlPaper } from './paper-bot/ml-picks.mjs';
 import { loadGlobalMixPaper, RESEARCH as GLOBAL_RESEARCH } from './paper-bot/global-mix.mjs';
 import { loadIntraday5y } from './paper-bot/intraday-5y.mjs';
@@ -786,6 +787,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === 'GET' && url.pathname === '/api/matrix-calendar') return json(res, 200, loadMatrixCalendar() || {});
     if (req.method === 'GET' && url.pathname === '/api/lbb-swing') return json(res, 200, loadLbbPaper() || {}); // Trading strategies → Leader box breakout (paper)
+    if (req.method === 'GET' && url.pathname === '/api/bonus-runup') return json(res, 200, loadBonusRunupPaper() || {}); // Trading strategies → Bonus/split run-up (paper)
     if (req.method === 'GET' && url.pathname === '/api/e2-swing') return json(res, 200, loadE2Paper() || {}); // Trading strategies → Momentum breakout (paper)
     if (req.method === 'GET' && url.pathname === '/api/imbalance-swing') return json(res, 200, { backtest: loadImbalanceSwing(), paper: loadImbalancePaper() });
     if (req.method === 'GET' && url.pathname === '/api/option-strikes') return json(res, 200, loadOptionStrikes() || {});
