@@ -159,10 +159,21 @@ export async function quote(symbol, opts = {}) {
  * @returns {Promise<{date:string,open:number,high:number,low:number,close:number,
  *   adjClose:(number|null),volume:number}[]>}
  */
+const dayFmt = new Map();
+const dayIn = (tz, sec) => {
+  try {
+    if (!dayFmt.has(tz)) dayFmt.set(tz, new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }));
+    return dayFmt.get(tz).format(new Date(sec * 1000));
+  } catch {
+    return null;
+  }
+};
+
 export async function candles(symbol, opts = {}) {
   const result = await fetchChart(symbol, opts);
   const intra = isIntraday(opts.interval || '1d');
   const off = result.meta?.gmtoffset || 0; // seconds; shifts UTC into exchange-local
+  const tz = result.meta?.exchangeTimezoneName;
   const ts = result.timestamp || [];
   const q = result.indicators?.quote?.[0] || {};
   const adj = result.indicators?.adjclose?.[0]?.adjclose || [];
@@ -171,10 +182,13 @@ export async function candles(symbol, opts = {}) {
     // Yahoo emits null OHLC for holidays/halts; skip incomplete rows.
     if (q.open?.[i] == null || q.close?.[i] == null) continue;
     const local = new Date((ts[i] + off) * 1000).toISOString();
+    // Daily bars: date each bar in the exchange's own time zone. The fixed current gmtoffset is wrong across
+    // daylight-saving changes for bars stamped at local midnight (CME futures, e.g. HG=F/CL=F), which would land a day early.
+    const day = (!intra && tz && dayIn(tz, ts[i])) || local.slice(0, 10);
     rows.push({
       // Daily bars: exchange-local date. Intraday bars: date + HH:MM so each
       // bar is uniquely labelled (charts, trade logs, alignment).
-      date: intra ? local.slice(0, 16).replace('T', ' ') : local.slice(0, 10),
+      date: intra ? local.slice(0, 16).replace('T', ' ') : day,
       ts: ts[i],
       open: q.open[i],
       high: q.high?.[i],
