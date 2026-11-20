@@ -55,7 +55,7 @@ export function thisMonth({ now = new Date(), amount = 100000, m20 = loadMomentu
   const steadyPlan = {
     key: 'steady', name: 'Steady mix', ready: !!steady, money: amount,
     parts: [
-      { part: `Stocks (${MIX.stocks * 100}%)`, amount: amount * MIX.stocks, what: stocksIn ? `the Momentum 10 stocks, ${amt((amount * MIX.stocks) / 10)} each: ${m10plan.hold?.join(', ') || '–'}` : 'market filter OUT: kept in the liquid fund' },
+      { part: `Stocks (${MIX.stocks * 100}%)`, amount: amount * MIX.stocks, what: stocksIn ? `the Momentum 10 stocks, ${amt((amount * MIX.stocks) / 10)} each: ${m10plan.hold?.join(', ') || '–'}` : 'market filter OUT: kept in the liquid fund', stocks: stocksIn ? m10plan.hold || [] : [] },
       { part: `Gold (${MIX.gold * 100}%)`, amount: amount * MIX.gold, what: 'a gold ETF such as GOLDBEES' },
       { part: `Liquid fund (${MIX.liquid * 100}%)`, amount: amount * MIX.liquid, what: 'a liquid / overnight fund' },
     ],
@@ -68,7 +68,7 @@ export function thisMonth({ now = new Date(), amount = 100000, m20 = loadMomentu
     parts: [
       { part: 'Nifty Next 50 (⅓)', amount: third, what: 'a Nifty Next 50 index fund or ETF such as JUNIORBEES' },
       { part: 'Gold (⅓)', amount: third, what: 'a gold ETF such as GOLDBEES' },
-      { part: 'Momentum 10 (⅓)', amount: third, what: `the Momentum 10 stocks, ${amt(third / 10)} each: ${m10plan.hold?.join(', ') || '–'}` },
+      { part: 'Momentum 10 (⅓)', amount: third, what: `the Momentum 10 stocks, ${amt(third / 10)} each: ${m10plan.hold?.join(', ') || '–'}`, stocks: m10plan.hold || [] },
     ],
     next: m10plan.likelyIn?.length || m10plan.likelyOut?.length ? `At the ${monthEnd} month-end the stock third likely swaps in ${m10plan.likelyIn.join(', ') || 'none'} and out ${m10plan.likelyOut.join(', ') || 'none'}.` : `No stock change expected at the ${monthEnd} month-end on the latest prices.`,
     rebalanceNote: `At each month-end, buy the new Momentum 10 list with the stock third; put the three parts back to ⅓ each ONLY if one has drifted ${IMIX.bandPts}+ points from ⅓ (fewer trades, less tax — about 0.6 points a year more after tax in testing).`,

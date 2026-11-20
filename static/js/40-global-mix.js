@@ -16,7 +16,7 @@ function gmRender(d) {
       const w = cur.weightsBefore;
       html += `<div class="note">Last month-end (${esc(cur.monthEnd)}): Nasdaq ${gmPc(w.nasdaq, 0)} · gold ${gmPc(w.gold, 0)} · stocks ${gmPc(w.stocks, 0)} — ${cur.putBackToThirds ? '<b>put back to ⅓ each</b>' : 'all within 5 points of ⅓, left as they were (the stock part follows the new Momentum 10 list)'}.</div>`;
     }
-    if (p.marks?.length) html += `<div style="overflow-x:auto"><table style="font-size:12px"><thead><tr><th style="text-align:left">Holding</th><th>Amount at re-balance</th><th>Entry</th><th>Last</th><th>Result</th></tr></thead><tbody>${p.marks.map((x) => `<tr><td style="text-align:left">${esc(x.name)}</td><td>${gmAmt(x.amount)}</td><td>${x.entry ? `₹${x.entry.toFixed(1)}` : '–'}</td><td>${x.last ? `₹${x.last.toFixed(1)}` : '–'}</td><td style="color:${gmCol(x.retPct)}">${x.retPct >= 0 ? '+' : ''}${x.retPct.toFixed(2)}%</td></tr>`).join('')}</tbody></table></div>`;
+    if (p.marks?.length) html += `<div style="overflow-x:auto"><table style="font-size:12px"><thead><tr><th style="text-align:left">Holding</th><th>Amount at re-balance</th><th>Entry</th><th>Last</th><th>Result</th></tr></thead><tbody>${p.marks.map((x) => `<tr><td style="text-align:left">${x.kind === 'stock' ? `<span data-sym="${esc(x.symbol || x.name)}">${esc(x.name)}</span>` : esc(x.name)}</td><td>${gmAmt(x.amount)}</td><td>${x.entry ? `₹${x.entry.toFixed(1)}` : '–'}</td><td>${x.last ? `₹${x.last.toFixed(1)}` : '–'}</td><td style="color:${gmCol(x.retPct)}">${x.retPct >= 0 ? '+' : ''}${x.retPct.toFixed(2)}%</td></tr>`).join('')}</tbody></table></div>`;
   } else html += `<div class="note">Paper portfolio (₹1,00,000) starts at the first session after the next month-end${p?.startedAt ? ` (record opened ${esc(p.startedAt)})` : ''}: ⅓ MON100, ⅓ GOLDBEES, ⅓ that month's Momentum 10 list.</div>`;
   if (R) {
     html += `<div style="font-size:14px;margin-top:12px"><b>How it was tested</b> — ${esc(R.period)}</div>
@@ -27,6 +27,7 @@ function gmRender(d) {
       <div class="note">Verdict: ${esc(R.verdict)}. US shares in rupees helped in India-only and rupee crises, not in global ones. MON100 has traded 10–24% above its fair value at times — check its premium (iNAV) before buying. Taxed as a non-equity fund. Not advice.</div>`;
   }
   $('globalOut').innerHTML = html;
+  if (typeof avoidMark === 'function') avoidMark($('globalOut')); // ⚠ don't-buy-now badges (43-avoid-list.js)
 }
 lazy('Global mix', async () => {
   try { gmRender(await api('/api/global-mix')); } catch (e) { $('globalOut').innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`; }

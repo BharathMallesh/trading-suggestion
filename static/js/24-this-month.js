@@ -2,7 +2,7 @@
 // Classic script (not a module): loaded in order by index.html after 01-core.js; top-level names are shared across these files.
 const tmAmt = (v) => `₹${Math.round(v || 0).toLocaleString('en-IN')}`;
 const tmDate = (d) => new Date(`${d}T00:00:00Z`).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
-const tmList = (xs) => (xs?.length ? xs.map((x) => `<b>${esc(x)}</b>`).join(', ') : 'none');
+const tmList = (xs) => (xs?.length ? xs.map((x) => `<b data-sym="${esc(x)}">${esc(x)}</b>`).join(', ') : 'none');
 
 function tmRender(r) {
   const tone = r.phase === 'hold' ? 'var(--line)' : 'var(--up)';
@@ -16,9 +16,9 @@ function tmRender(r) {
     }
     if (p.parts) {
       html += `<div style="margin-top:12px;padding:10px 12px;border-radius:10px;border:1px solid var(--up)"><div style="font-size:14px"><b>${esc(p.name)}</b> <span class="note" style="display:inline">${p.best ? `<b style="color:var(--up)">${esc(p.best)}</b>` : p.key === 'steady' ? 'fewest losses in testing' : 'best balance in testing (Indian only)'} · ${tmAmt(p.money)}</span></div>
-        <table style="font-size:12px;margin-top:4px"><tbody>${p.parts.map((x) => `<tr><td style="text-align:left;white-space:nowrap"><b>${esc(x.part)}</b></td><td style="white-space:nowrap">${tmAmt(x.amount)}</td><td style="text-align:left">${esc(x.what)}</td></tr>`).join('')}</tbody></table>
+        <table style="font-size:12px;margin-top:4px"><tbody>${p.parts.map((x) => `<tr><td style="text-align:left;white-space:nowrap"><b>${esc(x.part)}</b></td><td style="white-space:nowrap">${tmAmt(x.amount)}</td><td style="text-align:left">${esc(x.what)}${x.stocks?.length ? `<div data-avoid-list="${esc(x.stocks.join(','))}"></div>` : ''}</td></tr>`).join('')}</tbody></table>
         ${p.drift ? `<div style="font-size:13px;margin-top:4px">Paper portfolio now (${esc(p.drift.asOf || '')}): Next 50 <b>${(p.drift.weights.next50 * 100).toFixed(1)}%</b> · gold <b>${(p.drift.weights.gold * 100).toFixed(1)}%</b> · stocks <b>${(p.drift.weights.stocks * 100).toFixed(1)}%</b> — ${p.drift.resetLikely ? `<b style="color:var(--warn)">${esc(p.drift.off.join(' & '))} 5+ points off: reset to ⅓ at the month-end</b>` : 'all within 5 points of ⅓: no reset needed'}</div>` : ''}
-        <div class="note">${esc(p.next)} ${esc(p.rebalanceNote)}</div></div>`;
+        <div class="note">${esc(p.next)} ${esc(p.rebalanceNote)}</div>${p.key === 'india' && typeof idleCashNote === 'function' ? idleCashNote() : ''}</div>`;
       continue;
     }
     html += `<div style="margin-top:10px;padding:10px 12px;border-radius:10px;border:1px solid var(--line)"><div style="font-size:14px"><b>${esc(p.name)}</b> <span class="note" style="display:inline">${p.key === 'm10' ? 'higher return, bigger falls' : 'the original momentum screen'} · ${tmAmt(p.perStock)} a stock for ${tmAmt(p.money)}</span></div>
@@ -28,6 +28,7 @@ function tmRender(r) {
   }
   html += `<div class="note" style="margin-top:8px">${esc(r.note)}</div>`;
   $('monthOut').innerHTML = html;
+  if (typeof avoidMark === 'function') avoidMark($('monthOut')); // ⚠ don't-buy-now badges (43-avoid-list.js)
 }
 async function tmLoad() {
   $('monthBtn').disabled = true;

@@ -59,6 +59,10 @@ do_collect() {
   node --max-old-space-size=12000 paper-bot/lbb-swing.mjs --paper
   # Bonus/split run-up (loop 13): NSE corporate actions list + paper account (buys before the ex-date, sells the day before)
   node paper-bot/bonus-runup.mjs --paper || true
+  # IPO apply (loop 19): NSE IPO lists — min retail lot in every mainboard IPO on its last day, settled at the listing open (paper)
+  node paper-bot/ipo-apply.mjs --paper || true
+  # Don't-buy-now warnings (loop 14): NSE PR zip (circuits, series), band changes and ASM lists → 5/20-session avoid list
+  node paper-bot/avoid-list.mjs --paper || true
   # NSE delivery files (needed by the ML picks), then the ML stock picks paper portfolio (re-ranks once a month)
   node paper-bot/delivery.mjs 2026-01 || true
   node --max-old-space-size=12000 paper-bot/ml-picks.mjs --paper

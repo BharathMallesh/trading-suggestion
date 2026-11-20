@@ -4,6 +4,13 @@ const imPc = (x, d = 1) => (x == null ? '–' : `${(x * 100).toFixed(d)}%`);
 const imCol = (x) => (x > 0 ? 'var(--up)' : x < 0 ? 'var(--down)' : 'var(--muted)');
 const imAmt = (v) => `₹${Math.round(v || 0).toLocaleString('en-IN')}`;
 
+// Idle-cash note (loop research, Nov 2026): shown on India mix and on the India mix plan in Home → Do this month.
+function idleCashNote() {
+  return `<details style="margin-top:8px;font-size:12px"><summary style="cursor:pointer">Idle cash (30% tax slab): arbitrage fund vs FD</summary>
+    <div style="margin-top:4px">An arbitrage fund (direct, growth) beat an SBI FD by <b>~1.3–3.3 pts a year after tax</b> in 2023–26 (≈ 6.2–7.8% vs 4.4–4.8%); hold it <b>more than 12 months</b>;
+    the ₹1.25 lakh LTCG exemption is shared with your equity gains. Liquid funds ≈ FD since Apr 2023; LIQUIDBEES &lt; FD. Not advice.</div></details>`;
+}
+
 function imRender(d) {
   const b = d.backtest;
   const p = d.paper;
@@ -29,9 +36,11 @@ function imRender(d) {
       const w = cur.weightsBefore;
       html += `<div class="note">Last month-end (${esc(cur.monthEnd)}): parts were Next 50 ${imPc(w.next50, 0)} · gold ${imPc(w.gold, 0)} · stocks ${imPc(w.stocks, 0)} — ${cur.putBackToThirds ? '<b>put back to ⅓ each</b> (a part was 5+ points off)' : 'all within 5 points of ⅓, so left as they were (the stock part still follows the new Momentum 10 list)'}.</div>`;
     }
-    if (cur && p.marks?.length) html += `<div style="overflow-x:auto"><table style="font-size:12px"><thead><tr><th style="text-align:left">Holding</th><th>Amount at re-balance</th><th>Entry</th><th>Last</th><th>Result</th></tr></thead><tbody>${p.marks.map((x) => `<tr><td style="text-align:left">${esc(x.name)}</td><td>${imAmt(x.amount)}</td><td>${x.entry ? `₹${x.entry.toFixed(1)}` : '–'}</td><td>${x.last ? `₹${x.last.toFixed(1)}` : '–'}</td><td style="color:${imCol(x.retPct)}">${x.retPct >= 0 ? '+' : ''}${x.retPct.toFixed(2)}%</td></tr>`).join('')}</tbody></table></div>`;
+    if (cur && p.marks?.length) html += `<div style="overflow-x:auto"><table style="font-size:12px"><thead><tr><th style="text-align:left">Holding</th><th>Amount at re-balance</th><th>Entry</th><th>Last</th><th>Result</th></tr></thead><tbody>${p.marks.map((x) => `<tr><td style="text-align:left">${x.kind === 'stock' ? `<span data-sym="${esc(x.symbol || x.name)}">${esc(x.name)}</span>` : esc(x.name)}</td><td>${imAmt(x.amount)}</td><td>${x.entry ? `₹${x.entry.toFixed(1)}` : '–'}</td><td>${x.last ? `₹${x.last.toFixed(1)}` : '–'}</td><td style="color:${imCol(x.retPct)}">${x.retPct >= 0 ? '+' : ''}${x.retPct.toFixed(2)}%</td></tr>`).join('')}</tbody></table></div>`;
   }
+  html += idleCashNote();
   $('indiaOut').innerHTML = html;
+  if (typeof avoidMark === 'function') avoidMark($('indiaOut')); // ⚠ don't-buy-now badges (43-avoid-list.js)
 }
 lazy('India mix', async () => {
   try { imRender(await api('/api/india-mix')); } catch (e) { $('indiaOut').innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`; }

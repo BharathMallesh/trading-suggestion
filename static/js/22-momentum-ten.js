@@ -25,12 +25,13 @@ function m10Render(d) {
     const cur = p.rebalances.at(-1);
     const value = p.curve.at(-1)?.value ?? p.capital;
     html += `<div style="font-size:14px;margin-top:12px"><b>Paper portfolio</b> (₹${Math.round(p.capital).toLocaleString('en-IN')} from ${esc(p.startedAt)}): ${cur ? `<b style="color:${m10Col(value - p.capital)}">₹${Math.round(value).toLocaleString('en-IN')}</b> (${m10Pc(value / p.capital - 1)}) · ${p.rebalances.length} monthly change${p.rebalances.length === 1 ? '' : 's'}` : 'starts at the first session after the month-end'}</div>`;
-    if (cur && p.marks?.length) html += `<div style="overflow-x:auto"><table style="font-size:12px"><thead><tr><th style="text-align:left">Holding</th><th>Since</th><th>Entry</th><th>Last</th><th>Result</th></tr></thead><tbody>${p.marks.map((x) => `<tr><td style="text-align:left">${esc(x.symbol)}</td><td>${esc(x.entryDate || '')}</td><td>₹${x.entry.toFixed(1)}</td><td>${x.last ? `₹${x.last.toFixed(1)}` : '–'}</td><td style="color:${m10Col(x.retPct)}"><b>${x.retPct >= 0 ? '+' : ''}${x.retPct.toFixed(1)}%</b></td></tr>`).join('')}</tbody></table></div>`;
+    if (cur && p.marks?.length) html += `<div style="overflow-x:auto"><table style="font-size:12px"><thead><tr><th style="text-align:left">Holding</th><th>Since</th><th>Entry</th><th>Last</th><th>Result</th></tr></thead><tbody>${p.marks.map((x) => `<tr><td style="text-align:left"><span data-sym="${esc(x.symbol)}">${esc(x.symbol)}</span></td><td>${esc(x.entryDate || '')}</td><td>₹${x.entry.toFixed(1)}</td><td>${x.last ? `₹${x.last.toFixed(1)}` : '–'}</td><td style="color:${m10Col(x.retPct)}"><b>${x.retPct >= 0 ? '+' : ''}${x.retPct.toFixed(1)}%</b></td></tr>`).join('')}</tbody></table></div>`;
     if (cur && (cur.bought?.length || cur.sold?.length)) html += `<div class="note">Last change (${esc(cur.date)}): bought ${esc(cur.bought.join(', ') || 'none')} · sold ${esc(cur.sold.join(', ') || 'none')}.</div>`;
-    html += `<div style="font-size:13px;margin-top:8px">List from the ${esc(p.monthEnd)} close: ${p.list.map((x) => `<b>${esc(x.symbol)}</b>`).join(', ')}</div>`;
-    if (p.preview?.list?.length) html += `<div class="note">On the ${esc(p.preview.date)} prices the next list would be: ${p.preview.list.map((x) => esc(x.symbol)).join(', ')} (made from the month-end close, swapped at the next open).</div>`;
+    html += `<div style="font-size:13px;margin-top:8px">List from the ${esc(p.monthEnd)} close: ${p.list.map((x) => `<b data-sym="${esc(x.symbol)}">${esc(x.symbol)}</b>`).join(', ')}</div>`;
+    if (p.preview?.list?.length) html += `<div class="note">On the ${esc(p.preview.date)} prices the next list would be: ${p.preview.list.map((x) => `<span data-sym="${esc(x.symbol)}">${esc(x.symbol)}</span>`).join(', ')} (made from the month-end close, swapped at the next open).</div>`;
   }
   $('m10Out').innerHTML = html;
+  if (typeof avoidMark === 'function') avoidMark($('m10Out')); // ⚠ don't-buy-now badges (43-avoid-list.js)
 }
 lazy('Momentum 10', async () => {
   try { m10Render(await api('/api/momentum10')); } catch (e) { $('m10Out').innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`; }
