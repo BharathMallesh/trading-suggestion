@@ -71,6 +71,7 @@ import { thisMonth } from './paper-bot/this-month.mjs';
 import { loadIndiaMix, loadIndiaMixPaper } from './paper-bot/india-mix.mjs';
 import { loadOptionStrikes } from './paper-bot/option-strikes.mjs';
 import { loadImbalanceSwing, loadImbalancePaper } from './paper-bot/imbalance-swing.mjs';
+import { loadOneFifteen, paperSummary as oneFifteenPaper } from './paper-bot/one-fifteen.mjs';
 import { loadMatrixCalendar } from './paper-bot/matrix-calendar.mjs';
 import { tradePlan } from './paper-bot/trade-plan.mjs';
 import { loadSwingOrb } from './paper-bot/swing-orb.mjs';
@@ -794,6 +795,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/api/avoid-list') return json(res, 200, avoidListView()); // Investing → Don't buy now (+ badges on the stock lists)
     if (req.method === 'GET' && url.pathname === '/api/e2-swing') return json(res, 200, loadE2Paper() || {}); // Trading strategies → Momentum breakout (paper)
     if (req.method === 'GET' && url.pathname === '/api/imbalance-swing') return json(res, 200, { backtest: loadImbalanceSwing(), paper: loadImbalancePaper() });
+    if (req.method === 'GET' && url.pathname === '/api/one-fifteen') return json(res, 200, { backtest: loadOneFifteen(), paper: oneFifteenPaper() });
     if (req.method === 'GET' && url.pathname === '/api/option-strikes') return json(res, 200, loadOptionStrikes() || {});
     if (req.method === 'GET' && url.pathname === '/api/global-mix') return json(res, 200, { paper: loadGlobalMixPaper(), research: GLOBAL_RESEARCH }); // Investing → Global mix (paper)
     if (req.method === 'GET' && url.pathname === '/api/ml-picks') return json(res, 200, loadMlPaper() || {}); // Investing → ML stock picks (paper)

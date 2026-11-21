@@ -31,6 +31,7 @@ do_collect() {
   wait_online; node paper-bot/collector.mjs --notify
   # paper records of all the strategies (after the close)
   node paper-bot/vwap-pullback.mjs --paper
+  node --max-old-space-size=4000 paper-bot/one-fifteen.mjs --paper || true   # 1:15 PM reversal (YouTube): paper record + levels for the next session
   node paper-bot/ath-swing.mjs --paper --alerts   # also: trailing-stop price alerts for open swing positions
   node paper-bot/swing-orb.mjs   # swing entry timing test: buy at the open vs on the opening-range breakout
   node paper-bot/breakfast.mjs --paper
@@ -82,6 +83,8 @@ do_refit() {
   node paper-bot/prob-improve.mjs
   # Re-run the VWAP strategy improvement test on the (growing) saved 5-minute history.
   node paper-bot/vwap-pullback.mjs --improve >/dev/null
+  # 1:15 PM reversal: re-run the 5-year test (Groww history + the live 5-minute store)
+  node --max-old-space-size=8000 paper-bot/one-fifteen.mjs --backtest >/dev/null 2>&1 || true
   # Re-test the per-signal odds (shown adjusted only if they beat the plain win rate out of sample)
   node paper-bot/vwap-odds.mjs >/dev/null
   # NSE holiday list (exchange calendar for health checks, alerts and market-open status)
