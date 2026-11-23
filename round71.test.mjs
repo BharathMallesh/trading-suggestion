@@ -164,11 +164,13 @@ test('controls: continuation buys above the high after a rise; fade enters at th
   assert.equal(r1[0].side, r2[0].side, 'random side is seeded (repeatable)');
 });
 
-test('charges: futures STT 0.0125% before Oct 2024, 0.02% after; stamp on buys only; brokerage capped at ₹20', () => {
+test('charges: futures STT 0.0125% before Oct 2024, 0.02% after, 0.05% from Apr 2026; stamp on buys only; brokerage capped at ₹20', () => {
   const a = futuresCharges({ side: 'sell', value: 1e6, date: '2024-09-30' });
   const b = futuresCharges({ side: 'sell', value: 1e6, date: '2024-10-01' });
   close(a.breakdown.stt, 125);
   close(b.breakdown.stt, 200);
+  close(futuresCharges({ side: 'sell', value: 1e6, date: '2026-03-31' }).breakdown.stt, 200);
+  close(futuresCharges({ side: 'sell', value: 1e6, date: '2026-04-01' }).breakdown.stt, 500);
   close(b.breakdown.brokerage, 20);
   assert.equal(b.breakdown.stamp, 0);
   close(futuresCharges({ side: 'buy', value: 1e6 }).breakdown.stamp, 20);

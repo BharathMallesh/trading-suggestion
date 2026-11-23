@@ -67,14 +67,15 @@ export function slippedPrice(price, side, costs = DEFAULT_COSTS) {
 
 /**
  * Charges for ONE executed futures order (stock or index futures, NSE), excluding slippage.
- * STT 0.02% on sells from 1 Oct 2024 (0.0125% before), exchange 0.00173%, SEBI ₹10/crore, stamp 0.002% on buys,
+ * STT on sells: 0.0125% before 1 Oct 2024, 0.02% from then, 0.05% from 1 Apr 2026 (Finance Bill 2026, s. 98 entry (c)), exchange 0.00173%, SEBI ₹10/crore, stamp 0.002% on buys,
  * brokerage min(₹20, 0.03%), GST 18% on brokerage + exchange + SEBI. `date` (YYYY-MM-DD) picks the STT rate.
  */
 export function futuresCharges({ side, value, date = '2099-01-01', brokeragePct = 0.03, brokerageCap = 20 }) {
   const v = Math.max(0, Number(value) || 0);
   const pct = (x) => (v * x) / 100;
   const brokerage = Math.min(pct(brokeragePct), brokerageCap || Infinity);
-  const stt = side === 'sell' ? pct(String(date) >= '2024-10-01' ? 0.02 : 0.0125) : 0;
+  const d = String(date);
+  const stt = side === 'sell' ? pct(d >= '2026-04-01' ? 0.05 : d >= '2024-10-01' ? 0.02 : 0.0125) : 0;
   const exchange = pct(0.00173);
   const sebi = pct(RATES.sebiPct);
   const stamp = side === 'buy' ? pct(0.002) : 0;

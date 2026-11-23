@@ -51,6 +51,7 @@ const VIEWS = [
   { key: 'intraday', match: /^(Strategy comparison|Strong-stock swing|Same stocks every day|1:15 PM reversal|Breakfast strategy|NIFTY dip-buy|NIFTY short strangle|F&O spreads|RSI swing|Imbalance swing|Momentum breakout|Leader box breakout|Bonus\/split run-up|IPO apply|Matrix calendar)/, note: 'Trading strategies: eleven rule-based strategies, each with live signals, an honest backtest and a paper record. Pick one below. Paper only until they prove themselves.' },
   { key: 'calendar', match: /^Calendar/, note: 'Calendar: which months, weekdays and parts of the month have been better or worse since 2008 — NIFTY, the average NSE top-200 stock and each of your strategies — and what happens around market holidays. Every answer checked in 2008–16 and 2017 → separately.' },
   { key: 'days', match: /^Day patterns/, note: 'Day patterns: which strategy did better or worse on which weekday, after a gap-up, gap-down or flat open, and the Monday tests. Most weekday differences are chance; the tab says which ones held up.' },
+  { key: 'breakdown', match: /^Breakdown/, note: 'Breakdown: every strategy\'s backtest and paper results by weekday, week of the month, month, quarter (calendar and FY) and year, with every number checked both ways. Paper research only.' },
   { key: 'lab', match: /./, note: 'Research lab: every other experiment, including the ones that found no edge (AI direction calls, Kronos / Chronos, option positioning…), plus market data and settings.' },
 ];
 const OLD_VIEW = { money: 'home' }; // tab names before the split

@@ -33,6 +33,7 @@
         <button type="button" data-view="intraday" title="Rule-based strategies (swing, YouTube intraday, Breakfast, NIFTY dip-buy, F&amp;O strangle), live and on paper">Trading strategies</button>
         <button type="button" data-view="calendar" title="Month of the year, weekday, market holidays, start / middle / end of the month — since 2008">Calendar</button>
         <button type="button" data-view="days" title="Which strategy did better or worse on which weekday, after a gap or a flat open, and the Monday tests">Day patterns</button>
+        <button type="button" data-view="breakdown" title="Every strategy's backtest and paper results by weekday, week of the month, month, quarter, FY quarter and year — every number checked both ways">Breakdown</button>
         <button type="button" data-view="lab" title="Every experiment, including the ones that found no edge">Research lab</button>
         <a class="help" href="/guide" target="_blank" rel="noopener" title="Step-by-step guide to every card, for beginners">? Help &amp; guide</a>
       </div>
@@ -341,6 +342,27 @@
         <p class="hint">Which months, weekdays and parts of the month have been better or worse — for NIFTY, the average NSE top-200 stock and each of your strategies —
           and what happens the day before and after a market holiday. Every answer checked in 2008–16 and 2017 → separately, so chance patterns show up.</p>
         <div id="calOut" style="margin-top:10px">Loading…</div>
+      </section>
+
+      <!-- Breakdown: every strategy's backtest + paper results by calendar bucket, validated both ways -->
+      <section class="card span2" id="bdCard">
+        <h2>Breakdown <span style="font-size:12px;color:var(--warn);font-weight:500">EVERY STRATEGY · WEEKDAY · WEEK OF MONTH · MONTH · QUARTER · FY QUARTER · YEAR · BACKTEST + PAPER · CHECKED BOTH WAYS</span></h2>
+        <p class="hint">Pick strategies and a grouping to see each one's results by weekday, week of the month (days 1–7 = week 1), month, quarter (calendar, or the Indian
+          financial year: Apr–Jun = FY Q1) and year — for the backtest trades and the paper (forward) trades. Every total is checked against the ungrouped total and the
+          number the strategy's own card shows (table at the bottom). Groups with fewer than 20 trades are greyed: too few to judge. Paper research only — not advice.</p>
+        <label>Strategies</label>
+        <div id="bdStrats" style="display:flex;flex-wrap:wrap;gap:4px 12px;font-size:13px">Loading…</div>
+        <div class="row" style="margin-top:4px">
+          <div><label for="bdGroup">Group by</label><select id="bdGroup"><option value="weekday">Weekday</option><option value="weekOfMonth">Week of the month (1–5)</option><option value="month">Month</option><option value="quarter">Quarter (Jan–Mar = Q1)</option><option value="fyQuarter">FY quarter (Apr–Jun = Q1)</option><option value="year">Year</option></select></div>
+          <div><label for="bdSource">Source</label><select id="bdSource"><option value="both">Backtest + paper</option><option value="backtest">Backtest only</option><option value="paper">Paper only</option></select></div>
+          <div><label for="bdVersion">Version</label><select id="bdVersion"><option value="">All versions</option></select></div>
+          <div><label for="bdSide">Side</label><select id="bdSide"><option value="">Both sides</option><option value="long">Buy (long)</option><option value="short">Short</option></select></div>
+          <div><label for="bdDate">Date used</label><select id="bdDate"><option value="entry">Entry date</option><option value="exit">Exit date</option></select></div>
+          <div><label for="bdFrom">From</label><input id="bdFrom" type="date" /></div>
+          <div><label for="bdTo">To</label><input id="bdTo" type="date" /></div>
+        </div>
+        <button id="bdRun" type="button">Show breakdown</button>
+        <div id="bdOut" style="margin-top:10px">Loading…</div>
       </section>
 
       <!-- Day patterns: every strategy by weekday and opening gap, plus the Monday tests -->
@@ -1191,6 +1213,7 @@
     <script src="/static/js/42-ipo-apply.js"></script>
     <script src="/static/js/43-avoid-list.js"></script>
     <script src="/static/js/44-one-fifteen.js"></script>
+    <script src="/static/js/45-breakdown.js"></script>
     <script src="/static/js/19-my-plan.js"></script>
     <script src="/static/js/20-rsi-swing.js"></script>
   </body>

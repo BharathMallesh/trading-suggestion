@@ -61,6 +61,7 @@ import { loadAthSwing, athSwingScan, loadAthPaper, loadSurvivorship, summarise a
 import { dayResults } from './paper-bot/day-results.mjs';
 import { loadFnoSpreads, fnoSpreadsTest, saveFnoSpreads } from './paper-bot/fno-spreads.mjs';
 import { loadDayPatterns } from './paper-bot/day-patterns.mjs';
+import { breakdownQuery } from './paper-bot/breakdown.mjs';
 import { myPlan } from './paper-bot/my-plan.mjs';
 import { loadRsiSwing, loadRsiSwingPaper, summarise as rsiSummarise } from './paper-bot/rsi-swing.mjs';
 import { loadMomentum, loadMomentumPaper } from './paper-bot/momentum.mjs';
@@ -804,6 +805,8 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/api/momentum10') return json(res, 200, { backtest: loadMomentum10(), paper: loadMomentum10Paper() });
     if (req.method === 'GET' && url.pathname === '/api/new-ideas') return json(res, 200, loadNewIdeas() || {});
     if (req.method === 'GET' && url.pathname === '/api/day-patterns') return json(res, 200, loadDayPatterns() || {});
+    // Breakdown: every strategy's backtest + paper results by weekday / week of month / month / quarter / FY quarter / year, validated both ways (rows cached by file mtimes)
+    if (req.method === 'GET' && url.pathname === '/api/breakdown') return json(res, 200, breakdownQuery(Object.fromEntries(url.searchParams)));
     if (req.method === 'GET' && url.pathname === '/api/day-patterns/today') {
       // "What works today?": logics ranked for today's weekday / opening, with stocks and the last few days
       const logic = url.searchParams.get('logic') || null;

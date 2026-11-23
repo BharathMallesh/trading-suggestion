@@ -75,3 +75,5 @@ The 1:15 reversal "works" only if, for version V or S on the main ≥ 3% list, a
 3. total ₹ without the best 10 trades > 0;
 4. better net R than the fade-at-13:45 control in at least 2 of the 3 periods.
 Otherwise it is labelled "does not work after costs" (or "positive but not reliable"). Forward paper record either way.
+
+- Correction (23 Nov 2026, after results): futures STT on sells is 0.05% from 1 Apr 2026 (Finance Bill 2026); costs.mjs updated. Affects only carried trades from Apr 2026 (a few); the verdict is unchanged.
