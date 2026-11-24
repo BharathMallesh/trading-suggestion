@@ -84,6 +84,7 @@ import { loadLbbPaper } from './paper-bot/lbb-swing.mjs';
 import { loadBonusRunupPaper } from './paper-bot/bonus-runup.mjs';
 import { loadIpoApplyPaper } from './paper-bot/ipo-apply.mjs';
 import { avoidListView } from './paper-bot/avoid-list.mjs';
+import { newsWatchView, addWatchSymbol, removeWatchSymbol, runNewsWatch } from './paper-bot/news-watch.mjs';
 import { loadMlPaper } from './paper-bot/ml-picks.mjs';
 import { loadGlobalMixPaper, RESEARCH as GLOBAL_RESEARCH } from './paper-bot/global-mix.mjs';
 import { loadIntraday5y } from './paper-bot/intraday-5y.mjs';
@@ -185,6 +186,7 @@ function guard(req, url) {
   }
 }
 
+let newsWatchBusy = false; // one News watch check at a time (it calls NSE, the news feeds and the AI)
 const PAPER_INTERVALS = new Set(['1d', '15m', '5m', '1h']);
 
 /**
@@ -794,6 +796,23 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/api/bonus-runup') return json(res, 200, loadBonusRunupPaper() || {}); // Trading strategies → Bonus/split run-up (paper)
     if (req.method === 'GET' && url.pathname === '/api/ipo-apply') return json(res, 200, loadIpoApplyPaper() || {}); // Trading strategies → IPO apply (paper)
     if (req.method === 'GET' && url.pathname === '/api/avoid-list') return json(res, 200, avoidListView()); // Investing → Don't buy now (+ badges on the stock lists)
+    // Investing → News watch: per-stock news, event type, AI call + its scorecard (calls never feed any strategy)
+    if (req.method === 'GET' && url.pathname === '/api/news-watch') return json(res, 200, await newsWatchView());
+    if (req.method === 'POST' && url.pathname === '/api/news-watch/add') return json(res, 200, addWatchSymbol((await readJson(req)).symbol));
+    if (req.method === 'POST' && url.pathname === '/api/news-watch/remove') return json(res, 200, removeWatchSymbol((await readJson(req)).symbol));
+    if (req.method === 'POST' && url.pathname === '/api/news-watch/check') {
+      // read one stock's news now (same rules as the evening job: logged only while the market is closed)
+      const sym = String((await readJson(req)).symbol || '').trim().toUpperCase().replace(/\.(NS|BO)$/, '');
+      if (!/^[A-Z0-9&-]{1,20}$/.test(sym)) throw badRequest('symbol is required, e.g. TCS');
+      if (newsWatchBusy) throw new HttpError(409, 'A news check is already running — try again in a minute.');
+      newsWatchBusy = true;
+      try {
+        await runNewsWatch({ symbols: [sym] });
+      } finally {
+        newsWatchBusy = false;
+      }
+      return json(res, 200, await newsWatchView());
+    }
     if (req.method === 'GET' && url.pathname === '/api/e2-swing') return json(res, 200, loadE2Paper() || {}); // Trading strategies → Momentum breakout (paper)
     if (req.method === 'GET' && url.pathname === '/api/imbalance-swing') return json(res, 200, { backtest: loadImbalanceSwing(), paper: loadImbalancePaper() });
     if (req.method === 'GET' && url.pathname === '/api/one-fifteen') return json(res, 200, { backtest: loadOneFifteen(), paper: oneFifteenPaper() });

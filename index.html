@@ -443,6 +443,16 @@
         <div id="avoidOut" style="margin-top:10px">Loading…</div>
       </section>
 
+      <!-- News watch: per-stock news + an AI direction call that is logged and scored (unproven; feeds no strategy) -->
+      <section class="card span2" id="newsWatchCard">
+        <h2>News watch <span style="font-size:12px;color:var(--warn);font-weight:500">NSE ANNOUNCEMENTS · HEADLINES · AI CALL UP / DOWN · SCORED AFTER 1 AND 5 SESSIONS · UNPROVEN</span></h2>
+        <p class="hint">Each evening the app reads the news of the Momentum 10 / India mix stocks and any you add: NSE announcements of the last 2 sessions, recent headlines, the event type, a short AI summary,
+          and a call — <b>UP / DOWN / NO CALL</b> for the next session and for 5 sessions — with the tested history of that kind of news and any ⚠ don't-buy-now warning. Every call is logged at that day's close
+          and scored against the stock's move vs NIFTY. In 20 rounds of testing <b>no news rule predicted next-day or 5-day direction reliably after costs</b>, so treat the calls as unproven until the scorecard
+          (at least 100 scored calls, 95% interval above 50%) says otherwise. The calls never change any strategy. Not advice.</p>
+        <div id="nwOut" style="margin-top:10px">Loading…</div>
+      </section>
+
       <!-- New ideas: low volatility, momentum + low volatility, momentum with a market filter, index inclusion -->
       <section class="card span2" id="ideasCard">
         <h2>New ideas test <span style="font-size:12px;color:var(--warn);font-weight:500">LOW VOLATILITY · MOMENTUM + CALM · MARKET FILTER · INDEX INCLUSION · TESTED</span></h2>
@@ -1214,6 +1224,7 @@
     <script src="/static/js/43-avoid-list.js"></script>
     <script src="/static/js/44-one-fifteen.js"></script>
     <script src="/static/js/45-breakdown.js"></script>
+    <script src="/static/js/46-news-watch.js"></script>
     <script src="/static/js/19-my-plan.js"></script>
     <script src="/static/js/20-rsi-swing.js"></script>
   </body>

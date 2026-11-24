@@ -64,6 +64,8 @@ do_collect() {
   node paper-bot/ipo-apply.mjs --paper || true
   # Don't-buy-now warnings (loop 14): NSE PR zip (circuits, series), band changes and ASM lists → 5/20-session avoid list
   node paper-bot/avoid-list.mjs --paper || true
+  # News watch: NSE announcements + headlines for the Momentum 10 / India mix / added stocks, AI call + scorecard (calls feed nothing else)
+  OPENROUTER_API_KEY="$(key trading-research-openrouter)" node paper-bot/news-watch.mjs --run || true   # AI key for this command only (empty: news + events, rule calls)
   # NSE delivery files (needed by the ML picks), then the ML stock picks paper portfolio (re-ranks once a month)
   node paper-bot/delivery.mjs 2026-01 || true
   node --max-old-space-size=12000 paper-bot/ml-picks.mjs --paper
