@@ -41,7 +41,7 @@ export const STRATEGIES = {
   'fo-spread': 'F&O spreads (₹10,000 practice)', 'rsi-swing': 'RSI swing', ath: 'Strong-stock swing', 'imbalance-swing': 'Imbalance swing',
   'e2-swing': 'Momentum breakout', 'lbb-swing': 'Leader box breakout', 'bonus-runup': 'Bonus/split run-up', 'ipo-apply': 'IPO apply',
   'nifty-dip': 'NIFTY dip-buy', 'ml-picks': 'ML stock picks', 'india-mix': 'India mix', 'steady-mix': 'Steady mix', momentum10: 'Momentum 10',
-  momentum: 'Momentum 20', 'global-mix': 'Global mix',
+  momentum: 'Momentum 20', 'global-mix': 'Global mix', finalist2: 'Finalist 2',
 };
 export const GROUPS = ['weekday', 'weekOfMonth', 'month', 'quarter', 'fyQuarter', 'year'];
 export const MIN_TRADES = 20; // fewer trades in a bucket: "too few to judge"
@@ -225,6 +225,7 @@ export const PAPER_ADAPTERS = {
   'momentum10-paper.json': (st, out, f) => accountCurve(st, out, f, 'momentum10', 'value', st.capital),
   'momentum-paper.json': (st, out, f) => accountCurve(st, out, f, 'momentum', 'value', st.capital),
   'global-mix-paper.json': (st, out, f) => accountCurve(st, out, f, 'global-mix', 'value', st.capital),
+  'finalist2-paper.json': (st, out, f) => accountCurve(st, out, f, 'finalist2', 'value', st.capital),
 };
 function foPaper(st, out, f, version) {
   if (!Array.isArray(st.trades)) throw new Error('no trades array');

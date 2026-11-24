@@ -174,8 +174,10 @@ export async function buildBhavHistory({ from = '2008-01-01', loadCandles = cand
  * Adjusted daily series per symbol: Map(sym → [{date, open, high, low, close, val}]).
  * On a corporate-action ex-date NSE's PREVCLOSE differs from the previous close;
  * every earlier price is multiplied by PREVCLOSE / previous close.
+ * keepRaw: also keep each day's real (unadjusted) close as `rawClose` — what a buyer actually paid, for whole-share
+ * counts and "can one share be afforded" checks (adjusted prices understate pre-split prices).
  */
-export function loadSeries({ months = null } = {}) {
+export function loadSeries({ months = null, keepRaw = false } = {}) {
   const dir = DIR();
   if (!existsSync(dir)) return new Map();
   const files = readdirSync(dir).filter((f) => f.endsWith('.json.gz')).sort();
@@ -187,7 +189,7 @@ export function loadSeries({ months = null } = {}) {
     for (const d of Object.keys(m).sort()) {
       for (const [sym, o, h, l, c, prev, val] of m[d]) {
         if (!raw.has(sym)) raw.set(sym, []);
-        raw.get(sym).push({ date: d, open: o, high: h, low: l, close: c, prev, val });
+        raw.get(sym).push(keepRaw ? { date: d, open: o, high: h, low: l, close: c, prev, val, rawClose: c } : { date: d, open: o, high: h, low: l, close: c, prev, val });
       }
     }
   }

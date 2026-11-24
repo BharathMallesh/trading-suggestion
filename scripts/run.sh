@@ -53,6 +53,8 @@ do_collect() {
   node paper-bot/india-mix.mjs --paper
   # Global mix: ⅓ Momentum 10 / ⅓ Nasdaq-100 (MON100) / ⅓ gold paper portfolio (same engine and 5-point band)
   node paper-bot/global-mix.mjs --paper
+  # Finalist 2 (loop-22 algo search, heavier momentum): PAPER ONLY — ½ momentum stocks in 2 tranches / ⅓ GOLDBEES / ⅙ JUNIORBEES (uses the NSE file added above)
+  node --max-old-space-size=12000 paper-bot/finalist2.mjs --paper || true
   # Imbalance swing: paper record + scan from the NSE daily files added above
   node --max-old-space-size=12000 paper-bot/imbalance-swing.mjs --paper
   # Momentum breakout swing (E2, from the multi-agent search): paper account + today's signals (needs today's NSE file above)

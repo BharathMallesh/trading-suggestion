@@ -88,6 +88,7 @@ import { newsWatchView, addWatchSymbol, removeWatchSymbol, runNewsWatch } from '
 import { newsPickView } from './paper-bot/news-pick.mjs';
 import { loadMlPaper } from './paper-bot/ml-picks.mjs';
 import { loadGlobalMixPaper, RESEARCH as GLOBAL_RESEARCH } from './paper-bot/global-mix.mjs';
+import { finalist2View } from './paper-bot/finalist2.mjs';
 import { loadIntraday5y } from './paper-bot/intraday-5y.mjs';
 import { foPlan } from './paper-bot/fo-plan.mjs';
 import { expiryStatus } from './paper-bot/expiry.mjs';
@@ -846,6 +847,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/api/imbalance-swing') return json(res, 200, { backtest: loadImbalanceSwing(), paper: loadImbalancePaper() });
     if (req.method === 'GET' && url.pathname === '/api/one-fifteen') return json(res, 200, { backtest: loadOneFifteen(), paper: oneFifteenPaper() });
     if (req.method === 'GET' && url.pathname === '/api/option-strikes') return json(res, 200, loadOptionStrikes() || {});
+    if (req.method === 'GET' && url.pathname === '/api/finalist2') return json(res, 200, finalist2View()); // Investing → Finalist 2 (paper only)
     if (req.method === 'GET' && url.pathname === '/api/global-mix') return json(res, 200, { paper: loadGlobalMixPaper(), research: GLOBAL_RESEARCH }); // Investing → Global mix (paper)
     if (req.method === 'GET' && url.pathname === '/api/ml-picks') return json(res, 200, loadMlPaper() || {}); // Investing → ML stock picks (paper)
     if (req.method === 'GET' && url.pathname === '/api/india-mix') return json(res, 200, { backtest: loadIndiaMix(), paper: loadIndiaMixPaper() });
