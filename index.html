@@ -590,6 +590,14 @@
         <div id="spOut" style="margin-top:10px">Loading…</div>
       </section>
 
+      <!-- Afternoon trend: the loop-23 option-buying near-miss (T1), replayed after the close from 5-minute bars; paper only (50-afternoon-trend.js) -->
+      <section class="card span2" id="afternoonCard">
+        <h2>Afternoon trend (option buying) <span style="font-size:12px;color:var(--warn);font-weight:500">NIFTY WEEKLY OPTIONS · 12:30 → 15:15 · LOST BOTH UNSEEN PERIODS · PAPER ONLY · NO BROKER ORDERS</span></h2>
+        <p class="hint">The closest miss of the loop-23 option-buying search: on a day NIFTY has trended 0.4% or more by 12:25 and is still at its extreme, buy the at-the-money weekly option that way at 12:30, with a 20% stop and a 50% target, out by 15:15.
+          It passed the 2020–21 search but lost in 2022 and in 2023–26, so it is tracked on paper only, to see whether it comes back. Each evening it is replayed from the day's 5-minute bars at the rule times.</p>
+        <div id="atOut" style="margin-top:10px">Loading…</div>
+      </section>
+
       <!-- F&O risk check: before a trade, how bad can one week get for this account? -->
       <section class="card span2" id="foRiskCard">
         <h2>F&amp;O risk check <span style="font-size:12px;color:var(--warn);font-weight:500">BEFORE YOU TRADE · TODAY'S NSE PRICES · EVERY NIFTY MOVE SINCE 2010 · BLOCKS OVERSIZED TRADES</span></h2>
@@ -1257,6 +1265,7 @@
     <script src="/static/js/47-algo-plan.js"></script>
     <script src="/static/js/48-expiry.js"></script>
     <script src="/static/js/49-finalist-two.js"></script>
+    <script src="/static/js/50-afternoon-trend.js"></script>
     <script src="/static/js/19-my-plan.js"></script>
     <script src="/static/js/20-rsi-swing.js"></script>
   </body>

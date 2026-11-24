@@ -38,6 +38,8 @@ do_collect() {
   node paper-bot/breakfast.mjs --paper
   node paper-bot/nifty-dip.mjs --paper
   node paper-bot/fo-strangle.mjs --paper   # F&O: NSE files arrive in the evening, so this records up to yesterday
+  # Afternoon trend (loop-23 option-buying near-miss): replays today's 5-minute bars (saved above) at the rule times; option prices from Groww. PAPER ONLY
+  GROWW_API_KEY="$(key trading-research-groww-key)" GROWW_API_SECRET="$(key trading-research-groww-secret)" node paper-bot/afternoon-trend.mjs --paper || true
   node --max-old-space-size=4000 paper-bot/spread-paper.mjs   # ₹10,000 practice account: Fits-my-budget spreads (settles / marks; opens only if today's NSE file is out)
   node paper-bot/core-satellite.mjs --update   # the 80/20 index fund + swing paper account
   node --max-old-space-size=8000 paper-bot/rsi-swing.mjs --paper   # RSI swing (Rathod): live scan + paper record

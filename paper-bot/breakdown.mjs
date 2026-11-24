@@ -31,6 +31,7 @@ import { summarise as foSummarise } from './fo-strangle.mjs';
 import { summarise as athSummarise } from './ath-swing.mjs';
 import { summarise as rsiSummarise } from './rsi-swing.mjs';
 import { paperView as dipPaperView, versionOf as dipVersionOf } from './nifty-dip.mjs';
+import { summarise as atSummarise } from './afternoon-trend.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const DATA_DIR = () => process.env.BREAKDOWN_DATA_DIR || join(HERE, 'data');
@@ -41,7 +42,7 @@ export const STRATEGIES = {
   'fo-spread': 'F&O spreads (₹10,000 practice)', 'rsi-swing': 'RSI swing', ath: 'Strong-stock swing', 'imbalance-swing': 'Imbalance swing',
   'e2-swing': 'Momentum breakout', 'lbb-swing': 'Leader box breakout', 'bonus-runup': 'Bonus/split run-up', 'ipo-apply': 'IPO apply',
   'nifty-dip': 'NIFTY dip-buy', 'ml-picks': 'ML stock picks', 'india-mix': 'India mix', 'steady-mix': 'Steady mix', momentum10: 'Momentum 10',
-  momentum: 'Momentum 20', 'global-mix': 'Global mix', finalist2: 'Finalist 2',
+  momentum: 'Momentum 20', 'global-mix': 'Global mix', finalist2: 'Finalist 2', 'afternoon-trend': 'Afternoon trend (option buying)',
 };
 export const GROUPS = ['weekday', 'weekOfMonth', 'month', 'quarter', 'fyQuarter', 'year'];
 export const MIN_TRADES = 20; // fewer trades in a bucket: "too few to judge"
@@ -226,6 +227,14 @@ export const PAPER_ADAPTERS = {
   'momentum-paper.json': (st, out, f) => accountCurve(st, out, f, 'momentum', 'value', st.capital),
   'global-mix-paper.json': (st, out, f) => accountCurve(st, out, f, 'global-mix', 'value', st.capital),
   'finalist2-paper.json': (st, out, f) => accountCurve(st, out, f, 'finalist2', 'value', st.capital),
+  // Afternoon trend (loop-23 option-buying near-miss): scored paper trades only — TEST entries (--date backfills) and skipped days are left out
+  'afternoon-trend-paper.json': (st, out, f) => {
+    if (!Array.isArray(st.days)) throw new Error('no days array');
+    const trades = st.days.filter((d) => d && !d.test && d.status === 'trade');
+    collector(out, f)({ strategy: 'afternoon-trend', version: 'paper', source: 'paper' }, trades, (t) => ({ symbol: 'NIFTY', side: 'long', entryDate: t.date, exitDate: t.date, pnl: t.pnl, gross: t.gross, charges: t.charges, retPct: num(t.ret) != null ? t.ret * 100 : null }));
+    const s = atSummarise(st.days);
+    report(out, { strategy: 'afternoon-trend', version: 'paper', source: 'paper', unit: '₹', trades: s.n, net: s.totalRs, by: 'afternoon-trend.mjs summarise() (the card)' });
+  },
 };
 function foPaper(st, out, f, version) {
   if (!Array.isArray(st.trades)) throw new Error('no trades array');
