@@ -37,7 +37,7 @@ export const SERVER_URL = () => process.env.WATCHDOG_SERVER_URL || 'http://127.0
 export const DUE_MINS = 16 * 60 + 5; // the collect job starts at 16:05 IST on trading days
 export const BACKUP_MAX_DAYS = 2;
 export const REFIT_MAX_DAYS = 8;
-export const JOBS = ['server', 'collect', 'monitor', 'refit', 'backup'];
+export const JOBS = ['server', 'morning', 'collect', 'monitor', 'refit', 'backup'];
 export const LABELS = JOBS.map((j) => `com.trading-research.${j}`);
 
 const ist = (now) => {

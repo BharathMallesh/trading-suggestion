@@ -5,6 +5,7 @@
 #   scripts/run.sh monitor    – investor monitor (+ macOS notifications)
 #   scripts/run.sh refit      – weekly model refit
 #   scripts/run.sh backup     – daily backup of the evidence (~/trading-research-backups + iCloud copy)
+#   scripts/run.sh morning    – 08:40 news pick (picks + random control, scored from the open; feeds no strategy)
 # Secrets come from the macOS Keychain (encrypted), never from files:
 #   security add-generic-password -U -a "$USER" -s trading-research-openrouter -w   # prompts for the key
 #   security add-generic-password -U -a "$USER" -s trading-research-groww-key -w     # Groww API key (optional)
@@ -66,6 +67,8 @@ do_collect() {
   node paper-bot/avoid-list.mjs --paper || true
   # News watch: NSE announcements + headlines for the Momentum 10 / India mix / added stocks, AI call + scorecard (calls feed nothing else)
   OPENROUTER_API_KEY="$(key trading-research-openrouter)" node paper-bot/news-watch.mjs --run || true   # AI key for this command only (empty: news + events, rule calls)
+  # Morning news pick: score the outstanding picks and their random controls (entry at the pick day's open)
+  node paper-bot/news-pick.mjs --score || true
   # NSE delivery files (needed by the ML picks), then the ML stock picks paper portfolio (re-ranks once a month)
   node paper-bot/delivery.mjs 2026-01 || true
   node --max-old-space-size=12000 paper-bot/ml-picks.mjs --paper
@@ -208,6 +211,12 @@ case "${1:-}" in
     # catch up a failed evening run / weekly refit, then the watchdog with the fresh backup
     catchup
     node paper-bot/watchdog.mjs --notify ;;
+  morning)
+    # 08:40 on weekdays: today's news pick before the open (quiet exit on NSE holidays and after 09:15)
+    caffeinate -i -w $$ & # keep the Mac awake until this job finishes
+    echo "$(date '+%F %T') morning"; wait_online
+    OPENROUTER_API_KEY="$(key trading-research-openrouter)" node paper-bot/news-pick.mjs --run --notify || true   # AI key for this command only (empty: candidates + events, no picks)
+    ;;
   *)
-    echo "usage: scripts/run.sh server|collect|monitor|refit|backup"; exit 2 ;;
+    echo "usage: scripts/run.sh server|collect|monitor|refit|backup|morning"; exit 2 ;;
 esac

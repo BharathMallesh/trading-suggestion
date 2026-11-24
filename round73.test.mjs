@@ -311,7 +311,7 @@ test('wiring: card, view tab, script, routes, evening job; nothing else reads th
   const a = sh.indexOf('node paper-bot/avoid-list.mjs --paper');
   const n = sh.indexOf('node paper-bot/news-watch.mjs --run || true');
   assert.ok(a > 0 && n > a, 'evening job: news watch after the NSE files');
-  for (const f of readdirSync('paper-bot').filter((x) => x.endsWith('.mjs') && x !== 'news-watch.mjs')) {
+  for (const f of readdirSync('paper-bot').filter((x) => x.endsWith('.mjs') && x !== 'news-watch.mjs' && x !== 'news-pick.mjs')) { // news-pick imports the helpers, not the calls (round74 checks)
     assert.ok(!readFileSync(join('paper-bot', f), 'utf8').includes('news-watch'), `${f} must not read News watch calls`);
   }
   assert.ok(!existsSync(join(dir, 'nothing')));

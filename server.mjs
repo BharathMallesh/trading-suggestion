@@ -85,6 +85,7 @@ import { loadBonusRunupPaper } from './paper-bot/bonus-runup.mjs';
 import { loadIpoApplyPaper } from './paper-bot/ipo-apply.mjs';
 import { avoidListView } from './paper-bot/avoid-list.mjs';
 import { newsWatchView, addWatchSymbol, removeWatchSymbol, runNewsWatch } from './paper-bot/news-watch.mjs';
+import { newsPickView } from './paper-bot/news-pick.mjs';
 import { loadMlPaper } from './paper-bot/ml-picks.mjs';
 import { loadGlobalMixPaper, RESEARCH as GLOBAL_RESEARCH } from './paper-bot/global-mix.mjs';
 import { loadIntraday5y } from './paper-bot/intraday-5y.mjs';
@@ -798,6 +799,8 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/api/avoid-list') return json(res, 200, avoidListView()); // Investing → Don't buy now (+ badges on the stock lists)
     // Investing → News watch: per-stock news, event type, AI call + its scorecard (calls never feed any strategy)
     if (req.method === 'GET' && url.pathname === '/api/news-watch') return json(res, 200, await newsWatchView());
+    // Investing → News watch → Today's news pick (08:40 job): picks + random control, scored from the open (feeds nothing)
+    if (req.method === 'GET' && url.pathname === '/api/news-pick') return json(res, 200, newsPickView());
     if (req.method === 'POST' && url.pathname === '/api/news-watch/add') return json(res, 200, addWatchSymbol((await readJson(req)).symbol));
     if (req.method === 'POST' && url.pathname === '/api/news-watch/remove') return json(res, 200, removeWatchSymbol((await readJson(req)).symbol));
     if (req.method === 'POST' && url.pathname === '/api/news-watch/check') {

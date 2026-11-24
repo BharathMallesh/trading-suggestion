@@ -2,6 +2,7 @@
 // NSE announcements and headlines (times + links), event type, AI summary, the UP / DOWN / NO CALL call with its
 // confidence, the tested history of that kind of news and any ⚠ don't-buy-now warning. Add / remove your own stocks.
 // Phone width: blocks wrap (no wide tables); long titles and links break.
+// On top: "Today's news pick" (08:40 job, /api/news-pick) — picks, the random control and the picks-vs-control scorecard.
 // Classic script (not a module): loaded in order by index.html.
 const nwPct = (x, d = 0) => (x == null ? '–' : `${(x * 100).toFixed(d)}%`);
 const nwSigned = (x, d = 2) => (x == null ? '–' : `${x > 0 ? '+' : ''}${x.toFixed(d)}%`);
@@ -98,7 +99,56 @@ function nwRender(d) {
     try { await post('/api/news-watch/remove', { symbol: b.dataset.sym }); nwLoad(); } catch (e) { msg(e.message, true); }
   });
 }
+// ---- Today's news pick (08:40 job) — box at the top of the card ----
+function npStock(p, kind) {
+  const conf = p.confidence != null ? ` · ${Math.round(p.confidence * 100)}%` : '';
+  const items = (p.items || []).slice(0, 4).map((x) => `<li style="margin:2px 0;overflow-wrap:anywhere"><span class="note" style="display:inline">${esc(nwTime(x.time))} · ${esc(x.source)}</span> ${x.link ? `<a href="${esc(x.link)}" target="_blank" rel="noopener noreferrer">${esc(x.title)}</a>` : esc(x.title)}</li>`).join('');
+  return `<div style="flex:1 1 240px;min-width:0;padding:8px 10px;border:1px solid var(--line);border-radius:10px;${kind === 'control' ? 'border-style:dashed' : ''}">
+    <div style="overflow-wrap:anywhere"><span class="note" style="display:inline">${kind === 'control' ? 'Control (random)' : 'Pick'}</span> <b>${esc(p.symbol)}</b>${conf ? `<span class="note" style="display:inline">${conf}</span>` : ''}${p.company ? ` <span class="note" style="display:inline">${esc(p.company)}</span>` : ''}</div>
+    ${p.reason ? `<div style="font-size:12.5px;margin-top:2px;overflow-wrap:anywhere">${esc(p.reason)}</div>` : ''}
+    ${p.note ? `<div class="note" style="margin:2px 0 0">${esc(p.note)}</div>` : ''}
+    <div class="note" style="margin:2px 0 0">Event: ${esc(p.eventLabel || 'none')}${p.history ? ` — tested: ${esc(p.history)}` : ''}</div>
+    ${items ? `<ul style="margin:4px 0 0;padding-left:18px;font-size:12px">${items}</ul>` : ''}</div>`;
+}
+function npSide(label, x) {
+  const ci = x.ci ? ` [${nwPct(x.ci[0])}–${nwPct(x.ci[1])}]` : '';
+  return `<div style="flex:1 1 140px;min-width:0"><div class="note" style="margin:0">${esc(label)}</div><b>${x.n ? nwPct(x.hitRate) : '–'}</b> <span class="note" style="display:inline">beat NIFTY${ci}</span>
+    <div class="note" style="margin:1px 0 0">n ${x.n} · ${x.pending} waiting · avg net ${nwSigned(x.avgNetPct)} · sum ${nwSigned(x.sumNetPct, 1)} · vs NIFTY ${nwSigned(x.avgNetVsNiftyPct)}${x.avgGapPct != null ? ` · avg gap at the open ${nwSigned(x.avgGapPct)}` : ''}</div></div>`;
+}
+function npRender(d) {
+  const L = d.latest;
+  let html = `<div style="padding:10px 12px;border:1px solid var(--line);border-radius:12px;min-width:0">
+    <div style="overflow-wrap:anywhere"><b>Today's news pick</b> <span class="note" style="display:inline">· made before the open at 08:40 · bought at the OPEN · UNPROVEN</span></div>`;
+  if (!L) html += '<div class="note">No morning run yet — the 08:40 job (weekdays) makes the first pick.</div>';
+  else {
+    html += `<div style="font-size:12.5px;margin-top:4px">${esc(L.date)} · news since ${esc(nwTime(L.since))} IST · ${L.pool?.candidates ?? 0} candidates${L.test ? ` · <b style="color:var(--warn)">TEST RUN — ${esc(L.testReason || 'not scored')}</b>` : ''}</div>`;
+    if (L.ai === 'missing') html += `<div style="color:var(--warn);font-size:12.5px;margin-top:4px">${esc(L.aiNote)}</div>`;
+    if (L.picks?.length) html += `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">${L.picks.map((p) => npStock(p, 'pick')).join('')}${L.control ? npStock(L.control, 'control') : ''}</div>`;
+    else html += `<div style="margin-top:6px;font-size:13px"><b>No pick today</b>${L.ai === 'missing' ? '' : ` — ${esc(L.noPickReason || '')}`}</div>`;
+    if (!L.picks?.length && (L.candidates || []).length) {
+      html += `<details style="margin-top:6px"${L.ai === 'missing' ? ' open' : ''}><summary style="cursor:pointer;font-size:12.5px">Candidates (${L.candidates.length}) and their events</summary>${L.candidates.map((c) =>
+        `<div style="font-size:12px;padding:3px 0;border-top:1px solid var(--line);overflow-wrap:anywhere"><b>${esc(c.symbol)}</b> · ${esc(c.eventLabel || 'no event')} · ${esc((c.from || []).join(', '))}${c.items?.[0] ? ` — ${c.items[0].link ? `<a href="${esc(c.items[0].link)}" target="_blank" rel="noopener noreferrer">${esc(c.items[0].title)}</a>` : esc(c.items[0].title)}` : ''}</div>`).join('')}</details>`;
+    }
+    if ((L.errors || []).length) html += `<div class="note" style="color:var(--down);margin:2px 0 0;overflow-wrap:anywhere">fetchError: ${esc(L.errors.join(' · '))}</div>`;
+  }
+  if (d.lastReal) html += `<div class="note" style="margin:4px 0 0">Last scored-eligible pick day ${esc(d.lastReal.date)}: ${esc(d.lastReal.picks.join(', ') || 'none')}${d.lastReal.control ? ` · control ${esc(d.lastReal.control)}` : ''}</div>`;
+  const sc = d.scorecard || {};
+  html += `<div style="margin-top:8px;font-size:12.5px"><b>Pick scorecard vs the random control</b> <span class="note" style="display:inline">(${sc.pickDays || 0} pick days)</span></div>`;
+  for (const h of Object.keys(d.horizons || {})) {
+    const s = sc[h];
+    if (!s) continue;
+    html += `<div style="padding:6px 0;border-top:1px solid var(--line)"><div style="font-size:12.5px">${esc(s.label)}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:2px">${npSide('Picks', s.picks)}${npSide('Random control', s.control)}</div>
+      <div style="margin-top:2px;font-size:12.5px;color:${s.proven ? 'var(--up)' : 'var(--warn)'}"><b>${esc(s.verdict)}</b></div></div>`;
+  }
+  html += `<div class="note" style="margin:4px 0 0">${esc(d.disclaimer || '')}</div></div>`;
+  $('npOut').innerHTML = html;
+}
+async function npLoad() {
+  try { npRender(await api('/api/news-pick')); } catch (e) { $('npOut').innerHTML = `<div class="err">fetchError: could not load the news pick (${esc(e.message)}). Not advice.</div>`; }
+}
 async function nwLoad() {
+  npLoad();
   try { nwRender(await api('/api/news-watch')); } catch (e) { $('nwOut').innerHTML = `<div class="err">fetchError: could not load News watch (${esc(e.message)}). Not advice.</div>`; }
 }
 lazy('News watch', nwLoad);
