@@ -12,6 +12,7 @@ import { candles } from '../market-data.mjs';
 import { nearest, legCost, wingCost, LOT_NOW, marginPct, sttSell, sttExercise } from './fo-strangle.mjs';
 import { foStocksDir } from './vol-premium.mjs';
 import { tradingDaysBetween } from './market-calendar.mjs';
+import { sessionFor, nextSession, sessionsToExpiry, RESEARCH as EXPIRY_RESEARCH } from './expiry.mjs';
 import { outlookFor, loadUpdownTable, loadUpdownLive, features } from './updown-outlook.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -137,7 +138,19 @@ export function payoff(legs, settle, date, stock = null) {
 
 const q = (sorted, p) => sorted[Math.max(0, Math.min(sorted.length - 1, Math.floor(p * (sorted.length - 1))))];
 
-export function riskCheck({ strategy = 'strangle', account = 500000, lots = 1, distancePct = 2, wing = 500, wingPct = 4, maxLossPct = 2, chain = latestChain(), niftyRows, symbol = 'NIFTY' }) {
+/**
+ * Days to expiry for a trade placed now on prices of `chainDate`: the trade session is the next session after the
+ * prices (or today's session if that is later and still before the expiry), and DTE = sessions from it to the expiry (0 = expiry day itself).
+ */
+export function expiryDays(chainDate, expiry, now = new Date()) {
+  const s = sessionFor(now);
+  const n = nextSession(chainDate);
+  const tradeDate = s > n && s <= expiry ? s : n; // old prices (a past expiry): judged from their own next session
+  return { tradeDate, dte: sessionsToExpiry(tradeDate, expiry) };
+}
+export const BUYS = new Set(['buy-call', 'buy-put']);
+
+export function riskCheck({ strategy = 'strangle', account = 500000, lots = 1, distancePct = 2, wing = 500, wingPct = 4, maxLossPct = 2, chain = latestChain(), niftyRows, symbol = 'NIFTY', now = new Date() }) {
   const stock = symbol !== 'NIFTY' ? chain : null; // a stock chain carries its own lot
   if (stock) wing = (chain.spot * wingPct) / 100; // wings for a stock: a share of its price, not NIFTY points
   if (!Object.hasOwn(STRATEGIES, strategy)) throw new Error('Unknown strategy.');
@@ -164,10 +177,17 @@ export function riskCheck({ strategy = 'strangle', account = 500000, lots = 1, d
   const allowed = (account * maxLossPct) / 100;
   const fitLots = bad100 < 0 ? Math.floor(allowed / -bad100) : lots;
   const total = (x) => x * lots;
-  const ok = -total(bad100) <= allowed && margin * lots <= account * 0.5;
+  // expiry day: buying an option that expires in the trade's own session (0DTE) is blocked, like an oversized trade;
+  // the day before (1DTE), and any other strategy on those days, gets a warning
+  const { tradeDate, dte } = expiryDays(chain.date, chain.expiry, now);
+  const block = BUYS.has(strategy) && dte === 0 ? `Blocked: this ${strategy === 'buy-call' ? 'call' : 'put'} expires on the day you would buy it (${chain.expiry}, expiry day). ${EXPIRY_RESEARCH.ours}` : null;
+  const sized = -total(bad100) <= allowed && margin * lots <= account * 0.5;
+  const ok = sized && !block;
   const tips = [];
-  if (!ok && fitLots >= 1) tips.push(`At most ${fitLots} lot${fitLots === 1 ? '' : 's'} keeps a 1-in-100 bad case within ${maxLossPct}% of the account.`);
-  if (!ok && fitLots < 1) tips.push(`Even 1 lot can lose more than ${maxLossPct}% of this account in a 1-in-100 bad case${strategy === 'strangle' ? ' — add wings (iron condor) or skip' : ' — use a smaller trade or skip'}.`);
+  if (block) tips.push(`${EXPIRY_RESEARCH.sebi} ${EXPIRY_RESEARCH.advice}`);
+  else if (dte <= 1) tips.push(`⚠ ${dte === 0 ? 'Expiry day (0DTE)' : 'The day before expiry (1DTE)'}: ${EXPIRY_RESEARCH.sebi} ${EXPIRY_RESEARCH.ours} ${EXPIRY_RESEARCH.advice}`);
+  if (!sized && fitLots >= 1) tips.push(`At most ${fitLots} lot${fitLots === 1 ? '' : 's'} keeps a 1-in-100 bad case within ${maxLossPct}% of the account.`);
+  if (!sized && fitLots < 1) tips.push(`Even 1 lot can lose more than ${maxLossPct}% of this account in a 1-in-100 bad case${strategy === 'strangle' ? ' — add wings (iron condor) or skip' : ' — use a smaller trade or skip'}.`);
   if (strategy === 'strangle') tips.push(stock ? 'A sold strangle on a single stock has no loss limit — results, news or a block deal can move it 10–20% in a day. Wings (iron condor) cap it.' : 'A sold strangle has no loss limit: one 5% week cost −₹38,151 a lot on 3 Nov 2026. Wings (iron condor) cap it.');
   if (stock) tips.push('Check the results date and NSE\'s F&O ban list before trading a stock option; stock options are less liquid than NIFTY\'s (wider spreads).');
   if (margin * lots > account * 0.5) tips.push(sold ? 'The margin would tie up more than half the account; a gap could force the broker to close it.' : 'This one trade would use more than half the account.');
@@ -183,8 +203,8 @@ export function riskCheck({ strategy = 'strangle', account = 500000, lots = 1, d
     historyYears: ms.length / 250,
     typical: total(q(per, 0.5)), bad20: total(bad20), bad100: total(bad100), worstEver: total(per[0]), best: total(per.at(-1)),
     definedMaxLoss: definedLoss != null ? definedLoss * lots : null, margin: margin * lots,
-    allowedLoss: allowed, fitLots, ok,
-    verdict: ok ? `OK for this account: a 1-in-100 bad case (to expiry) would cost about ₹${Math.round(-total(bad100)).toLocaleString('en-IN')} (${((-total(bad100) / account) * 100).toFixed(1)}%), within the ${maxLossPct}% limit.` : `Too big for this account: a 1-in-100 bad case (to expiry) would cost about ₹${Math.round(-total(bad100)).toLocaleString('en-IN')} (${((-total(bad100) / account) * 100).toFixed(1)}% — limit ${maxLossPct}%).`,
+    allowedLoss: allowed, fitLots, ok, sized, tradeDate, dte, level: block ? 'block' : !sized ? 'too-big' : dte <= 1 ? 'warn' : 'ok', block,
+    verdict: block ? `${block} Not advice.` : ok ? `OK for this account: a 1-in-100 bad case (to expiry) would cost about ₹${Math.round(-total(bad100)).toLocaleString('en-IN')} (${((-total(bad100) / account) * 100).toFixed(1)}%), within the ${maxLossPct}% limit.` : `Too big for this account: a 1-in-100 bad case (to expiry) would cost about ₹${Math.round(-total(bad100)).toLocaleString('en-IN')} (${((-total(bad100) / account) * 100).toFixed(1)}% — limit ${maxLossPct}%).`,
     tips,
     note: `${stock ? `${symbol}` : 'NIFTY'} closing option prices from NSE (${chain.date}) for the ${chain.expiry} expiry, held to expiry; every ${n}-session ${stock ? `${symbol}` : 'NIFTY'} move since 2010 (${ms.length} cases) replayed, after charges${stock ? ' (stock margin assumed ≈20% of the position; check your broker)' : ''}. A guard against oversized trades, not a forecast — no rule here makes F&O profitable; the app's tests found these trades about break-even at best.`,
   };
@@ -233,7 +253,7 @@ export async function riskCheckLive(opts, { loadCandles = candles } = {}) {
  * one-lot cost is within `perTrade`, each with its chance of profit at expiry (from the stock's own moves
  * since 2010) and its full cost as the maximum loss. Sorted by chance of profit. Not advice.
  */
-export async function affordable({ capital = 10000, perTrade = 3000, live = loadUpdownLive(), loadCandles = candles } = {}) {
+export async function affordable({ capital = 10000, perTrade = 3000, live = loadUpdownLive(), loadCandles = candles, now = new Date() } = {}) {
   const lots = stockLots();
   const picks = [
     { symbol: 'NIFTY', side: 'buy-call', lean: 'index' },
@@ -265,7 +285,7 @@ export async function affordable({ capital = 10000, perTrade = 3000, live = load
     for (const t of tries) {
       let r;
       try {
-        r = riskCheck({ symbol: p.symbol, strategy: t.strategy, account: capital, lots: 1, distancePct: t.distancePct, wing: t.wing ?? 500, wingPct: t.wingPct ?? 4, chain, niftyRows: rows });
+        r = riskCheck({ symbol: p.symbol, strategy: t.strategy, account: capital, lots: 1, distancePct: t.distancePct, wing: t.wing ?? 500, wingPct: t.wingPct ?? 4, chain, niftyRows: rows, now });
       } catch {
         continue;
       }
@@ -278,7 +298,7 @@ export async function affordable({ capital = 10000, perTrade = 3000, live = load
       if (!best[t.kind] || r.chanceOfProfit > best[t.kind].chanceOfProfit) {
         const vols = r.legs.map((l) => chain.chain[l.strike]?.[l.type === 'CE' ? 'ceVol' : 'peVol'] ?? 0);
         const charges = r.legs.reduce((a, l) => a + legCharges(l.price, l.side === 'sell' ? -1 : 1, chain.date, p.symbol === 'NIFTY' ? null : chain), 0) * r.lot;
-        best[t.kind] = { ...p, date: chain.date, charges, minVolume: Math.min(...vols), kind: t.kind, strategy: t.strategy, distancePct: t.distancePct, wing: t.wing ?? null, wingPct: t.wingPct ?? null, legs: r.legs, strike: r.legs[0].strike, type: r.legs[0].type, price: r.legs[0].price, lot: r.lot, cost, maxLoss, maxProfit: r.maxProfit, chanceOfProfit: r.chanceOfProfit, average: r.average, historyYears: r.historyYears, typical: r.typical, best: r.best, expiry: r.expiry, sessions: r.sessions, spot: r.spot };
+        best[t.kind] = { ...p, date: chain.date, dte: r.dte, tradeDate: r.tradeDate, charges, minVolume: Math.min(...vols), kind: t.kind, strategy: t.strategy, distancePct: t.distancePct, wing: t.wing ?? null, wingPct: t.wingPct ?? null, legs: r.legs, strike: r.legs[0].strike, type: r.legs[0].type, price: r.legs[0].price, lot: r.lot, cost, maxLoss, maxProfit: r.maxProfit, chanceOfProfit: r.chanceOfProfit, average: r.average, historyYears: r.historyYears, typical: r.typical, best: r.best, expiry: r.expiry, sessions: r.sessions, spot: r.spot };
       }
     }
     for (const b of Object.values(best)) out.push(b);

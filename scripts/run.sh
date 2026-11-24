@@ -72,6 +72,8 @@ do_collect() {
   # NSE delivery files (needed by the ML picks), then the ML stock picks paper portfolio (re-ranks once a month)
   node paper-bot/delivery.mjs 2026-01 || true
   node --max-old-space-size=12000 paper-bot/ml-picks.mjs --paper
+  # Today's algo plan for the next session (the passed rules as one checklist): logged for its paper-matched record
+  node paper-bot/algo-plan.mjs --today --log || true
   # one evening notification for all strategies + this week's scorecard refreshed
   node paper-bot/evening.mjs --notify
 }
@@ -212,7 +214,8 @@ case "${1:-}" in
     catchup
     node paper-bot/watchdog.mjs --notify ;;
   morning)
-    # 08:40 on weekdays: today's news pick before the open (quiet exit on NSE holidays and after 09:15)
+    # 08:40 on weekdays: today's news pick before the open (quiet exit on NSE holidays and after 09:15); the
+    # notification's first line is today's algo plan (news-pick.mjs algoPlanLine, which also logs it)
     caffeinate -i -w $$ & # keep the Mac awake until this job finishes
     echo "$(date '+%F %T') morning"; wait_online
     OPENROUTER_API_KEY="$(key trading-research-openrouter)" node paper-bot/news-pick.mjs --run --notify || true   # AI key for this command only (empty: candidates + events, no picks)

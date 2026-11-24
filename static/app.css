@@ -134,3 +134,22 @@ th:first-child, td:first-child { text-align: left; }
   header { padding-top: calc(14px + env(safe-area-inset-top, 0px)); }
   main { padding-bottom: calc(28px + env(safe-area-inset-bottom, 0px)); }
 }
+
+/* ===================== expiry-day warning + Today's algo plan ===================== */
+#expiryBanner { margin: 8px 24px 0; }
+.xpBox { padding: 10px 12px; border-radius: 10px; font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
+.xpBox.expiry { border: 2px solid var(--down); background: color-mix(in srgb, var(--down) 8%, var(--panel)); }
+.xpBox.eve { border: 2px solid var(--warn); background: color-mix(in srgb, var(--warn) 9%, var(--panel)); }
+.xpBox.info { border: 1px solid var(--line); background: var(--soft); color: var(--muted); font-size: 12px; padding: 6px 10px; }
+.xpBox ul { margin: 4px 0 0 18px; padding: 0; }
+.xpCard { margin: -4px 0 10px; }
+.apAct { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; margin-top: 6px; font-size: 13px; overflow-wrap: anywhere; }
+.apAct input[type=checkbox] { width: 20px; height: 20px; min-height: 20px; margin: 2px 0 0; flex: 0 0 auto; }
+.apAct.done { opacity: 0.6; }
+.apAct.done .apTitle { text-decoration: line-through; }
+.apAct.skip { border-color: var(--warn); }
+.apAct > div { min-width: 0; flex: 1 1 auto; }
+.apTag { display: inline-block; padding: 0 6px; border-radius: 999px; font-size: 10px; font-weight: 600; border: 1px solid var(--muted); color: var(--muted); margin-left: 4px; white-space: nowrap; }
+.apTag.paper { border-color: var(--accent); color: var(--accent); }
+.apTag.skip { border-color: var(--warn); color: var(--warn); }
+@media (max-width: 860px) { #expiryBanner { margin: 8px 16px 0; } }

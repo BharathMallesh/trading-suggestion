@@ -90,6 +90,8 @@ import { loadMlPaper } from './paper-bot/ml-picks.mjs';
 import { loadGlobalMixPaper, RESEARCH as GLOBAL_RESEARCH } from './paper-bot/global-mix.mjs';
 import { loadIntraday5y } from './paper-bot/intraday-5y.mjs';
 import { foPlan } from './paper-bot/fo-plan.mjs';
+import { expiryStatus } from './paper-bot/expiry.mjs';
+import { algoPlan, trackRecord, setTick, saveSettings as saveAlgoSettings, savedCapital, foSizes, ALGO } from './paper-bot/algo-plan.mjs';
 const affordableCache = new Map();
 import { outlookFor, loadUpdownLive, loadUpdownTable, features as udFeatures } from './paper-bot/updown-outlook.mjs';
 import { whatWorksToday } from './paper-bot/day-today.mjs';
@@ -730,6 +732,30 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, thisMonth({ amount }));
     }
     if (req.method === 'GET' && url.pathname === '/api/fo-plan') return json(res, 200, await foPlan()); // Options & risk → My F&O plan
+    // Expiry-day warning banners (Home on expiry day / the day before, Options & risk, My F&O plan, the F&O cards)
+    if (req.method === 'GET' && url.pathname === '/api/expiry') {
+      let fo = null;
+      try {
+        fo = foSizes(savedCapital()).text; // one NIFTY / stock-option lot next to the user's money (shown on the F&O tabs)
+      } catch {
+        fo = null;
+      }
+      return json(res, 200, { ...expiryStatus(), fo });
+    }
+    if (req.method === 'GET' && url.pathname === '/api/algo-plan') {
+      // Home → Today's algo plan: the passed rules as one action list for the next session (?capital= overrides the saved one)
+      const c = Number(url.searchParams.get('capital'));
+      const capital = Number.isFinite(c) && c > 0 ? Math.min(ALGO.maxCapital, Math.max(ALGO.minCapital, c)) : null;
+      return json(res, 200, { ...algoPlan({ capital }), record: trackRecord() });
+    }
+    if (req.method === 'POST' && url.pathname === '/api/algo-plan/tick') {
+      const b = await readJson(req);
+      return json(res, 200, setTick(b.date, b.id, b.done !== false));
+    }
+    if (req.method === 'POST' && url.pathname === '/api/algo-plan/settings') {
+      const b = await readJson(req); // { capital: India mix money, ipoBuffer: separate IPO cash }
+      return json(res, 200, saveAlgoSettings({ capital: b.capital, ipoBuffer: b.ipoBuffer }));
+    }
     if (req.method === 'GET' && url.pathname === '/api/trade-today') return json(res, 200, await tradeToday({ fresh: url.searchParams.has('fresh') })); // Home → Trade today?
     if (req.method === 'GET' && url.pathname === '/api/spread-paper') return json(res, 200, loadSpreadPaper() || {});
     if (req.method === 'GET' && url.pathname === '/api/fo-affordable') {

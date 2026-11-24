@@ -23,6 +23,7 @@ import { loadSteadyMixPaper } from './steady-mix.mjs';
 import { loadImbalancePaper } from './imbalance-swing.mjs';
 import { saveSwingScan, tradePlan } from './trade-plan.mjs';
 import { tradeToday } from './trade-today.mjs';
+import { eveningExpiryLine } from './expiry.mjs';
 
 const rs = (v) => `${v < 0 ? '−' : '+'}₹${Math.abs(Math.round(v)).toLocaleString('en-IN')}`;
 
@@ -155,6 +156,13 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       if (t.overall !== 'go') lines.unshift({ title: 'Trade tomorrow?', short: `Tomorrow: ${t.kinds.filter((k) => k.level === 'stay').map((k) => k.kind === 'intraday' ? 'no intraday' : k.kind === 'fnoSell' ? 'no option selling' : k.kind).join(', ') || 'be careful'}`, detail: `${t.signs.map((s) => s.text).join('; ')} → ${t.kinds.filter((k) => k.level !== 'go').map((k) => `${word[k.level]}: ${k.name}`).join(' · ')}` });
     } catch (err) {
       console.log(`Trade-today check failed: ${err.message}`);
+    }
+    // the evening before an index / stock-option expiry: one short line at the front of the same notification
+    try {
+      const ex = eveningExpiryLine(date);
+      if (ex) lines.unshift(ex);
+    } catch (err) {
+      console.log(`Expiry check failed: ${err.message}`);
     }
     for (const l of lines) console.log(`${l.title}: ${l.detail}`);
     if (process.argv.includes('--notify') && afterClose) {

@@ -540,6 +540,17 @@ export function notifyText(r) {
   if (picks.length) return `News pick today: ${picks.map((p) => p.symbol).join(', ')} (unproven — see News watch)`;
   return `No news pick today${r?.day?.ai === 'missing' ? ' (AI key needs replacing)' : ''}`;
 }
+/** Today's algo plan in one line (first line of the morning notification; logs the plan). Empty when it fails. */
+export async function algoPlanLine() {
+  try {
+    const { algoPlan, logPlan, planLine } = await import('./algo-plan.mjs');
+    const p = algoPlan();
+    logPlan(p);
+    return `${planLine(p)}\n`;
+  } catch {
+    return '';
+  }
+}
 const notify = (title, message) => execFile('osascript', ['-e', 'on run argv', '-e', 'display notification (item 2 of argv) with title (item 1 of argv)', '-e', 'end run', title, message.slice(0, 220)], () => {});
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
@@ -576,7 +587,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       if (d.errors.length) console.log(`Problems: ${d.errors.join(' · ')}`);
       card(r.scorecard);
       console.log('Not advice.');
-      if (args.includes('--notify') && !d.test) notify('Trading research · morning', notifyText(r));
+      if (args.includes('--notify') && !d.test) notify('Trading research · morning', `${await algoPlanLine()}${notifyText(r)}`);
     } else {
       console.log('Usage: node paper-bot/news-pick.mjs --run [--notify] [--force]  |  --score');
     }

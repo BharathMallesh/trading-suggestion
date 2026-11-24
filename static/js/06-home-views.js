@@ -42,7 +42,7 @@ $('scanBtn').addEventListener('click', scanRun);
 
 // --- Views (tabs): each card goes to the first tab whose pattern matches its title ---
 const VIEWS = [
-  { key: 'home', match: /^(Trade today\?|Up\/Down outlook|Swing trade plan|Do this month|Research summary|My plan|Daily results|System check|Ask the app|Analyse today|Today)/, note: 'Home: see what each strategy did today, ask a question in plain English, analyse today’s market, and see alerts and data health.' },
+  { key: 'home', match: /^(Today's algo plan|Trade today\?|Up\/Down outlook|Swing trade plan|Do this month|Research summary|My plan|Daily results|System check|Ask the app|Analyse today|Today)/, note: 'Home: see what each strategy did today, ask a question in plain English, analyse today’s market, and see alerts and data health.' },
   { key: 'trades', match: /^(Plan a trade|Trade journal|Price alerts)/, note: 'My trades: plan every trade before you place it (size, charges, rules), record it in your journal, get alerts at your stop and target, and stop for the day at your loss limit. The app never places orders.' },
   { key: 'portfolio', match: /^My portfolio/, note: 'My portfolio: the shares you own, tax if you sold today, tax harvesting, risk, and whether your trading beat NIFTY. Stored only on this Mac.' },
   { key: 'invest', match: /^(What to expect|Goal planner|Market tilts|Momentum 20|India mix|Global mix|Steady mix|Momentum 10|Don't buy now|News watch|ML stock picks|New ideas test|Core \+ satellite|Index-fund picker|Strategies)/, note: 'Investing: long-term money — what SIPs and lump sums have done, what to invest for a goal, which index fund kept the most, and market tilts.' },
@@ -57,7 +57,7 @@ const VIEWS = [
 const OLD_VIEW = { money: 'home' }; // tab names before the split
 const SUBS = { compare: /^Strategy comparison/, ath: /^Strong-stock swing/, vwap: /^Same stocks every day/, r115: /^1:15 PM reversal/, breakfast: /^Breakfast strategy/, dip: /^NIFTY dip-buy/, fo: /^NIFTY short strangle/, fno: /^F&O spreads/, rsi: /^RSI swing/, imb: /^Imbalance swing/, e2: /^Momentum breakout/, lbb: /^Leader box breakout/, bsr: /^Bonus\/split run-up/, ipo: /^IPO apply/, mc: /^Matrix calendar/ };
 // order inside a tab (cards not listed keep page order, after these; "no edge" cards go last)
-const ORDER = ['Trade today?', 'Up/Down outlook', 'Swing trade plan', 'Do this month', 'Research summary', 'My plan', 'Daily results', 'System check', 'Ask the app', 'Analyse today', 'Today', 'Plan a trade', 'Trade journal', 'Price alerts', 'My F&O plan', 'Fits my budget', 'Spread paper tracker', 'F&O risk check', 'Option strike guide', 'Call / Put payoff odds', 'Live candles', 'Big-move odds', 'Volatility check', 'Option calculator', 'Selling volatility', 'Strategy comparison', 'Strong-stock swing', 'Same stocks every day', '1:15 PM reversal', 'Breakfast strategy', 'NIFTY dip-buy', 'NIFTY short strangle', 'F&O spreads', 'RSI swing', 'Imbalance swing', 'Momentum breakout', 'Matrix calendar', 'Calendar', 'Day patterns',
+const ORDER = ["Today's algo plan", 'Trade today?', 'Up/Down outlook', 'Swing trade plan', 'Do this month', 'Research summary', 'My plan', 'Daily results', 'System check', 'Ask the app', 'Analyse today', 'Today', 'Plan a trade', 'Trade journal', 'Price alerts', 'My F&O plan', 'Fits my budget', 'Spread paper tracker', 'F&O risk check', 'Option strike guide', 'Call / Put payoff odds', 'Live candles', 'Big-move odds', 'Volatility check', 'Option calculator', 'Selling volatility', 'Strategy comparison', 'Strong-stock swing', 'Same stocks every day', '1:15 PM reversal', 'Breakfast strategy', 'NIFTY dip-buy', 'NIFTY short strangle', 'F&O spreads', 'RSI swing', 'Imbalance swing', 'Momentum breakout', 'Matrix calendar', 'Calendar', 'Day patterns',
   'What to expect', 'Goal planner', 'Momentum 20', 'India mix', 'Steady mix', 'Momentum 10', "Don't buy now", 'News watch', 'New ideas test', 'Core + satellite', 'Index-fund picker', 'Market tilts', 'Strategies', 'Market data', 'Ask (research', 'Prediction hit-rate', 'Stock ranking', 'Earnings', 'Paper portfolio', 'Model evaluation', 'Settings', 'Phone access'];
 // Tools whose direction calls were tested and found no edge: labelled, and (except the Call/Put card) moved to the end of their view.
 const NO_EDGE = /^(Paper-Bot|Candle AI read|Live candles|Foundation models|Direction over months|Options positioning|Same stocks every day|Breakfast strategy)/;
@@ -115,6 +115,7 @@ function showView(v) {
   if (shown.length === 1 && shown[0].classList.contains('folded')) shown[0].classList.remove('folded');
   LAZY_READY = true;
   runLazy(); // first view of a card: load its data now
+  if (typeof expiryShow === 'function') expiryShow(v); // the expiry-day banner for this tab (48-expiry.js)
 }
 $('openAllBtn').addEventListener('click', () => foldAll(true));
 $('foldAllBtn').addEventListener('click', () => foldAll(false));

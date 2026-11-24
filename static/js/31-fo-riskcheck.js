@@ -5,7 +5,8 @@ const frCol = (v) => (v > 0 ? 'var(--up)' : v < 0 ? 'var(--down)' : 'var(--muted
 
 function frRender(r) {
   const pct = (v) => `${((Math.abs(v) / r.account) * 100).toFixed(1)}%`;
-  let html = `<div style="padding:10px 12px;border-radius:10px;border:2px solid ${r.ok ? 'var(--up)' : 'var(--down)'};font-size:14px"><b style="color:${r.ok ? 'var(--up)' : 'var(--down)'}">${r.ok ? '✅ Fits the account' : '⛔ Too big — don\'t place it like this'}</b> · ${esc(r.verdict)}
+  const head = r.level === 'block' ? '⛔ Blocked — buying an option on its expiry day (0DTE)' : r.ok ? (r.dte <= 1 ? `✅ Fits the account · ⚠ ${r.dte === 0 ? 'expiry day (0DTE)' : 'day before expiry (1DTE)'}` : '✅ Fits the account') : '⛔ Too big — don\'t place it like this';
+  let html = `<div style="padding:10px 12px;border-radius:10px;border:2px solid ${r.ok ? (r.dte <= 1 ? 'var(--warn)' : 'var(--up)') : 'var(--down)'};font-size:14px"><b style="color:${r.ok ? (r.dte <= 1 ? 'var(--warn)' : 'var(--up)') : 'var(--down)'}">${esc(head)}</b> · ${esc(r.verdict)}
     ${r.tips.length ? `<ul style="margin:6px 0 0 18px;padding:0;font-size:13px">${r.tips.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>` : ''}</div>`;
   if (r.lean) {
     const L = r.lean;
@@ -16,7 +17,7 @@ function frRender(r) {
       ${L.why ? `<div class="note" style="margin:2px 0 0">${L.why.map((w) => esc(w)).join(' · ')}</div>` : ''}
       <div class="note" style="margin:2px 0 0">A 1–3 month tilt from the Up/Down outlook, not a forecast for this option's expiry: bought options lost money in the app's tests whichever side was picked.</div></div>`;
   }
-  html += `<div style="font-size:13px;margin-top:8px"><b>${esc(r.symbol)} · ${esc(r.label)}</b> · ${r.lots} lot${r.lots === 1 ? '' : 's'} of ${r.lot} · price ${r.spot.toFixed(1)} · expiry ${esc(r.expiry)} (${r.sessions} sessions): ${r.legs.map((l) => `${l.side} ${l.strike} ${l.type} at ${l.price.toFixed(1)}`).join(' · ')}</div>`;
+  html += `<div style="font-size:13px;margin-top:8px"><b>${esc(r.symbol)} · ${esc(r.label)}</b> · ${r.lots} lot${r.lots === 1 ? '' : 's'} of ${r.lot} · price ${r.spot.toFixed(1)} · expiry ${esc(r.expiry)} (${r.sessions} sessions${r.dte != null && r.dte <= 1 ? ` · <b style="color:${r.dte === 0 ? 'var(--down)' : 'var(--warn)'}">⚠ ${r.dte}DTE if placed ${esc(r.tradeDate)}</b>` : ''}): ${r.legs.map((l) => `${l.side} ${l.strike} ${l.type} at ${l.price.toFixed(1)}`).join(' · ')}</div>`;
   html += `<div style="overflow-x:auto"><table style="font-size:12px;margin-top:6px"><tbody>
     <tr><td style="text-align:left">${r.sold ? 'Premium received' : 'Premium paid'}</td><td><b>${frRs(r.premium)}</b></td></tr>
     <tr><td style="text-align:left">Chance of profit at expiry</td><td><b>${Math.round(r.chanceOfProfit * 100)}%</b></td></tr>

@@ -3,7 +3,11 @@
 // Load each card's data the first time its tab is shown, not all at page start
 // (the page has ~30 cards; most people open one or two tabs).
 const LAZY = [];
-const cardEl = (title) => [...document.querySelectorAll('main > section.card')].find((s) => (s.querySelector('h2')?.textContent.trim() || '').startsWith(title));
+// exact title (the h2's own text, before its tag line) first, so "Today" doesn't pick "Today's algo plan"; else a prefix
+const cardEl = (title) => {
+  const all = [...document.querySelectorAll('main > section.card')];
+  return all.find((s) => (s.querySelector('h2')?.childNodes[0]?.textContent.trim() || '') === title) || all.find((s) => (s.querySelector('h2')?.textContent.trim() || '').startsWith(title));
+};
 const cardShown = (title) => { const el = cardEl(title); return !!el && el.style.display !== 'none' && !document.hidden; };
 function lazy(title, fn) {
   LAZY.push({ title, fn, done: false });

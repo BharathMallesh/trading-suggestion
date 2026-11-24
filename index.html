@@ -56,9 +56,24 @@
       </div>
     </nav>
     <div class="note" id="viewNote"></div>
+    <!-- expiry-day warning (48-expiry.js): Home only on expiry day / the day before; Options & risk and My F&O plan always -->
+    <div id="expiryBanner" hidden></div>
     <div class="foldBar"><button type="button" id="openAllBtn">Open all</button><button type="button" id="foldAllBtn">Fold all</button></div>
 
     <main>
+      <!-- Today's algo plan: the rules that passed testing, as one action list for the next session (47-algo-plan.js) -->
+      <section class="card span2" id="algoPlanCard">
+        <h2>Today's algo plan <span style="font-size:12px;color:var(--warn);font-weight:500">THE RULES THAT PASSED TESTING · ONE LIST FOR THE NEXT SESSION · YOU PLACE THE ORDERS · NO BROKER · NOT ADVICE</span></h2>
+        <p class="hint">The honest "best algo": after ~20,000 tested ideas only a few rules held up out of sample — India mix (with its Momentum 10 third), an arbitrage fund for idle cash, IPO apply, and the
+          don't-buy-now and expiry-day warnings (bonus/split run-up is shown as paper only). This turns them into one checklist with quantities for your capital. Most days the honest answer is "Nothing to do today".
+          The monthly holdings of each rule are in Do this month below.</p>
+        <div class="row" style="gap:8px;align-items:flex-end"><div style="flex:0 0 170px"><label>India mix money (₹)</label><input id="apCap" type="number" min="10000" step="10000" value="100000" /></div>
+          <div style="flex:0 0 170px"><label>IPO cash buffer (₹)</label><input id="apIpo" type="number" min="0" step="5000" value="0" /></div>
+          <div style="flex:0 0 auto"><button id="apSave" type="button" style="margin-top:0">Save &amp; show</button></div></div>
+        <div class="note">Default: ₹1,00,000 all in India mix and ₹0 IPO buffer. IPO apply blocks ≈ ₹15,000 per application from cash outside India mix, so it needs its own small buffer.</div>
+        <div id="apOut" style="margin-top:10px">Loading…</div>
+      </section>
+
       <!-- Trade today?: Go / Be careful / Stay out for each kind of trading, from tested warning signs (risk, not direction) -->
       <section class="card span2" id="tradeTodayCard">
         <h2>Trade today? <span style="font-size:12px;color:var(--warn);font-weight:500">GO · BE CAREFUL · STAY OUT · FROM THE LAST CLOSE · TESTED SINCE 2010 · NOT ADVICE</span></h2>
@@ -107,6 +122,8 @@
           <li><b>IPO apply</b> — minimum lot in every mainboard IPO, sell at the listing open: a small add-on, paper. <span class="note" style="display:inline">Trading strategies → IPO apply</span></li>
           <li><b>Six "don't buy now" warnings</b> (circuits, band cuts, trade-for-trade, ASM) — a caution, not a return source. <span class="note" style="display:inline">Investing → Don't buy now; ⚠ badges on the stock lists</span></li>
           <li><b>Bonus/split run-up</b> — a real per-trade edge, but the account trailed India mix in 2025–26; paper. <span class="note" style="display:inline">Trading strategies → Bonus/split run-up</span></li>
+          <li><b>Expiry day</b> — SEBI FY25–26: 59–70% of index-option turnover is on expiry day, 75–80% within a day of it; prop / algo firms make ~98% of their profit in options and retail buyers lose most there; SEBI's Jane Street interim order (3 Jul 2025, under appeal; SAT orders reserved 21 Oct 2026) alleged expiry-day manipulation. The app's tests: buying options on expiry day or the day before lost in every version — don't buy options then. <span class="note" style="display:inline">Warning banners; the F&amp;O risk check blocks 0DTE buys</span></li>
+          <li><b>Today's algo plan</b> puts the rules above into one daily checklist (Home, top). <span class="note" style="display:inline">Its record is the paper accounts' record</span></li>
           <li><b>Bonds</b> — only to reduce the worst fall, at a cost of about −1.8 pts a year of return.</li>
           <li><b>Most other ideas failed</b> after costs or on unseen years: intraday, F&amp;O, news, crowd gauges (put/call, FII flows…), market tilts. <span class="note" style="display:inline">Research lab and the "no edge" labels</span></li>
         </ul>
@@ -1227,6 +1244,8 @@
     <script src="/static/js/44-one-fifteen.js"></script>
     <script src="/static/js/45-breakdown.js"></script>
     <script src="/static/js/46-news-watch.js"></script>
+    <script src="/static/js/47-algo-plan.js"></script>
+    <script src="/static/js/48-expiry.js"></script>
     <script src="/static/js/19-my-plan.js"></script>
     <script src="/static/js/20-rsi-swing.js"></script>
   </body>
