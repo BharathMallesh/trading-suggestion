@@ -18,7 +18,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { candles } from '../market-data.mjs';
-import { writeJsonAtomic } from '../util.mjs';
+import { writeJsonAtomic, curveDate } from '../util.mjs';
 import { RULES as MOM, simulate, loadAll, monthEnds } from './momentum.mjs';
 import { rankBy, buffered, loadMomentum10Paper } from './momentum10.mjs';
 import { monthlyReturns, stats, PERIODS, turnoverCost, valuesBySymbol } from './steady-mix.mjs';
@@ -231,8 +231,10 @@ export async function indiaMixPaperUpdate({ loadCandles = candles, now = new Dat
   }
   const cur = st.rebalances.at(-1);
   if (cur) {
-    const { v, marks } = await valueOf(cur, { date: today, price: async (s) => (await priceOf(s))?.px ?? null });
-    st.curve = [...st.curve.filter((c) => c.date !== today), { date: today, value: v }];
+    const seen = [];
+    const { v, marks } = await valueOf(cur, { date: today, price: async (s) => { const p = await priceOf(s); if (p) seen.push(p.date); return p?.px ?? null; } });
+    const at = curveDate(seen, today); // the closes' trading date, not the run date
+    st.curve = [...st.curve.filter((c) => c.date !== at), { date: at, value: v }].sort((a, b) => a.date.localeCompare(b.date));
     st.marks = marks;
   }
   st.updatedAt = now.toISOString();

@@ -151,7 +151,7 @@ export function compareWithIndex({ trades, prices, index, today, costs = DEFAULT
 /** From the saved tradebook: load NIFTY and today's prices, compare. */
 export async function tradesVsIndex({ loadCandles = candles, now = new Date(), st = loadHoldings() } = {}) {
   const trades = st.trades || [];
-  if (!trades.length) return { empty: true, note: 'Import your tradebook (Zerodha / Groww CSV) in My portfolio to compare your trading with NIFTY.' };
+  if (!trades.length) return { empty: true, note: 'Import your tradebook (Zerodha / Groww CSV) ("Import from your broker" in the My portfolio card above) to compare your trading with NIFTY.' };
   const first = trades.map((t) => t.date).sort()[0];
   const p1 = Math.floor(Date.parse(first) / 1000) - 10 * 86400;
   const nifty = (await loadCandles('^NSEI', { period1: p1, interval: '1d' })).filter((r) => r.close > 0);

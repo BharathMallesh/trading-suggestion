@@ -12,8 +12,8 @@ function renderHitStats(stats, note) {
   if (note) html += `<div class="note" style="margin-bottom:8px">${esc(note)}</div>`;
   html += `<div class="kv">
     <div>Logged</div><div>${stats.totalLogged}</div>
-    <div>Pending</div><div>${stats.pending}</div>
-    <div>Evaluated</div><div>${stats.evaluated}</div>
+    <div>Pending</div><div>${stats.pending}${stats.unscorable ? ` <span class="note" style="display:inline">(+${stats.unscorable} set aside: wrong price series or too old to settle)</span>` : ''}</div>
+    <div>Evaluated</div><div>${stats.evaluated} <span class="note" style="display:inline">(one per stock per day${stats.evaluatedRaw != null ? ` of ${stats.evaluatedRaw} scored — the live scorecard and the tournament count all ${stats.evaluatedRaw}` : ''})</span></div>
     <div>Hit-rate (bias)</div><div><b>${pct(stats.hitRateBias)}</b></div>
     <div>Hit-rate (top prob)</div><div>${pct(stats.hitRateTopProb)}</div>
   </div>`;
@@ -53,7 +53,7 @@ function renderHitStats(stats, note) {
     html += '<tr style="color:var(--muted)"><th style="text-align:left;padding:3px">When</th><th style="text-align:left;padding:3px">Sym</th><th style="text-align:left;padding:3px">Bias</th><th style="text-align:left;padding:3px">Realized</th><th style="text-align:left;padding:3px">Ret%</th><th style="text-align:left;padding:3px">Hit</th></tr>';
     for (const e of stats.recentEvaluated.slice(0, 8)) {
       html += `<tr>
-        <td style="padding:3px">${esc((e.ts || '').slice(0, 16))}</td>
+        <td style="padding:3px">${e.ts ? esc(new Date(Date.parse(e.ts) + 19800000).toISOString().slice(0, 16).replace('T', ' ')) + ' IST' : ''}</td>
         <td style="padding:3px">${esc(e.symbol)}</td>
         <td style="padding:3px">${esc(e.bias)}</td>
         <td style="padding:3px">${esc(e.realizedLabel)}</td>

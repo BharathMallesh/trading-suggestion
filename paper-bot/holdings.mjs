@@ -58,7 +58,8 @@ export function addLot({ symbol, qty, price, date, now = new Date() }) {
   const d = String(date || '').trim();
   if (!(Number.isInteger(q) && q > 0 && q <= 1e7)) throw badRequest('Quantity must be a whole number of shares (1 – 1 crore).');
   if (!(p > 0 && p < 1e7)) throw badRequest('Buy price must be a positive number.');
-  if (!/^\d{4}-\d\d-\d\d$/.test(d) || Number.isNaN(Date.parse(d)) || d < '1990-01-01' || d > istDate(now)) throw badRequest('Buy date must be YYYY-MM-DD, not in the future.');
+  // round-trip check: "2024-02-30" is not a date (round 79, P1)
+  if (!/^\d{4}-\d\d-\d\d$/.test(d) || Number.isNaN(Date.parse(d)) || new Date(Date.parse(`${d}T00:00:00Z`)).toISOString().slice(0, 10) !== d || d < '1990-01-01' || d > istDate(now)) throw badRequest('Buy date must be a real YYYY-MM-DD date, not in the future.');
   const st = loadHoldings();
   if (st.lots.length >= 500) throw badRequest('At most 500 lots.');
   const lot = { id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, symbol: cleanSymbol(symbol), qty: q, price: p, date: d };
@@ -205,7 +206,24 @@ export function parseTradebook(text) {
 export function importTradebook({ csv, now = new Date(), mode = 'replace' }) {
   if (typeof csv !== 'string' || csv.length < 10) throw badRequest('Upload the tradebook CSV text.');
   if (csv.length > 900_000) throw badRequest('File too large (max ~900 KB).');
-  const { trades, skipped } = parseTradebook(csv);
+  const parsed = parseTradebook(csv);
+  const { skipped } = parsed;
+  let trades = parsed.trades;
+  // merge: trades already imported earlier (same symbol, date, side, qty, price) are not counted twice (round 79, M6)
+  const prior = mode === 'merge' ? loadHoldings() : null;
+  let duplicates = 0;
+  if (prior) {
+    const k = (t) => `${t.symbol}|${t.date}|${t.side}|${t.qty}|${t.price}`;
+    const seen = new Map();
+    for (const t of prior.trades || []) seen.set(k(t), (seen.get(k(t)) || 0) + 1);
+    trades = trades.filter((t) => {
+      const n = seen.get(k(t)) || 0;
+      if (!n) return true;
+      seen.set(k(t), n - 1);
+      duplicates++;
+      return false;
+    });
+  }
   trades.sort((a, b) => a.date.localeCompare(b.date) || (a.side === 'buy' ? -1 : 1));
   const today = istDate(now);
   const fy = fyOf(today);
@@ -236,9 +254,11 @@ export function importTradebook({ csv, now = new Date(), mode = 'replace' }) {
   }
   const out = [];
   for (const [symbol, ls] of lots) for (const l of ls) if (l.qty > 0) out.push({ id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, symbol, qty: l.qty, price: +l.price.toFixed(4), date: l.date });
-  const st = mode === 'merge' ? loadHoldings() : { lots: [], realized: {} };
+  const st = prior || { lots: [], realized: {} };
   st.lots = mode === 'merge' ? [...st.lots, ...out] : out;
-  st.realized = realized;
+  // merge adds this year's booked gains to the ones already saved (it used to overwrite them)
+  const was = mode === 'merge' && st.realized?.fy === fy ? st.realized : null;
+  st.realized = was ? { fy, stcg: (was.stcg || 0) + realized.stcg, ltcg: (was.ltcg || 0) + realized.ltcg } : realized;
   // the raw trades too, for "did my trading beat NIFTY?" (vs-index.mjs)
   const keep = trades.map(({ symbol, date, side, qty, price }) => ({ symbol, date, side, qty, price }));
   st.trades = (mode === 'merge' ? [...(st.trades || []), ...keep] : keep).slice(-20000);
@@ -250,7 +270,8 @@ export function importTradebook({ csv, now = new Date(), mode = 'replace' }) {
     sells: trades.filter((t) => t.side === 'sell').length,
     lots: out.length,
     holdings: [...new Set(out.map((l) => l.symbol))].length,
-    realized,
+    realized: st.realized,
+    ...(mode === 'merge' ? { duplicates, addedRealized: realized } : {}),
     warnings: warnings.slice(0, 20),
     skipped: skipped.slice(0, 20),
     note: 'Prices are the traded prices; brokerage and charges are not added to the cost (a slightly conservative tax estimate).',

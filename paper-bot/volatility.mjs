@@ -22,6 +22,7 @@ import { optionChain, growwUsable } from '../groww-data.mjs';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { completedDaily } from './market-calendar.mjs';
 
 // Which forecaster won the last replay (saved by `--eval --save`).
 const MODEL_PATH = process.env.VOL_MODEL_PATH || join(dirname(fileURLToPath(import.meta.url)), 'vol-model.json');
@@ -282,13 +283,14 @@ export async function evaluateVolForecasts(opts = {}) {
  * Implied vs forecast volatility for one symbol now.
  * @param {{ symbol:string, iv?:number, days?:number }} p  iv in % (annualised); auto = India VIX for NIFTY
  */
-export async function volCheck({ symbol, iv, days = 7, expiry, eventPending = false, loadCandles = candles, chainFn = optionChain, model = loadVolModel() } = {}) {
+export async function volCheck({ symbol, iv, days = 7, expiry, eventPending = false, loadCandles = candles, chainFn = optionChain, model = loadVolModel(), now = new Date() } = {}) {
   const sym = isNifty(symbol) ? '^NSEI' : String(symbol || '').trim();
   if (!sym) throw badRequest('symbol is required, e.g. ^NSEI or TCS.NS');
   const d = Number(days);
   if (!(d >= 1 && d <= 365)) throw badRequest('days to expiry must be 1–365.');
   // 3 years so GARCH / HAR have enough history.
-  const rows = await loadCandles(sym, { range: '5y', interval: '1d' });
+  const cd = completedDaily(await loadCandles(sym, { range: '5y', interval: '1d' }), now); // completed closes only (round 79, O-B19)
+  const rows = cd.rows;
   const r = logReturns(rows.map((x) => x.close));
   const h = Math.max(1, Math.round(d * (5 / 7))); // trading days in the window
   const forecasts = Object.fromEntries(
@@ -361,7 +363,8 @@ export async function volCheck({ symbol, iv, days = 7, expiry, eventPending = fa
     forecastPct = withEvent;
   }
   const last = rows[rows.length - 1].close;
-  const move = (volPct) => (volPct == null ? null : (volPct / 100) * Math.sqrt(d / TRADING_DAYS) * 100);
+  // ±1σ over the TRADING days in the window (annual vol is per 252 trading days), as option-odds does (round 79, O-B4)
+  const move = (volPct) => (volPct == null ? null : (volPct / 100) * Math.sqrt(h / TRADING_DAYS) * 100);
   const yardstick = vixScaledUsed ? historyForecastPct : forecastPct;
   const ratio = impliedPct != null && yardstick ? impliedPct / yardstick : null;
   // Pricing IV. VIX is a 30-day measure; real weekly NIFTY options trade at a
@@ -378,6 +381,7 @@ export async function volCheck({ symbol, iv, days = 7, expiry, eventPending = fa
   return {
     symbol: sym,
     asOf: rows[rows.length - 1].date,
+    partialDropped: cd.dropped,
     last,
     days: d,
     forecastsAnnualPct: forecasts,

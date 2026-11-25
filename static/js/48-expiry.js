@@ -9,7 +9,8 @@ const XP_CARDS = ['foRiskCard', 'foBudgetCard', 'spreadPaperCard', 'afternoonCar
 const xpDay = (d) => new Date(`${d}T00:00:00Z`).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
 
 function xpNext(s) {
-  return s.next.map((n) => `${esc(n.index === 'STOCKS' ? 'stock options' : n.index)} ${esc(xpDay(n.weekly || n.monthly))}`).join(' · ');
+  const gap = s.next.some((n) => n.unverified?.length);
+  return s.next.map((n) => `${esc(n.index === 'STOCKS' ? 'stock options' : n.index)} ${esc(xpDay(n.weekly || n.monthly))}${n.unverified?.includes(n.weekly || n.monthly) ? '*' : ''}`).join(' · ') + (gap ? ` (* NSE ${esc(s.next.find((n) => n.calendarNote)?.calendarNote || 'holiday list not yet published')}${s.calendar?.coveredUntil ? ` after ${esc(s.calendar.coveredUntil)}` : ''}: may move)` : '');
 }
 function xpBig(s) {
   return `<div class="xpBox ${s.level === 'expiry' ? 'expiry' : 'eve'}"><b style="color:${s.level === 'expiry' ? 'var(--down)' : 'var(--warn)'}">${s.level === 'expiry' ? '🔴' : '🟠'} ${esc(s.title)}.</b> <b>${esc(s.advice)}</b>
@@ -19,6 +20,15 @@ function xpBig(s) {
 function xpSmall(s) {
   return `<div class="xpBox info">⚠ Next expiries: ${xpNext(s)}. Buying options on expiry day or the day before lost in every version the app tested. <a href="#" data-goto="researchCard">Research summary</a> · Not advice.</div>`;
 }
+const XP_PHONE = window.matchMedia('(max-width: 639.98px)');
+/** The one-line summary used on phones (banner summary and the in-card chip). */
+function xpLine(s) {
+  if (s.level === 'expiry') return `🔴 ${esc(s.short || s.title)} — don't buy options`;
+  if (s.level === 'eve') return `🟠 ${esc(s.short || s.title)} — don't buy options today`;
+  const n = s.next?.find((x) => x.index === 'NIFTY');
+  return `⚠ Next expiry: ${n ? `NIFTY ${esc(xpDay(n.weekly || n.monthly))}` : xpNext(s)}`;
+}
+XP_PHONE.addEventListener?.('change', () => xpRender());
 function xpRender() {
   const s = XP;
   const el = $('expiryBanner');
@@ -27,7 +37,9 @@ function xpRender() {
   const show = s.level !== 'none' ? ['home', 'options', 'foplan'].includes(v) : ['options', 'foplan'].includes(v);
   el.hidden = !show;
   const fo = s.fo && ['options', 'foplan'].includes(v) ? `<div class="xpBox info" style="margin-top:6px">💰 ${esc(s.fo)} Not advice.</div>` : '';
-  el.innerHTML = show ? (s.level !== 'none' ? xpBig(s) : xpSmall(s)) + fo : '';
+  const full = (s.level !== 'none' ? xpBig(s) : xpSmall(s)) + fo;
+  // phones (< 640 px): one line with a details toggle; desktop unchanged (round 79, owner decision)
+  el.innerHTML = !show ? '' : XP_PHONE.matches ? `<details class="xpMini ${s.level === 'expiry' ? 'expiry' : s.level === 'eve' ? 'eve' : 'info'}"><summary>${xpLine(s)}</summary>${full}</details>` : full;
   for (const id of XP_CARDS) {
     const sec = $(id);
     if (!sec) continue;
@@ -37,7 +49,9 @@ function xpRender() {
       box.className = 'xpCard';
       sec.querySelector(':scope > h2')?.after(box);
     }
-    box.innerHTML = s.level !== 'none' ? `<div class="xpBox ${s.level === 'expiry' ? 'expiry' : 'eve'}"><b>⚠ ${esc(s.title)}.</b> ${esc(s.advice)} ${esc(s.lines[0])} <a href="#" data-goto="researchCard">Why</a> · Not advice.</div>` : xpSmall(s);
+    box.innerHTML = XP_PHONE.matches
+      ? `<span class="xpChip ${s.level === 'expiry' ? 'expiry' : s.level === 'eve' ? 'eve' : 'info'}">${xpLine(s)}</span>`
+      : s.level !== 'none' ? `<div class="xpBox ${s.level === 'expiry' ? 'expiry' : 'eve'}"><b>⚠ ${esc(s.title)}.</b> ${esc(s.advice)} ${esc(s.lines[0])} <a href="#" data-goto="researchCard">Why</a> · Not advice.</div>` : xpSmall(s);
   }
 }
 async function expiryShow(view) {

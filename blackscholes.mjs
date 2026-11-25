@@ -48,10 +48,17 @@ export function greeks({ spot, strike, tYears, iv, type, rate = 0.065 }) {
   const isCall = type === 'CE';
   // Guard the degenerate cases (expiry today, zero vol) so we return the
   // intrinsic value cleanly instead of dividing by zero.
+  // Zero vol with time left: the limit of Black-Scholes is the DISCOUNTED intrinsic value, max(S − K·e^(−rT), 0)
+  // for a call and max(K·e^(−rT) − S, 0) for a put (round 79, O-B13); at expiry (T = 0) that is the plain intrinsic.
   if (!(tYears > 0) || !(iv > 0)) {
-    const intrinsic = isCall ? Math.max(spot - strike, 0) : Math.max(strike - spot, 0);
-    const delta = isCall ? (spot > strike ? 1 : 0) : spot < strike ? -1 : 0;
-    return { price: intrinsic, delta, gamma: 0, vegaPer1pct: 0, thetaPerDay: 0, d1: NaN, d2: NaN };
+    const t = tYears > 0 ? tYears : 0;
+    const dk = strike * Math.exp(-rate * t);
+    const itm = isCall ? spot > dk : spot < dk;
+    const price = itm ? (isCall ? spot - dk : dk - spot) : 0;
+    const delta = itm ? (isCall ? 1 : -1) : 0;
+    // theta: the discounted strike drifts up by r·K·e^(−rT) a year (a call loses it, a put gains it)
+    const thetaPerDay = itm && t > 0 ? ((isCall ? -1 : 1) * rate * dk) / 365 : 0;
+    return { price, delta, gamma: 0, vegaPer1pct: 0, thetaPerDay, d1: NaN, d2: NaN };
   }
   const sqrtT = Math.sqrt(tYears);
   const d1 = (Math.log(spot / strike) + (rate + (iv * iv) / 2) * tYears) / (iv * sqrtT);

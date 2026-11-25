@@ -9,11 +9,11 @@ const R1_PS = [['build', '2020–22 build'], ['check', '2023–24 check'], ['tes
 
 function r1Cell(x) {
   if (!x?.trades) return '<td class="note">no trades</td>';
-  return `<td>${x.trades} · ${r1Pc(x.winRate)} won<br><b style="color:${r1Col(x.avgRNet)}">${r1R(x.avgRNet)}</b> <span class="note" style="display:inline">(before costs ${r1R(x.avgRGross)}) · t ${r1F(x.tDay, 1)}</span></td>`;
+  return `<td>${x.trades} · ${r1Pc(x.winRate)} won<br><b style="color:${r1Col(x.avgRNet)};white-space:nowrap">${r1R(x.avgRNet)}</b> <span class="note" style="display:inline">(before costs ${r1R(x.avgRGross)}) · t ${r1F(x.tDay, 1)}</span></td>`;
 }
 function r1Table(rows) {
-  return `<div style="overflow-x:auto"><table style="font-size:12px"><thead><tr><th style="text-align:left">Version</th>${R1_PS.map(([, l]) => `<th>${l}</th>`).join('')}<th>All: ₹ total · without best 10</th></tr></thead><tbody>${rows.map(([label, rep]) =>
-    `<tr><td style="text-align:left">${label}</td>${R1_PS.map(([k]) => r1Cell(rep?.[k])).join('')}<td>${rep?.all?.trades ? `<span style="color:${r1Col(rep.all.totalNetRs)}">${r1Rs(rep.all.totalNetRs)}</span> · ${r1Rs(rep.all.exBest10Rs)}` : '–'}</td></tr>`).join('')}</tbody></table></div>`;
+  return `<div style="overflow-x:auto"><table style="font-size:12px"><thead><tr><th style="text-align:left">Version</th>${R1_PS.map(([, l]) => `<th>${l}</th>`).join('')}<th>All: ₹ total · without the best 10 trades</th></tr></thead><tbody>${rows.map(([label, rep]) =>
+    `<tr><td style="text-align:left">${label}</td>${R1_PS.map(([k]) => r1Cell(rep?.[k])).join('')}<td>${rep?.all?.trades ? `<span style="color:${r1Col(rep.all.totalNetRs)};white-space:nowrap">${r1Rs(rep.all.totalNetRs)}</span> · <span style="white-space:nowrap">${r1Rs(rep.all.exBest10Rs)}</span>` : '–'}</td></tr>`).join('')}</tbody></table></div>`;
 }
 
 function r1Render(d) {
@@ -55,7 +55,7 @@ function r1Render(d) {
     html += `<div style="font-size:14px;margin-top:10px"><b>Buys vs sells</b> (move ≥ 3%)</div>${r1Table([...side('V'), ...side('S')])}`;
     const years = Object.keys(g('V|3|reversal')?.byYear || {});
     html += `<div style="font-size:14px;margin-top:10px"><b>Year by year</b> (move ≥ 3%, after costs)</div><div style="overflow-x:auto"><table style="font-size:12px"><thead><tr><th style="text-align:left">Version</th>${years.map((y) => `<th>${y}</th>`).join('')}</tr></thead><tbody>${['V', 'S'].map((v) =>
-      `<tr><td style="text-align:left">${v === 'V' ? 'Video' : 'Same-day'}</td>${years.map((y) => { const x = g(`${v}|3|reversal`)?.byYear?.[y]; return `<td>${x?.trades ? `${x.trades} · <b style="color:${r1Col(x.avgRNet)}">${r1R(x.avgRNet)}</b>` : '–'}</td>`; }).join('')}</tr>`).join('')}</tbody></table></div>`;
+      `<tr><td style="text-align:left">${v === 'V' ? 'Video' : 'Same-day'}</td>${years.map((y) => { const x = g(`${v}|3|reversal`)?.byYear?.[y]; return `<td>${x?.trades ? `${x.trades} · <b style="color:${r1Col(x.avgRNet)};white-space:nowrap">${r1R(x.avgRNet)}</b>` : '–'}</td>`; }).join('')}</tr>`).join('')}</tbody></table></div>`;
     if (b.parts) {
       const P = b.parts;
       const ln = (l, x) => (x?.trades ? `${l}: ${x.trades} trades, ${r1R(x.avgRNet)} (before costs ${r1R(x.avgRGross)})` : `${l}: none`);

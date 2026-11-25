@@ -22,7 +22,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { writeJsonAtomic } from '../util.mjs';
+import { writeJsonAtomic, badRequest } from '../util.mjs';
 import { isTradingDay } from './market-calendar.mjs';
 import { paperSummary as vwapPaperSummary } from './vwap-pullback.mjs';
 import { summarise as bfSummarise } from './breakfast.mjs';
@@ -620,13 +620,15 @@ export function breakdownQuery(q = {}, { dir = DATA_DIR(), cache = cachedData({ 
   const dateField = q.dateField === 'exit' ? 'exit' : 'entry';
   const source = ['backtest', 'paper', 'both'].includes(q.source) ? q.source : 'both';
   const filters = { strategy: q.strategy || null, version: q.version || null, source, side: q.side || null, from: istDate(q.from) || null, to: istDate(q.to) || null };
+  if (filters.from && filters.to && filters.from > filters.to) throw badRequest(`From (${filters.from}) is after To (${filters.to}).`); // round 79, S-B8
   const { data, validation } = cache;
   const all = [...data.rows, ...data.curves];
   const series = [];
   for (const s of seriesOf(data)) {
     if (!s.rows.length) continue;
     const rows = applyFilters(s.rows, { ...filters, dateField });
-    if (!applyFilters(s.rows, { strategy: filters.strategy, version: filters.version, source, dateField, includeOpen: true }).length) continue; // not selected
+    // "selected" never depends on the date field: a series with no closed trades still shows by exit date (round 79, S-B9)
+    if (!applyFilters(s.rows, { strategy: filters.strategy, version: filters.version, source, dateField: 'entry', includeOpen: true }).length) continue; // not selected
     const a = aggregate(rows, { groupBy, dateField });
     series.push({
       strategy: s.strategy, label: STRATEGIES[s.strategy] || s.strategy, version: s.version, source: s.source, kind: a.unit === 'curve' ? 'curve' : 'trades',
@@ -648,7 +650,8 @@ export function breakdownQuery(q = {}, { dir = DATA_DIR(), cache = cachedData({ 
     series, combined: combined ? { unit: '₹', total: combined.total, buckets: combined.buckets } : null,
     compare: compare(all, { groupBy, dateField, filters: { strategy: filters.strategy, version: filters.version, side: filters.side, from: filters.from, to: filters.to } }),
     validation: validation.filter((v) => !filters.strategy || String(filters.strategy).split(',').includes(v.strategy)),
-    validationAll: { series: validation.length, failed: validation.filter((v) => !v.pass).length },
+    // the failing series are named, so a failure hidden by the strategy filter is still visible (round 79, S-B7)
+    validationAll: { series: validation.length, failed: validation.filter((v) => !v.pass).length, failing: validation.filter((v) => !v.pass).map((v) => `${v.strategy}/${v.version} (${v.source})`) },
     options: Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { label: o.label, versions: Object.fromEntries(Object.entries(o.versions).map(([v, s]) => [v, [...s].sort()])), sides: [...o.sides].sort() }])),
     skipped: data.skipped, warnings: data.warnings, files: data.files, builtAt: readBuiltAt(dir), loadedAt: cache.at,
     note: 'Closed trades only (open positions are listed, not counted). Buckets are seasonal: every Monday together, every March together; year is the calendar year. Buckets with fewer than 20 trades are too few to judge. Backtest ₹ use each test\'s own sizing (the same standard size as its paper record). Paper research only — not investment advice.',
@@ -689,51 +692,15 @@ export async function buildBacktest({ log = console.log, only = null, file = joi
   };
   const p2019 = Math.floor(Date.parse('2019-01-01') / 1000);
 
-  // YouTube intraday (VWAP), the three paper versions — the loop of intraday-5y.mjs
-  await part('vwap', async () => {
-    const vp = await import('./vwap-pullback.mjs');
-    const daily = async (s) => {
-      try {
-        return vp.dailyTrendLookup((await candles(s, { period1: p2019, interval: '1d' })).filter((r) => r.close > 0));
-      } catch {
-        return new Map();
-      }
-    };
-    const outv = [];
-    for (const [key, v] of Object.entries(vp.PAPER_VARIANTS)) {
-      const data = [];
-      for (const s of v.stocks || vp.VIDEO_STOCKS) {
-        const rows = readHist(s).filter((r) => r.close > 0 && r.high > 0);
-        if (rows.length) data.push({ s, rows, daily: await daily(s) });
-      }
-      const trades = vp.accountTrades(data.flatMap(({ s, rows, daily: d }) => vp.backtestStock(s, rows, v.rules, { daily: d })), v.rules.maxPerDay);
-      outv.push({ strategy: 'vwap', version: key, unit: '₹', builtFrom: 'intraday-5y.mjs loop (Groww 5-minute history)', rows: trades.map((t) => ({ ...t, entryDate: t.date, exitDate: t.date, pnl: t.net, r: t.rNet })) });
-    }
-    return outv;
-  });
-
-  // Breakfast, 5 years — the loop of intraday-5y.mjs
+  // YouTube intraday (VWAP), the three paper versions, and Breakfast (5 years): intraday-5y.mjs's own loop
+  // (intradayTrades), so the rows are built from the same candle set as the card's numbers (round 79, S-B1)
+  let intra = null;
+  const intraday = async () => (intra ||= await (await import('./intraday-5y.mjs')).intradayTrades({ loadCandles: candles, read: readHist, breakfast: want('breakfast') }));
+  await part('vwap', async () => Object.entries((await intraday()).vwap).map(([key, x]) => ({ strategy: 'vwap', version: key, unit: '₹', builtFrom: 'intraday-5y.mjs intradayTrades() (Groww 5-minute history)', rows: x.trades.map((t) => ({ ...t, entryDate: t.date, exitDate: t.date, pnl: t.net, r: t.rNet })) })));
   await part('breakfast', async () => {
-    const bf = await import('./breakfast.mjs');
-    const { loadIndexList } = await import('./ranking.mjs');
-    const idx = await loadIndexList('nifty200');
-    const ind = idx.industries || {};
-    const stocks = [];
-    for (const s of (idx.symbols || []).map((x) => (/\.(NS|BO)$/.test(x) ? x : `${x}.NS`))) {
-      const rows = readHist(s).filter((b) => b.close > 0 && b.high > 0);
-      if (rows.length) stocks.push({ s, sector: ind[s] || ind[s.replace('.NS', '')] || 'Other', sessions: bf.sessionsOf(rows) });
-    }
-    const nifty = bf.sessionsOf(readHist('^NSEI').filter((b) => b.close > 0));
-    const trades = [];
-    for (const d of [...nifty.keys()].sort()) {
-      const p = bf.picksFor(d, stocks, nifty);
-      for (const [side, pick] of [['long', p.long], ['short', p.short]]) {
-        if (!pick) continue;
-        const t = bf.simulate({ ...pick, date: d }, side, stocks.find((x) => x.s === pick.symbol)?.sessions.get(d), p.niftyMove);
-        if (t) trades.push(t);
-      }
-    }
-    return [{ strategy: 'breakfast', version: 'all', unit: '₹', builtFrom: 'intraday-5y.mjs loop (Groww 5-minute history)', rows: trades.map((t) => ({ ...t, entryDate: t.date, exitDate: t.date, pnl: t.net })) }];
+    const b = (await intraday()).breakfast;
+    if (!b) throw new Error('no Breakfast run');
+    return [{ strategy: 'breakfast', version: 'all', unit: '₹', builtFrom: 'intraday-5y.mjs intradayTrades() (Groww 5-minute history)', rows: b.trades.map((t) => ({ ...t, entryDate: t.date, exitDate: t.date, pnl: t.net })) }];
   });
 
   // 1:15 PM reversal, stock versions V and S at the 3% threshold — the loop of one-fifteen.mjs backtest()

@@ -5,7 +5,7 @@ const mpDate = (d) => new Date(`${d}T00:00:00Z`).toLocaleDateString('en-IN', { w
 const mpBox = (title, body, color = 'var(--line)') => `<div style="padding:10px 12px;border-radius:10px;border:1px solid ${color};margin-top:8px"><div style="font-size:14px"><b>${title}</b></div>${body}</div>`;
 
 function mpRender(r) {
-  let html = '';
+  let html = r.superseded ? `<div style="padding:8px 10px;border-radius:8px;border:1px solid var(--warn);font-size:13px;margin-bottom:6px">⚠ ${esc(r.superseded)}</div>` : '';
   // regime
   if (r.regime) html += `<div style="padding:8px 10px;border-radius:8px;background:var(--soft);font-size:13px"><b>Market regime: ${r.regime.state === 'out' ? '<span style="color:var(--down)">OUT</span> — NIFTY is below its long-term trend (a cautious time for new stock positions)' : r.regime.state === 'in' ? '<span style="color:var(--up)">IN</span> — NIFTY is above its long-term trend' : 'unchanged'}</b><div class="note" style="margin:2px 0 0">${esc(r.regime.reading || '')}</div></div>`;
 
@@ -31,7 +31,7 @@ function mpRender(r) {
   const open = s.open.length
     ? `<div style="overflow-x:auto;margin-top:6px"><table style="font-size:12px"><thead><tr><th style="text-align:left">Holding (paper)</th><th>Bought</th><th>Last close</th><th>Trailing stop</th><th>Room to stop</th><th>Result so far</th></tr></thead><tbody>${s.open.map((x) => `<tr><td style="text-align:left">${esc(x.symbol)}</td><td>${esc(x.entryDate)} at ₹${x.entry.toFixed(1)}</td><td>₹${x.last.toFixed(1)}</td><td>₹${x.stop.toFixed(1)}</td><td style="color:${x.gapToStopPct < 2 ? 'var(--down)' : 'var(--ink)'}">${x.gapToStopPct == null ? '–' : `${x.gapToStopPct.toFixed(1)}%`}</td><td style="color:${x.r >= 0 ? 'var(--up)' : 'var(--down)'}">${x.r >= 0 ? '+' : ''}${x.r.toFixed(2)}R</td></tr>`).join('')}</tbody></table></div><div class="note">A close below the trailing stop means sell at the next open. Red = within 2% of the stop.</div>`
     : '';
-  html += mpBox(`3. Satellite: strong-stock swing (${esc(s.version)} rules)`, sig + open);
+  html += mpBox(`3. Satellite: strong-stock swing (${esc(s.version)} rules)`, sig + open + (r.swingNote ? `<div class="note" style="margin:4px 0 0">${esc(r.swingNote)}</div>` : ''));
 
   // 4. skip
   html += mpBox('4. Skip (still tracked on paper, not for real money)',

@@ -30,7 +30,7 @@
         <button type="button" data-view="invest" title="SIP, goals, index funds, market tilts">Investing</button>
         <button type="button" data-view="options" title="Call / Put odds and prediction, big moves, volatility">Options &amp; risk</button>
         <button type="button" data-view="foplan" title="The ₹10,000 F&amp;O plan: practise on paper, then decide from the record">My F&amp;O plan</button>
-        <button type="button" data-view="intraday" title="Rule-based strategies (swing, YouTube intraday, Breakfast, NIFTY dip-buy, F&amp;O strangle), live and on paper">Trading strategies</button>
+        <button type="button" data-view="intraday" title="Rule-based trading strategies (swing, intraday, F&amp;O, event and IPO rules), live and on paper — one per sub-tab">Trading strategies</button>
         <button type="button" data-view="calendar" title="Month of the year, weekday, market holidays, start / middle / end of the month — since 2008">Calendar</button>
         <button type="button" data-view="days" title="Which strategy did better or worse on which weekday, after a gap or a flat open, and the Monday tests">Day patterns</button>
         <button type="button" data-view="breakdown" title="Every strategy's backtest and paper results by weekday, week of the month, month, quarter, FY quarter and year — every number checked both ways">Breakdown</button>
@@ -38,7 +38,7 @@
         <a class="help" href="/guide" target="_blank" rel="noopener" title="Step-by-step guide to every card, for beginners">? Help &amp; guide</a>
       </div>
       <div class="tabs" id="subTabs" hidden>
-        <button type="button" data-sub="compare" title="All four strategies side by side">Compare all</button>
+        <button type="button" data-sub="compare" title="Every strategy side by side">Compare all</button>
         <button type="button" data-sub="ath" title="Swing trades in strong stocks: base and flag breakouts, ATR trailing stop">Strong-stock swing</button>
         <button type="button" data-sub="vwap" title="YouTube intraday strategy: VWAP + 20 MA pullback in 4 stocks">YouTube intraday (VWAP)</button>
         <button type="button" data-sub="r115" title="YouTube intraday: fade a stock that moved 3%+ on a break of its 1:15–1:45 PM candle; tested on 5 years of 5-minute bars, paper only">1:15 PM reversal</button>
@@ -137,12 +137,12 @@
         <p class="hint">Everything you would act on, in one place: the market regime, the index-fund core, this month's Momentum 20 list and what changes at the month-end, today's swing breakouts,
           your open swing positions and their stops, what to skip, and the next dates. Only from the app's tested tools — facts and rule outputs, not advice.</p>
         <div class="row" style="gap:8px"><div style="flex:0 0 auto"><button id="planNowBtn" type="button" style="margin-top:0;background:var(--soft);color:var(--ink);border:1px solid var(--line)">Refresh</button></div></div>
-        <div id="planNowOut" style="margin-top:10px">Loading…</div>
+        <div id="planNowOut" style="margin-top:10px">Loading… (the first load can take ~15 seconds)</div>
       </section>
 
       <!-- Daily results: what each strategy did on one day (paper records) -->
       <section class="card span2" id="dayCard">
-        <h2>Daily results <span style="font-size:12px;color:var(--warn);font-weight:500">ALL FOUR STRATEGIES · PAPER ONLY</span></h2>
+        <h2>Daily results <span style="font-size:12px;color:var(--warn);font-weight:500">EVERY PAPER STRATEGY · PAPER ONLY</span></h2>
         <p class="hint">One click shows what every strategy did today on paper: each YouTube intraday trade, the Breakfast trades, the strong-stock swing strategy's buys,
           exits, open positions and new signals, and the NIFTY dip-buy, with profit or loss after charges. Filled in after the market closes (the 4:05 PM run). Pick an earlier date to look back.</p>
         <div class="row" style="gap:8px;align-items:flex-end">
@@ -257,6 +257,7 @@
           <button id="lanSave" type="button" style="flex:0 0 auto">Save</button>
         </div>
         <div id="lanOut" class="note" style="margin-top:8px"></div>
+        <div class="note">Research only. Not advice.</div>
       </section>
 
       <!-- Today: everything an investor checks, on one screen -->
@@ -477,7 +478,7 @@
           and a call — <b>UP / DOWN / NO CALL</b> for the next session and for 5 sessions — with the tested history of that kind of news and any ⚠ don't-buy-now warning. Every call is logged at that day's close
           and scored against the stock's move vs NIFTY. In 20 rounds of testing <b>no news rule predicted next-day or 5-day direction reliably after costs</b>, so treat the calls as unproven until the scorecard
           (at least 100 scored calls, 95% interval above 50%) says otherwise. The calls never change any strategy. Not advice.</p>
-        <!-- Today's news pick (08:40 job): up to 3 picks + a random control, scored from the open vs NIFTY (unproven; feeds no strategy) -->
+        <!-- Today's news pick (08:15 job): up to 3 picks + a random control, scored from the open vs NIFTY (unproven; feeds no strategy) -->
         <div id="npOut" style="margin-top:10px">Loading…</div>
         <div id="nwOut" style="margin-top:10px">Loading…</div>
       </section>
@@ -531,6 +532,7 @@
         </div>
         <button id="askBtn">Ask</button>
         <div class="out" id="askOut"></div>
+        <div class="note">Research only. Not advice.</div>
       </section>
 
       <!-- Market data panel -->
@@ -561,6 +563,7 @@
         <div class="out" id="descOut"></div>
         <div class="out" id="probOut"></div>
         <div class="out" id="newsOut"></div>
+        <div class="note">Research only. Not advice.</div>
       </section>
 
       <!-- My F&O plan: the 3-month plan on the spread paper tracker — practise, then decide from the record -->
@@ -803,6 +806,7 @@
       <!-- Strategies: backtests + live forward test -->
       <section class="card span2">
         <h2>Strategies <span style="font-size:12px;color:var(--warn);font-weight:500">LOW-TURNOVER · PAPER FORWARD TEST</span></h2>
+        <div class="xpBox eve" style="margin:4px 0 8px">⚠ Uses today's stock list (survivorship-biased) — see <a href="#" data-goto="momCard">Momentum 20</a> for the honest, survivorship-free test.</div>
         <p class="hint">
           Two rule-based strategies fixed in advance, judged against simply holding NIFTY after Indian costs:
           <b>A</b> NIFTY trend filter (hold NIFTY while above its 200-day average, else liquid fund) and
@@ -839,6 +843,7 @@
         </div>
         <div id="rkStatus" class="note" style="display:none"></div>
         <div id="rkOut" style="margin-top:12px"></div>
+        <div class="note">Research only. Not advice.</div>
       </section>
 
       <!-- Earnings & rating events -->
@@ -912,12 +917,13 @@
         </p>
         <div id="dlOut"></div>
         <div id="itOut" style="margin-top:12px"></div>
+        <div class="note">Research only. Not advice.</div>
       </section>
 
-      <!-- Strategy comparison: the three strategies side by side -->
+      <!-- Strategy comparison: every trading strategy side by side -->
       <section class="card span2" id="cmpCard">
         <h2>Strategy comparison <span style="font-size:12px;color:var(--warn);font-weight:500">BACKTEST · PAPER RECORD · VERDICT · AFTER COSTS</span></h2>
-        <p class="hint">The three strategies side by side: what kind of trading each is, what its backtest found after charges, what its paper record shows so far, and a plain verdict.
+        <p class="hint">Every trading strategy side by side: what kind of trading each is, what its backtest found after charges, what its paper record shows so far, and a plain verdict.
           Use the sub-tabs above to open one strategy and run its test.</p>
         <div id="cmpOut">Loading…</div>
       </section>
@@ -1189,6 +1195,7 @@
           <button id="stResetBtn" type="button" style="background:var(--soft);color:var(--ink);border:1px solid var(--line)">Restore defaults</button>
         </div>
         <div id="stOut" class="note" style="margin-top:8px"></div>
+        <div class="note">Research only. Not advice.</div>
       </section>
 
       <!-- Model evaluation: replay history + calibration -->

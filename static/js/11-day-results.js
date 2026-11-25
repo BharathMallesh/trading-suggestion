@@ -90,7 +90,7 @@ function drRender(r) {
 }
 
 async function drLoad(date) {
-  $('dayOut').innerHTML = '<div class="note">Loading the paper records…</div>';
+  $('dayOut').innerHTML = '<div class="note">Loading the paper records… (the first load after a restart can take ~15 seconds)</div>';
   $('dayBtn').disabled = true;
   try {
     const r = await api('/api/day-results' + (date ? `?date=${encodeURIComponent(date)}` : ''));

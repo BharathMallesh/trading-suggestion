@@ -120,6 +120,43 @@ export function tradingDaysBetween(from, to) {
   return out;
 }
 
+/**
+ * Last date the holiday list covers: 31 December of the latest year with any listed holiday (NSE publishes
+ * each year's list in December). Dates after it are treated as trading days on weekdays, but that is a
+ * guess — callers flag them as "holiday list not yet published" (round 79, O-B9).
+ */
+export function calendarCoveredUntil() {
+  const years = Object.keys(holidays()).map((d) => Number(d.slice(0, 4))).filter(Number.isFinite);
+  return years.length ? `${Math.max(...years)}-12-31` : null;
+}
+/** Is `date` inside the published holiday list? */
+export function calendarCovers(date) {
+  const until = calendarCoveredUntil();
+  return !!until && String(date).slice(0, 10) <= until;
+}
+export const CALENDAR_GAP_NOTE = 'holiday list not yet published';
+
+/**
+ * Daily bars with today's still-forming bar left out: during the session (and until 15:35 IST) the last daily bar
+ * is partial, while the volatility models were fitted on completed closes (round 79, O-B19). After the close, and
+ * on a non-trading day, the rows are returned unchanged. { rows, dropped }.
+ */
+export function completedDaily(rows, now = new Date()) {
+  const t = ist(now);
+  const partial = rows.length && String(rows[rows.length - 1].date).slice(0, 10) === t.date && isTradingDay(t.date) && t.mins < 935;
+  return { rows: partial ? rows.slice(0, -1) : rows, dropped: !!partial };
+}
+
+/**
+ * Daily bars without the ones dated on a listed NSE holiday: Yahoo sometimes prints a bar on a closed day
+ * (e.g. 2026-01-15), and a backtest must not trade it (round 79, S-B11 — owner decision 25 Nov 2026).
+ * Weekend special sessions (Budget-day Saturdays, Muhurat trading) are not in the list and are kept.
+ */
+export function dropHolidayBars(rows) {
+  const h = holidays();
+  return rows.filter((r) => !h[String(r.date).slice(0, 10)]);
+}
+
 /** Holidays from `date` on (for the UI). */
 export function upcomingHolidays(date = ist(new Date()).date, n = 5) {
   return Object.entries(holidays()).filter(([d]) => d >= date).sort().slice(0, n).map(([d, name]) => ({ date: d, name }));

@@ -96,11 +96,16 @@ export async function foPlan({ paper = loadSpreadPaper(), loadCandles = candles,
   let niftyRet = null;
   if (paper?.startedAt) {
     try {
-      if (niftyCache.key !== paper.startedAt || Date.now() - niftyCache.at > 3600_000) {
+      // NIFTY over the SAME window as the paper value: up to the account's last marked date, not today's live
+      // price (round 79, O-B15)
+      const endDate = paper.curve?.at(-1)?.date || null;
+      const key = `${paper.startedAt}|${endDate}`;
+      if (niftyCache.key !== key || Date.now() - niftyCache.at > 3600_000) {
         const rows = (await loadCandles('^NSEI', { period1: Math.floor(Date.parse(`${paper.startedAt}T00:00:00Z`) / 1000) - 7 * 86400, interval: '1d' })).filter((x) => x.close > 0);
         const start = rows.filter((x) => x.date <= paper.startedAt).pop() || rows[0];
-        niftyCache.ret = start && rows.length ? rows.at(-1).close / start.close - 1 : null;
-        niftyCache.key = paper.startedAt;
+        const end = (endDate ? rows.filter((x) => x.date <= endDate).pop() : null) || rows.at(-1);
+        niftyCache.ret = start && end ? end.close / start.close - 1 : null;
+        niftyCache.key = key;
         niftyCache.at = Date.now();
       }
       niftyRet = niftyCache.ret;

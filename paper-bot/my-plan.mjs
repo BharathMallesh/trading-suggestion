@@ -87,7 +87,11 @@ export async function myPlan({ now = new Date(), research = () => investResearch
   return {
     at: new Date().toISOString(), today, capital,
     regime: raw.regime,
-    core: { funds: raw.funds || [], note: 'Long-term money: a low-cost NIFTY 50 index fund, ideally as a monthly SIP. In this app’s tests it beat every trading strategy after tax except the momentum screen; in falling markets like now, SIP buying gets cheaper prices.' },
+    // "falling markets like now" only when the crash brake says OUT (round 79, L2)
+    core: { funds: raw.funds || [], note: `Long-term money: a low-cost NIFTY 50 index fund, ideally as a monthly SIP. In this app’s tests it beat every trading strategy after tax except the momentum screen${raw.regime?.state === 'out' ? '; in falling markets like now, SIP buying gets cheaper prices' : ''}.` },
+    // the 80 / 20 plan predates the India mix result (round 79, M5): say so instead of contradicting the algo plan
+    superseded: 'This is the older 80 / 20 plan (index fund + Momentum 20 / swing). The best tested rule is now India mix (⅓ Next 50 / ⅓ gold / ⅓ Momentum 10) — see Today’s algo plan, Do this month and the Research summary.',
+    swingNote: `Swing positions here follow the "${swingVersion}" rules; the Swing trade plan card and the swing price alerts use the paper "wide" trail version, so their positions and stops differ from these.`,
     momentum, swing, skip, dates,
     careful: raw.careful || [],
     note: 'What the tested rules say now. The 80 / 20 split (80% index fund, 20% satellite) is the plan the tests support; the amounts are what that split means for your My trades capital. Nothing here says a stock will go up. Decide yourself — or with a SEBI-registered adviser.',

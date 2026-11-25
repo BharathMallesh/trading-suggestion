@@ -16,6 +16,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { candles } from '../market-data.mjs';
 import { mapLimit, writeJsonAtomic } from '../util.mjs';
 import { marketCalendar, cuts, totals } from './calendar-study.mjs';
+import { holidays } from './market-calendar.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SAVED = () => process.env.DAY_PATTERNS_PATH || join(HERE, 'data', 'day-patterns.json');
@@ -345,10 +346,23 @@ export async function dayPatternsStudy({ loadCandles = candles, now = new Date()
 export const saveDayPatterns = (r) => writeJsonAtomic(SAVED(), r);
 export function loadDayPatterns() {
   try {
-    return existsSync(SAVED()) ? JSON.parse(readFileSync(SAVED(), 'utf8')) : null;
+    return existsSync(SAVED()) ? withUpcomingHolidays(JSON.parse(readFileSync(SAVED(), 'utf8'))) : null;
   } catch {
     return null;
   }
+}
+
+/**
+ * The calendar's holidays come from missing NSE files, so they stop at the last data date: NSE holidays after it
+ * (from the market calendar) are added for the day-by-day grid as `detail.upcomingHolidays` — shown, never counted
+ * in the stats (round 79, S-B3).
+ */
+export function withUpcomingHolidays(d) {
+  const det = d?.calendar?.detail;
+  if (!det || !d.calendar.to) return d;
+  const from = new Date(Date.parse(`${d.calendar.to}T00:00:00Z`) + 86400000).toISOString().slice(0, 10);
+  det.upcomingHolidays = Object.fromEntries(Object.entries(holidays()).filter(([x]) => x >= from).sort());
+  return d;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

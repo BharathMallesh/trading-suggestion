@@ -29,6 +29,7 @@ import { candles } from '../market-data.mjs';
 import { normCdf, greeks } from '../blackscholes.mjs';
 import { FORECASTERS, loadVolModel, volCheck } from './volatility.mjs';
 import { badRequest, mapLimit } from '../util.mjs';
+import { completedDaily } from './market-calendar.mjs';
 
 const TD = 252;
 const logReturns = (c) => c.slice(1).map((x, i) => Math.log(x / c[i]));
@@ -79,15 +80,16 @@ function optionSigmaChoice() {
   }
 }
 
-export async function optionOdds({ symbol, type = 'CE', strike, premium, iv, days = 7, eventPending = false, expiry, loadCandles = candles, vol = volCheck } = {}) {
+export async function optionOdds({ symbol, type = 'CE', strike, premium, iv, days = 7, eventPending = false, expiry, loadCandles = candles, vol = volCheck, now = new Date() } = {}) {
   const t = String(type).toUpperCase();
   if (t !== 'CE' && t !== 'PE') throw badRequest('type must be CE or PE');
   const K = Number(strike);
   if (!(K > 0)) throw badRequest('strike must be a positive number');
   const d = Number(days);
   if (!(d >= 1 && d <= 365)) throw badRequest('days to expiry must be 1–365');
-  const v = await vol({ symbol, iv: iv ?? undefined, days: d, eventPending, expiry, loadCandles });
-  const rows = await loadCandles(v.symbol, { range: '5y', interval: '1d' });
+  const v = await vol({ symbol, iv: iv ?? undefined, days: d, eventPending, expiry, loadCandles, now });
+  const cd = completedDaily(await loadCandles(v.symbol, { range: '5y', interval: '1d' }), now); // completed closes only (round 79, O-B19)
+  const rows = cd.rows;
   const r = logReturns(rows.map((x) => x.close));
   const spot = rows[rows.length - 1].close;
   const h = Math.max(1, Math.round(d * (5 / 7)));
@@ -108,6 +110,8 @@ export async function optionOdds({ symbol, type = 'CE', strike, premium, iv, day
   if (entered && !(P >= 0)) throw badRequest('premium must be 0 or more');
   if (P == null && pIv != null) P = greeks({ spot, strike: K, tYears, iv: pIv / 100, type: t }).price;
   if (P == null || !(P >= 0)) throw badRequest('Give the option premium, or an implied vol so it can be priced.'); // note: null >= 0 is true in JS
+  // a premium above the spot (a call) or the strike (a put) is impossible: a typo, not a price (round 79, O-B14)
+  if (entered && P > (t === 'CE' ? spot : K)) throw badRequest(`A premium of ${P} is more than the ${t === 'CE' ? `price (${spot.toFixed(2)})` : `strike (${K})`} — check the number.`);
   const breakeven = t === 'CE' ? K + P : K - P;
   const pAbove = (level, sDaily, method) =>
     method === 'history' ? probAboveHistory(spot, level, sDaily, h, r) : probAboveNormal(spot, level, sDaily, h);
@@ -127,6 +131,8 @@ export async function optionOdds({ symbol, type = 'CE', strike, premium, iv, day
     premiumSource: entered ? 'you entered' : `priced at implied vol ${pIv?.toFixed(1)}%${v.pricingIvSource && v.pricingIvSource !== v.impliedSource ? ` — ${v.pricingIvSource}` : ''}`,
     days: d,
     tradingDays: h,
+    asOf: rows[rows.length - 1].date,
+    partialDropped: cd.dropped,
     breakeven,
     breakevenMovePct: (breakeven / spot - 1) * 100,
     forecastVolPct: usedPct,
@@ -142,10 +148,12 @@ export async function optionOdds({ symbol, type = 'CE', strike, premium, iv, day
     probItm: { forecast: pItm(fDaily), implied: iDaily ? pItm(iDaily) : null },
     fairValueForecast: fair,
     // A premium synthesized from implied vol compared with fair value is circular.
-    premiumVsFairPct: entered && fair > 0 ? (P / fair - 1) * 100 : null,
+    premiumVsFairPct: entered && fair >= 0.05 ? (P / fair - 1) * 100 : null,
     reading:
       !entered
         ? 'Premium was estimated from implied volatility, so comparing it with fair value says nothing — enter the real premium from your broker to compare.'
+        : fair < 0.05
+        ? `Under the forecast volatility this option is worth about ₹0 (${fair.toFixed(2)}): almost no chance of ending in the money, so any premium is mostly a bet on a very big move.`
         : fair > 0
         ? P > fair * 1.15
           ? `The premium is ${((P / fair - 1) * 100).toFixed(0)}% above its value under the forecast volatility — buyers pay for more movement than the forecast expects.`

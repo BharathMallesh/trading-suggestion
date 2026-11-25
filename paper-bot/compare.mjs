@@ -11,12 +11,30 @@ import { loadFnoSpreads } from './fno-spreads.mjs';
 import { loadRsiSwing, loadRsiSwingPaper, summarise as rsiSum } from './rsi-swing.mjs';
 import { loadFoStrangle, loadFoStranglePaper, summarise as foSum } from './fo-strangle.mjs';
 import { loadNiftyDip, loadNiftyDipPaper, summarise as dipSum, ofVersion } from './nifty-dip.mjs';
+import { loadIntraday5y } from './intraday-5y.mjs';
+import { loadOneFifteen, paperSummary as oneFifteenPaper } from './one-fifteen.mjs';
+import { loadMatrixCalendar } from './matrix-calendar.mjs';
+import { loadImbalanceSwing, loadImbalancePaper } from './imbalance-swing.mjs';
+import { loadE2Paper } from './e2-swing.mjs';
+import { loadLbbPaper } from './lbb-swing.mjs';
+import { loadBonusRunupPaper } from './bonus-runup.mjs';
+import { loadIpoApplyPaper } from './ipo-apply.mjs';
 
 const pct = (x, d = 1) => (x == null ? '–' : `${(x * 100).toFixed(d)}%`);
 const rs = (v) => (v == null ? '–' : `${v < 0 ? '−' : '+'}₹${Math.abs(Math.round(v)).toLocaleString('en-IN')}`);
 const R = (x) => (x == null ? '–' : `${x >= 0 ? '+' : ''}${x.toFixed(2)} R`);
+const safe = (f) => {
+  try {
+    return f();
+  } catch {
+    return null;
+  }
+};
+/** "3,384 trades 2020-01-01 → 2026-11-23: −₹193 a trade (t −9.5), total −₹6,53,145" from an intraday-5y block. */
+const fiveYear = (x) => (x?.all?.trades ? `${x.all.trades.toLocaleString('en-IN')} trades ${x.from} → ${x.to}: ${rs(x.all.avg)} a trade (t ${x.all.tStat?.toFixed(1)}), total ${rs(x.all.total)}${x.beforeCosts?.trades ? `; before costs ${rs(x.beforeCosts.avg)} a trade` : ''}` : null);
 
-export function compareStrategies({ vwap = loadVwapPullback(), vp = vwapPaper(), ath = loadAthSwing(), ap = loadAthPaper(), bf = loadBreakfast(), bp = loadBreakfastPaper(), sv = loadSurvivorship(), dip = loadNiftyDip(), dp = loadNiftyDipPaper(), fo = loadFoStrangle(), fp = loadFoStranglePaper(), fs = loadFnoSpreads(), rsiTest = loadRsiSwing(), rsiPaper = loadRsiSwingPaper() } = {}) {
+// Every Trading strategies sub-tab has a row (round 79, S-B4); the intraday rows use the 5-year intraday run.
+export function compareStrategies({ vwap = loadVwapPullback(), vp = vwapPaper(), ath = loadAthSwing(), ap = loadAthPaper(), bf = loadBreakfast(), bp = loadBreakfastPaper(), sv = loadSurvivorship(), dip = loadNiftyDip(), dp = loadNiftyDipPaper(), fo = loadFoStrangle(), fp = loadFoStranglePaper(), fs = loadFnoSpreads(), rsiTest = loadRsiSwing(), rsiPaper = loadRsiSwingPaper(), i5 = loadIntraday5y(), r115 = loadOneFifteen(), r115p = safe(oneFifteenPaper), mc = loadMatrixCalendar(), imb = loadImbalanceSwing(), imbP = loadImbalancePaper(), e2 = loadE2Paper(), lbb = loadLbbPaper(), bsr = loadBonusRunupPaper(), ipo = loadIpoApplyPaper() } = {}) {
   const rows = [];
   // strong-stock swing
   {
@@ -35,7 +53,7 @@ export function compareStrategies({ vwap = loadVwapPullback(), vp = vwapPaper(),
       paperVerdict: earlyVerdict(paper.length, ps.avgR, ps.tStat, 'R'),
       reliable: !!pick?.adopt && (!sv?.results?.[ver] || (sv.results[ver].all.avgR > 0 && sv.results[ver].all.tStat >= 2)),
       verdict: pick?.adopt
-        ? `Best of the four: passed an out-of-sample test${sv?.results?.[ver] ? (sv.results[ver].all.tStat >= 2 && sv.results[ver].all.avgR > 0 ? ' and held up without survivorship bias' : ', but weakened without survivorship bias') : ''}. Still trails a NIFTY fund (more so after tax); best used as a small slice next to an index fund.`
+        ? `Passed an out-of-sample test${sv?.results?.[ver] ? (sv.results[ver].all.tStat >= 2 && sv.results[ver].all.avgR > 0 ? ' and held up without survivorship bias' : ', but weakened without survivorship bias') : ''}. Still trails a NIFTY fund (more so after tax); best used as a small slice next to an index fund.`
         : 'Slightly positive, not proven.',
     });
   }
@@ -45,8 +63,8 @@ export function compareStrategies({ vwap = loadVwapPullback(), vp = vwapPaper(),
     const vid = vp?.byVariant?.video;
     rows.push({
       key: 'vwap', name: 'YouTube intraday (VWAP)', style: 'Intraday · 4 stocks · max 2 trades/day',
-      test: vwap ? `${vwap.sessions} sessions, ${vwap.stocks?.length || 4} stocks` : 'not run',
-      backtest: b ? `${rs(b.avgNetRs)} a trade (t ${b.tStat?.toFixed(1)}); before costs ${rs(vwap.beforeCosts?.avgNetRs)}` : '–',
+      test: i5?.vwap?.video?.all?.trades ? `Groww 5-minute bars ${i5.vwap.video.from?.slice(0, 4)}–${i5.vwap.video.to?.slice(0, 4)}, ${i5.vwap.video.stocks} stocks (video rules)` : vwap ? `${vwap.sessions} sessions, ${vwap.stocks?.length || 4} stocks` : 'not run',
+      backtest: fiveYear(i5?.vwap?.video) ? `${fiveYear(i5.vwap.video)}${i5.vwap.improved?.all?.trades ? ` · improved version ${rs(i5.vwap.improved.all.avg)} a trade (t ${i5.vwap.improved.all.tStat?.toFixed(1)})` : ''}` : b ? `${rs(b.avgNetRs)} a trade (t ${b.tStat?.toFixed(1)}); before costs ${rs(vwap.beforeCosts?.avgNetRs)}` : '–',
       money: vwap?.widerList ? `16 other stocks: ${rs(vwap.widerList.avgNetRs)} a trade` : '–',
       paper: vid?.trades ? `${vid.trades} trades · ${pct(vid.winRate, 0)} won · total ${rs(vid.totalNetRs)}` : `no trades yet (since ${vp?.startedAt || '–'})`,
       paperVerdict: vid?.trust?.verdict || '–',
@@ -59,13 +77,30 @@ export function compareStrategies({ vwap = loadVwapPullback(), vp = vwapPaper(),
     const ps = bfSum(bp?.trades || []);
     rows.push({
       key: 'breakfast', name: 'Breakfast strategy', style: 'Intraday · 9:21–9:45 · sector leaders',
-      test: bf ? `${bf.sessions} sessions, ${bf.stocks} stocks, ${bf.both.trades} trades` : 'not run',
-      backtest: bf ? `${rs(bf.both.avgNetRs)} a trade (t ${bf.both.tStat?.toFixed(1)}); before costs ${rs(bf.beforeCosts.avgNetRs)}` : '–',
+      test: i5?.breakfast?.all?.trades ? `Groww 5-minute bars ${i5.breakfast.from?.slice(0, 4)}–${i5.breakfast.to?.slice(0, 4)}, ${i5.breakfast.stocks} stocks` : bf ? `${bf.sessions} sessions, ${bf.stocks} stocks, ${bf.both.trades} trades` : 'not run',
+      backtest: fiveYear(i5?.breakfast) || (bf ? `${rs(bf.both.avgNetRs)} a trade (t ${bf.both.tStat?.toFixed(1)}); before costs ${rs(bf.beforeCosts.avgNetRs)}` : '–'),
       money: bf ? `stop-out ≈ ${rs(-bf.rules.capital * bf.rules.leverage * bf.rules.stopPct / 100)} on ₹1 lakh at 5×` : '–',
       paper: ps.trades ? `${ps.trades} trades · ${pct(ps.winRate, 0)} won · total ${rs(ps.totalNetRs)}` : `no trades yet (since ${bp?.startedAt || '–'})`,
       paperVerdict: earlyVerdict(ps.trades, ps.avgNetRs, ps.tStat, '₹'),
       reliable: false,
-      verdict: 'Breaks even before charges; charges make it lose. Early sample (history grows daily). Paper only.',
+      verdict: i5?.breakfast?.all?.trades ? 'Lost after charges over five years of 5-minute bars, in both 2020–22 and 2023 →. Paper only.' : 'Breaks even before charges; charges make it lose. Early sample (history grows daily). Paper only.',
+    });
+  }
+  // 1:15 PM reversal (YouTube), stock versions at the 3% threshold
+  if (r115 || r115p?.startedAt) {
+    const v = r115?.results?.['V|3|reversal']?.account?.all;
+    const sv2 = r115?.results?.['S|3|reversal']?.account?.all;
+    const pv = r115p?.byVersion || {};
+    const paperBits = ['V', 'S', 'I'].filter((k) => pv[k]?.trades).map((k) => `${k} ${pv[k].trades} · ${rs(pv[k].totalNetRs ?? pv[k].net)}`);
+    rows.push({
+      key: 'r115', name: '1:15 PM reversal', style: 'Intraday · after a ≥ 3% move by 1:15 PM · max 2 trades/day',
+      test: r115 ? `${r115.from?.slice(0, 4)}–${r115.to?.slice(0, 4)}, ${r115.stocks} stocks (Groww 5-minute bars)` : 'not run',
+      backtest: v?.trades ? `video version ${v.trades.toLocaleString('en-IN')} trades, ${R(v.avgRNet)} a trade, total ${rs(v.totalNetRs)}${sv2?.trades ? ` · same-day version ${R(sv2.avgRNet)}, total ${rs(sv2.totalNetRs)}` : ''}` : '–',
+      money: '₹1,000 risk a trade',
+      paper: paperBits.length ? paperBits.join(' · ') : `no trades yet (since ${r115p?.startedAt || '–'})`,
+      paperVerdict: 'Too early to judge.',
+      reliable: false,
+      verdict: r115?.verdict ? 'Does not work after costs (failed its pre-registered test). Paper only.' : 'Not tested yet.',
     });
   }
   // NIFTY dip-buy
@@ -135,8 +170,85 @@ export function compareStrategies({ vwap = loadVwapPullback(), vp = vwapPaper(),
       verdict: rsiTest.passed ? 'Passed its test.' : 'Lost after charges on the second year; about break-even before charges. Paper only.',
     });
   }
+  // Matrix calendar (NIFTY options)
+  if (mc?.all?.matrix) {
+    const m = mc.all.matrix;
+    rows.push({
+      key: 'mc', name: 'Matrix calendar', style: 'NIFTY weekly / monthly options · held a week',
+      test: `${mc.from?.slice(0, 4)}–${mc.to?.slice(0, 4)}, ${m.n} weeks of real NSE option prices`,
+      backtest: `${pct(m.win, 0)} of weeks won · ${rs(m.avg)} a set (t ${m.t?.toFixed(1)}), total ${rs(m.total)}${mc.all.condor ? ` · condor comparison ${rs(mc.all.condor.avg)} a set (t ${mc.all.condor.t?.toFixed(1)})` : ''}`,
+      money: m.maxDrawdown ? `worst fall ${rs(-m.maxDrawdown)}` : '–',
+      paper: 'Research result only (no paper record).',
+      paperVerdict: 'Research result only.',
+      reliable: !!mc.passed,
+      verdict: mc.passed ? 'Passed its test.' : 'Lost after charges. Research only.',
+    });
+  }
+  // Imbalance swing
+  if (imb?.all || imbP) {
+    const a = imb?.all;
+    const ps = imbP?.summary;
+    rows.push({
+      key: 'imb', name: 'Imbalance swing', style: 'Swing · weeks · delivery',
+      test: imb ? `${imb.from?.slice(0, 4)}–${imb.to?.slice(0, 4)}, ${a?.trades} trades` : 'not run',
+      backtest: a?.trades ? `${pct(a.winRate, 0)} won · ${R(a.avgR)} a trade (t ${a.tStat?.toFixed(1)}) · median ${R(a.medianR)}` : '–',
+      money: '–',
+      paper: (imbP?.trades || []).length ? `${imbP.trades.filter((t) => !t.open).length} closed · ${(imbP.trades || []).filter((t) => t.open).length} open${ps?.avgR != null ? ` · ${R(ps.avgR)} a trade` : ''}` : `no trades yet (since ${imbP?.startedAt || '–'})`,
+      paperVerdict: 'Too early to judge.',
+      reliable: !!imb?.passed,
+      verdict: imb?.passed ? 'Passed its test; paper record running.' : 'Slightly positive per trade but driven by a few big winners; not proven. Paper only.',
+    });
+  }
+  // Momentum breakout (E2), Leader box breakout: frozen rules with dev / val / test periods
+  const swingRow = (key, name, style, st, perTrade) => {
+    const t = st?.research?.test;
+    const sm = st?.summary;
+    rows.push({
+      key, name, style,
+      test: st?.research ? ['dev', 'val', 'test'].map((k) => st.research[k]?.period).filter(Boolean).join(' / ') : 'not run',
+      backtest: t ? `unseen ${t.period}: ${t.trades} trades, ${perTrade(t)} (t ${t.t}), ${pct(t.afterTaxPerYear)}/yr after tax, worst fall ${pct(t.maxDD, 0)}` : '–',
+      money: st?.value ? `paper account ${rs(st.value - (st.rules?.capital || 0))} on ${rs(st.rules?.capital || 0).replace('+', '')}` : '–',
+      paper: sm ? `${sm.closed} closed · ${sm.open} open${sm.avgR != null ? ` · ${R(sm.avgR)} a trade` : ''}` : `no trades yet (since ${st?.startedAt || '–'})`,
+      paperVerdict: 'Too early to judge.',
+      reliable: false,
+      verdict: 'Failed its unseen test period (no reliable per-trade edge). Paper only.',
+    });
+  };
+  if (e2) swingRow('e2', 'Momentum breakout', 'Swing · momentum stocks · pivot breakout · weeks', e2, (t) => R(t.avgR));
+  if (lbb) swingRow('lbb', 'Leader box breakout', 'Swing · market leaders · box breakout · weeks', lbb, (t) => `${t.perTradePct >= 0 ? '+' : ''}${t.perTradePct}% a trade`);
+  // Bonus / split run-up
+  if (bsr) {
+    const last = bsr.research?.rows?.at(-1);
+    const sm = bsr.summary;
+    rows.push({
+      key: 'bsr', name: 'Bonus/split run-up', style: 'Event swing · buy before the record date · days to weeks',
+      test: (bsr.research?.rows || []).map((r) => r.period).join(' / ') || 'not run',
+      backtest: last ? `${last.period}: ${last.trades} trades, +${last.excessPct}% a trade vs NIFTY (t ${last.t}), account ${pct(last.account)}/yr` : '–',
+      money: last?.note || '–',
+      paper: sm ? `${sm.closed} closed · ${sm.open} open · ${pct(sm.avgRetPct / 100)} a trade` : `no trades yet (since ${bsr.startedAt || '–'})`,
+      paperVerdict: 'Too early to judge.',
+      reliable: false,
+      verdict: 'A real per-trade edge in all three periods, but the account trailed India mix in 2025–26. Paper.',
+    });
+  }
+  // IPO apply
+  if (ipo) {
+    const rr = ipo.research;
+    const t = ipo.totals;
+    rows.push({
+      key: 'ipo', name: 'IPO apply', style: 'Minimum lot in every mainboard IPO · sell at the listing open',
+      test: (rr?.rows || []).map((r) => r.period).join(' / ') || 'not run',
+      backtest: rr?.rows?.length ? `${rr.rows.at(-1).period}: about ${rs(rr.rows.at(-1).perYear)} a year (t ${rr.t}); without the 10 best IPOs ${rs(rr.exBest10)} a year` : '–',
+      money: rr?.appsPerYear ? `a fixed amount per PAN (one minimum lot each time), about ${rr.appsPerYear} applications a year` : '–',
+      paper: t ? `${t.applications} applied · ${t.settled} settled · ${t.pending} pending` : `no applications yet (since ${ipo.startedAt || '–'})`,
+      paperVerdict: 'Too early to judge.',
+      reliable: false,
+      verdict: 'A small add-on (a fixed few thousand rupees a year, uneven), not a portfolio. Paper.',
+    });
+  }
   return {
     rows,
-    advice: 'Only the strong-stock swing strategy has passed an honest out-of-sample test, and even it trails a NIFTY index fund after tax. Sensible use: a low-cost index fund as the core, and at most a small slice (e.g. 20%) in the swing strategy once its paper record holds up. Keep both intraday strategies on paper.',
+    // counts come from the rows; the advice matches the Research summary (Home)
+    advice: `${rows.length} trading strategies side by side. None beats the tested monthly mix: India mix (Investing → India mix) is the best tested rule, with a low-cost index fund as the simple alternative. Here, IPO apply is a small add-on and the bonus/split run-up has a real per-trade edge (both paper); the strong-stock swing passed an out-of-sample test but trails a NIFTY index fund after tax. The intraday and F&O strategies lost after charges — keep them on paper.`,
   };
 }

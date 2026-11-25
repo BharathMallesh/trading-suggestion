@@ -876,9 +876,10 @@ export function tournamentView({ now = new Date(), file = STATE() } = {}) {
     boards: { day: leaderboard(st, 'day', vers), five: leaderboard(st, 'five', vers), pm: leaderboard(st, 'pm', vers) },
     contestants: ALL().map((c) => ({ id: c.id, name: c.name, group: c.group, reuses: c.reuses, version: vers[c.id] })),
     recent: (st.days || []).slice(-10).reverse().map((d) => ({ date: d.date, outcome: d.outcome || null, expiry: d.expiry })),
-    history, expiry: xp, why: WHY, gift: GIFT_NOTE, horizons: HORIZONS,
+    // the scorecard numbers in the intro come from the live scorecard, not a fixed snapshot (round 79, O-B17)
+    history, expiry: xp, why: history?.scored && history.topCallRight != null && history.alwaysMostCommonRight != null ? WHY.replace('top Call/Put call right 35–36% vs always-Up 45–47% on the live scorecard', `top Call/Put call right ${Math.round(history.topCallRight * 100)}% vs always-"${String(history.mostCommon || 'most common').replace(/ \(.*\)$/, '')}" ${Math.round(history.alwaysMostCommonRight * 100)}% on the live scorecard, ${history.scored} scored`) : WHY, gift: GIFT_NOTE, horizons: HORIZONS,
     rules: [
-      `Calls at ~08:40 IST from data whose bar closed before the 09:15 open; a run that finishes after 09:15 is not scored.`,
+      `Calls at ~08:15 IST from data whose bar closed before the 09:15 open; a run that finishes after 09:15 is not scored.`,
       `Proven only with ≥ ${T.minN} scored calls, a 95% Wilson lower bound above both 50% and always-CALL's hit rate, positive Brier skill vs the base rate, positive P&L after costs, and Holm-adjusted p < ${T.alpha}.`,
       `P&L: ₹${T.riskRs.toLocaleString('en-IN')} at risk on ₹1 lakh — a real ATM weekly NIFTY option 09:20 → 15:15 when Groww 5-minute prices exist (STT 0.15% of premium on the sale from Apr 2026, ₹20 an order, slippage), else a NIFTY futures-move proxy sized so one daily ATR = ₹2,000. Never an option on a NIFTY expiry day (no P&L that day).`,
       'Each contestant is frozen: its version hash covers its code, the app functions it reuses and its parameters; a new hash starts a new record.',

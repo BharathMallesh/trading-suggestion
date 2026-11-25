@@ -23,7 +23,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { isTradingDay, holidays } from './market-calendar.mjs';
+import { isTradingDay, holidays, calendarCoveredUntil, calendarCovers, CALENDAR_GAP_NOTE } from './market-calendar.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DATA = () => process.env.EXPIRY_DATA_DIR || join(HERE, 'data');
@@ -343,13 +343,29 @@ export function nextExpiries(from = todayIst(new Date())) {
       const [y, m] = from.split('-').map(Number);
       monthly = monthlyFor(index, iso(Date.UTC(y, m, 1)).slice(0, 7));
     }
-    out.push({ index, exchange: index === 'SENSEX' ? 'BSE' : 'NSE', weekday: WD[w], weekly, monthly, label: index === 'STOCKS' ? MONTHLY.STOCKS : index });
+    // a date past the published NSE holiday list may move if it turns out to be a holiday (round 79, O-B9)
+    const unverified = [weekly, monthly].filter((d) => d && !calendarCovers(d));
+    out.push({ index, exchange: index === 'SENSEX' ? 'BSE' : 'NSE', weekday: WD[w], weekly, monthly, label: index === 'STOCKS' ? MONTHLY.STOCKS : index, ...(unverified.length ? { unverified, calendarNote: CALENDAR_GAP_NOTE } : {}) });
   }
   return out;
 }
 
 const dayLabel = (d) => new Date(`${d}T00:00:00Z`).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
 const names = (xs) => [...new Set(xs.map((x) => (x.index === 'STOCKS' ? 'stock-option' : x.kind === 'monthly' ? `${x.index} monthly` : x.index)))].join(' / ');
+
+/**
+ * The banner advice, naming what expires (round 79, O-B8): "Don't buy SENSEX options today (NIFTY and stock
+ * options are not expiring); if you must trade, …" — a SENSEX eve no longer reads as "no options at all".
+ */
+export function adviceFor(xs, when = 'today') {
+  const all = ['NIFTY', 'SENSEX', 'STOCKS'];
+  const word = (i) => (i === 'STOCKS' ? 'stock' : i);
+  const on = all.filter((i) => xs.some((x) => x.index === i));
+  if (!on.length) return RESEARCH.advice.replace('today', when);
+  const off = all.filter((i) => !on.includes(i));
+  const list = (a) => (a.length > 1 ? `${a.slice(0, -1).map(word).join(', ')} and ${word(a.at(-1))}` : word(a[0]));
+  return `Don't buy ${list(on)} options ${when}${off.length ? ` (${list(off)} options are not expiring)` : ''}; if you must trade, use limit orders and defined risk.`;
+}
 
 /**
  * Status for the warning banners and notifications: the session in question (today until the close, else the next
@@ -381,8 +397,9 @@ export function expiryStatus(now = new Date()) {
   return {
     at: now.toISOString(), today, session, sessionIsToday, after, level, title, short,
     expiries: onSession, tomorrow: onAfter,
-    advice: level === 'none' ? 'Buying options on expiry day or the day before lost in every version the app tested.' : sessionIsToday ? RESEARCH.advice : RESEARCH.advice.replace('today', `on ${dayLabel(session)}`),
+    advice: level === 'none' ? 'Buying options on expiry day or the day before lost in every version the app tested.' : adviceFor(level === 'expiry' ? onSession : onAfter, sessionIsToday ? 'today' : `on ${dayLabel(session)}`),
     lines, next: nextExpiries(session),
+    calendar: { coveredUntil: calendarCoveredUntil(), sessionCovered: calendarCovers(after), note: calendarCovers(after) ? null : `NSE ${CALENDAR_GAP_NOTE} beyond ${calendarCoveredUntil()}: dates after it assume no holidays and may move.` },
     rules: rules.map((r) => ({ index: r.index, exchange: r.exchange, weekday: r.weekdayName || null, found: r.found, note: r.note })),
     note: 'Expiry weekdays read from the cached NSE / BSE files; holidays from the NSE calendar (moved to the previous trading day). Research caution, not advice.',
   };

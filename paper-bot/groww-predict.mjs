@@ -5,7 +5,7 @@ import { chat } from '../ling-client.mjs';
 import { historicalCandles, growwUsable } from '../groww-data.mjs';
 import { candles as yahooCandles } from '../market-data.mjs';
 import { computeIndicators } from './indicators.mjs';
-import { logPrediction, newsTiltAllowed } from './prediction-log.mjs';
+import { logPrediction, newsTiltAllowed, yahooSymbolFor } from './prediction-log.mjs';
 import { PAPER } from './config.mjs';
 import { extractJson, normalizeConfidence } from './llm-json.mjs';
 import { calibratedProbs, intervalKey, loadCalibration } from './calibration.mjs';
@@ -800,7 +800,9 @@ export async function growwProbability(symbol, opts = {}) {
 
   // Auto-log for hit-rate calibration (research)
   try {
-    const logged = logPrediction(out);
+    // a Groww series carries the bare NSE symbol (INFY); the log is settled from Yahoo, where a bare
+    // ticker is the US listing, so log it as the NSE Yahoo symbol (round 79, O-B2)
+    const logged = logPrediction(out.source === 'groww' ? { ...out, symbol: yahooSymbolFor(out.symbol) } : out);
     if (logged) out.logId = logged.id;
   } catch {
     /* non-fatal */

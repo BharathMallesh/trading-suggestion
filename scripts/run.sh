@@ -144,6 +144,8 @@ do_refit() {
     && node --max-old-space-size=14000 paper-bot/intraday-5y.mjs >/dev/null \
     && GROWW_API_KEY="$(key trading-research-groww-key)" GROWW_API_SECRET="$(key trading-research-groww-secret)" node --max-old-space-size=8000 paper-bot/fo-intraday-backtest.mjs >/dev/null 2>&1
   node --max-old-space-size=14000 paper-bot/day-patterns.mjs >/dev/null
+  # Breakdown tab: rebuild the backtest trades from the same candles (else its validation fails after each refit)
+  node --max-old-space-size=12000 paper-bot/breakdown.mjs --build >/dev/null
 }
 
 # One job at a time: the scheduled runs and the catch-up share a lock (a stale one,

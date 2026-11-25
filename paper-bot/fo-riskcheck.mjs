@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { candles } from '../market-data.mjs';
 import { nearest, legCost, wingCost, LOT_NOW, marginPct, sttSell, sttExercise } from './fo-strangle.mjs';
 import { foStocksDir } from './vol-premium.mjs';
-import { tradingDaysBetween } from './market-calendar.mjs';
+import { tradingDaysBetween, lastSessionDate } from './market-calendar.mjs';
 import { sessionFor, nextSession, sessionsToExpiry, RESEARCH as EXPIRY_RESEARCH } from './expiry.mjs';
 import { outlookFor, loadUpdownTable, loadUpdownLive, features } from './updown-outlook.mjs';
 
@@ -150,6 +150,19 @@ export function expiryDays(chainDate, expiry, now = new Date()) {
 }
 export const BUYS = new Set(['buy-call', 'buy-put']);
 
+/**
+ * How old a cached chain is for a trade placed now (round 79, O-B5): its expiry has passed (the next session is after
+ * it), or it is more than `maxSessions` completed sessions old. `why` is the plain-language reason, else null.
+ */
+export function chainStale(chain, now = new Date(), maxSessions = 2) {
+  if (!chain?.date) return { stale: false, why: null };
+  const last = lastSessionDate(now);
+  const sessions = chain.date < last ? tradingDaysBetween(chain.date, last).filter((d) => d > chain.date).length : 0;
+  const expired = chain.expiry && chain.expiry < sessionFor(now);
+  const stale = !!expired || sessions > maxSessions;
+  return { stale, sessions, expired: !!expired, why: stale ? `The option prices are from ${chain.date}${expired ? ` and their expiry (${chain.expiry}) has passed` : ` (${sessions} sessions old)`} — the evening job saves fresh NSE prices; until then this check can't be used for a trade.` : null };
+}
+
 export function riskCheck({ strategy = 'strangle', account = 500000, lots = 1, distancePct = 2, wing = 500, wingPct = 4, maxLossPct = 2, chain = latestChain(), niftyRows, symbol = 'NIFTY', now = new Date() }) {
   const stock = symbol !== 'NIFTY' ? chain : null; // a stock chain carries its own lot
   if (stock) wing = (chain.spot * wingPct) / 100; // wings for a stock: a share of its price, not NIFTY points
@@ -241,9 +254,11 @@ export async function riskCheckLive(opts, { loadCandles = candles } = {}) {
   } catch {
     lean = null; // the lean is optional
   }
-  if (symbol === 'NIFTY') return { ...riskCheck({ ...opts, symbol, niftyRows: rows }), lean };
-  const chain = latestStockChain(symbol);
-  if (!chain) throw new Error(`No option prices for ${symbol}: it may not be in F&O (check the list), or the evening job hasn't saved them yet.`);
+  const chain = symbol === 'NIFTY' ? latestChain() : latestStockChain(symbol);
+  if (!chain && symbol !== 'NIFTY') throw new Error(`No option prices for ${symbol}: it may not be in F&O (check the list), or the evening job hasn't saved them yet.`);
+  const age = chainStale(chain, opts.now || new Date());
+  if (age.stale) throw new Error(age.why);
+  if (symbol === 'NIFTY') return { ...riskCheck({ ...opts, symbol, chain, niftyRows: rows }), lean };
   return { ...riskCheck({ ...opts, symbol, chain, niftyRows: rows }), lean };
 }
 
@@ -262,6 +277,7 @@ export async function affordable({ capital = 10000, perTrade = 3000, live = load
     ...(live?.rows || []).filter((x) => x.label === 'weak' && lots[x.symbol]).map((x) => ({ symbol: x.symbol, side: 'buy-put', lean: 'weak', mom: x.mom })),
   ];
   const out = [];
+  const staleWhy = new Set();
   for (const p of picks) {
     const yahoo = p.symbol === 'NIFTY' ? '^NSEI' : `${p.symbol}.NS`;
     let rows = histCache.get(yahoo) && Date.now() - histCache.get(yahoo).at < 6 * 3600_000 ? histCache.get(yahoo).rows : null;
@@ -275,6 +291,8 @@ export async function affordable({ capital = 10000, perTrade = 3000, live = load
     }
     const chain = p.symbol === 'NIFTY' ? latestChain() : latestStockChain(p.symbol);
     if (!chain) continue;
+    const age = chainStale(chain, now);
+    if (age.stale) staleWhy.add(age.why);
     // plain bought options, and spreads (buy one, sell one farther out: cheaper, capped profit)
     const spread = p.side === 'buy-call' ? 'call-spread' : 'put-spread';
     const tries = [
@@ -307,6 +325,7 @@ export async function affordable({ capital = 10000, perTrade = 3000, live = load
   return {
     capital, perTrade, date: out.map((x) => x.date).sort().pop() || latestChain()?.date || null, rows: out,
     tries: Math.floor(capital / perTrade),
+    ...(staleWhy.size ? { stale: [...staleWhy] } : {}),
     note: `Plain options and spreads (buy one, sell one farther out — about half the cost, profit capped; in the 2019–26 NIFTY test spreads lost about ¼–½ as much as plain buys but were still about break-even) whose most-you-can-lose (the cost plus charges) is within ₹${perTrade.toLocaleString('en-IN')}. Sorted by chance of profit. The average result is lifted by a few past crashes or rallies that paid many times the cost — most cases lose the whole cost — so don't read a positive average as an edge. Calls for today's STRONG stocks, puts for WEAK ones (a small 1–3 month lean, not a forecast), NIFTY both ways. Chance of profit = how often the stock's own moves since 2010 would have finished beyond the strike plus the premium by expiry, after charges. With ₹${capital.toLocaleString('en-IN')} that is about ${Math.floor(capital / perTrade)} tries; most bought options expire worthless.`,
   };
 }

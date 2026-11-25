@@ -37,7 +37,7 @@ function momRender(d) {
   }
   if (p) {
     const last = p.curve?.at(-1);
-    html += `<div style="font-size:14px;margin-top:12px"><b>Paper portfolio</b> since ${esc(p.startedAt)}: ${p.rebalances?.length ? `${p.rebalances.length} rebalance${p.rebalances.length > 1 ? 's' : ''} · value ₹${Math.round(last?.value ?? p.capital).toLocaleString('en-IN')} (${mPc((last?.value ?? p.capital) / p.capital - 1, 2)})` : 'starts with the first list made after this month ends (bought at the next open)'}</div>`;
+    html += `<div style="font-size:14px;margin-top:12px"><b>Paper portfolio</b> since ${esc(p.startedAt)}${p.rebalances?.[0]?.date && p.rebalances[0].date !== p.startedAt ? ` (first trades ${esc(p.rebalances[0].date)}, the first session after a month-end)` : ""}: ${p.rebalances?.length ? `${p.rebalances.length} rebalance${p.rebalances.length > 1 ? 's' : ''} · value ₹${Math.round(last?.value ?? p.capital).toLocaleString('en-IN')} (${mPc((last?.value ?? p.capital) / p.capital - 1, 2)})` : 'starts with the first list made after this month ends (bought at the next open)'}</div>`;
     if (p.marks?.length) html += `<div style="overflow-x:auto"><table style="font-size:12px"><thead><tr><th style="text-align:left">Stock</th><th>Bought at</th><th>Last close</th><th>Change</th></tr></thead><tbody>${p.marks.map((m) =>
       `<tr><td style="text-align:left">${esc(m.symbol)}</td><td>₹${m.entry.toFixed(1)}</td><td>${m.last ? `₹${m.last.toFixed(1)}` : '–'}</td><td style="color:${mCol(m.retPct)}">${m.retPct >= 0 ? '+' : ''}${m.retPct.toFixed(1)}%</td></tr>`).join('')}</tbody></table></div>`;
   }

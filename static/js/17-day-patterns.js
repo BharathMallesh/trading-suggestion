@@ -84,7 +84,7 @@ function dpRender(r) {
   $('dpOut').innerHTML = html;
 }
 lazy('Day patterns', async () => {
-  try { dpRender(await api('/api/day-patterns')); } catch (e) { $('dpOut').innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`; }
+  try { dpRender(await dayPatternsOnce()); } catch (e) { $('dpOut').innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`; }
 });
 
 // --- "What works today?" ---

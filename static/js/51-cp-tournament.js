@@ -39,7 +39,7 @@ function cpRender(d) {
   }
   html += `<div style="padding:10px 12px;border-radius:10px;border:1px solid var(--line);font-size:14px">${d.startedAt
     ? `<b>Scored since ${esc(cpDay(d.startedAt))}</b> · base rate (NIFTY up open → close, ${d.baseRate?.sessions || '–'} sessions before the start) ${cpPc(d.baseRate?.day, 1)} · 5 sessions ${cpPc(d.baseRate?.five, 1)}`
-    : '<b>Not started:</b> real scoring starts with the first 08:40 run (Mon–Fri, before the 09:15 open). Test entries are shown but never scored.'}</div>`;
+    : '<b>Not started:</b> real scoring starts with the first 08:15 run (Mon–Fri, before the 09:15 open). Test entries are shown but never scored.'}</div>`;
   // today's calls
   const t = d.today;
   if (t) {

@@ -67,7 +67,7 @@ function bdValidation(v, all) {
   const body = v.map((x) => `<tr><td style="text-align:left">${x.pass ? '✓' : '<b style="color:var(--down)">✗</b>'} ${esc(BD_OPTIONS?.[x.strategy]?.label || x.strategy)} · ${esc(x.version)} · ${esc(x.source)}</td><td>${x.trades}</td><td>${x.reportedTrades ?? '–'}</td><td>${fv(x.total, x.unit)}</td><td>${fv(x.reported, x.unit)}</td>${['weekday', 'weekOfMonth', 'month', 'quarter', 'fyQuarter', 'year'].map((g) => `<td>${fv(x.byGroup[g], x.unit)}</td>`).join('')}<td>${ck(x.ok.sums)}</td><td>${ck(x.ok.cross)}</td><td>${ck(x.ok.counts)}</td><td>${ck(x.ok.reported)}</td><td>${ck(x.ok.years)}</td><td style="text-align:left;color:var(--muted)">${esc(x.reportedBy)}</td></tr>`).join('');
   const failed = v.filter((x) => !x.pass).length;
   return `<div style="font-size:15px;margin-top:18px"><b>Validation — every number checked both ways</b></div>
-    <div style="margin:6px 0;padding:8px 10px;border-radius:8px;border:1px solid ${all.failed ? 'var(--down)' : 'var(--up)'};font-size:13px">${all.failed ? `<b style="color:var(--down)">${all.failed} of ${all.series} series fail a check</b> (✗ below)` : `<b style="color:var(--up)">All ${all.series} series pass</b>`}: each grouping adds back to the ungrouped total (to the rupee; R to 6 decimals; curves multiply back), weekday = month = year totals, trade counts match, and the total equals the strategy's own card${failed ? '' : ''}. Checked on all closed trades by entry date, before the filters above.</div>
+    <div style="margin:6px 0;padding:8px 10px;border-radius:8px;border:1px solid ${all.failed ? 'var(--down)' : 'var(--up)'};font-size:13px">${all.failed ? `<b style="color:var(--down)">${all.failed} of ${all.series} series fail a check</b>${all.failing?.length ? `: ${all.failing.map(esc).join(', ')}` : ''} (✗ below when that strategy is selected)` : `<b style="color:var(--up)">All ${all.series} series pass</b>`}: each grouping adds back to the ungrouped total (to the rupee; R to 6 decimals; curves multiply back), weekday = month = year totals, trade counts match, and the total equals the strategy's own card${failed ? '' : ''}. Checked on all closed trades by entry date, before the filters above.</div>
     ${bdTable(head, body, v.length)}
     <div class="note">"–" = no card total to compare with. Files that keep ₹ rounded per trade are allowed ±₹0.50 a trade against the card. Not advice.</div>`;
 }
@@ -109,6 +109,10 @@ async function bdLoad() {
   q.set('source', $('bdSource').value);
   q.set('dateField', $('bdDate').value);
   for (const [k, id] of [['version', 'bdVersion'], ['side', 'bdSide'], ['from', 'bdFrom'], ['to', 'bdTo']]) if ($(id).value) q.set(k, $(id).value);
+  if ($('bdFrom').value && $('bdTo').value && $('bdFrom').value > $('bdTo').value) {
+    $('bdOut').innerHTML = '<div class="err">"From" is after "To" — swap the dates.</div>'; // round 79, S-B8
+    return;
+  }
   $('bdRun').disabled = true;
   try {
     bdRender(await api(`/api/breakdown?${q}`));

@@ -25,6 +25,21 @@ function runLazy() {
   }
 }
 const $ = (id) => document.getElementById(id);
+/** Fixed decimals without a "-0.0": rounds first, then signs ("+1.2", "-0.4", "0.0"); plus = true adds "+" (round 79, L1). */
+const fixedNz = (v, d = 1, plus = false) => {
+  const r = Number(Number(v).toFixed(d));
+  const z = r === 0 ? 0 : r; // −0 → 0
+  return (plus && z > 0 ? '+' : '') + z.toFixed(d);
+};
+/** /api/day-patterns (~0.5 MB) once per page, shared by Calendar and Day patterns (round 79, S-B12); a failure is retried next time. */
+let DP_PROMISE = null;
+const dayPatternsOnce = () => (DP_PROMISE ||= api('/api/day-patterns').catch((e) => { DP_PROMISE = null; throw e; }));
+/** 1st, 2nd, 3rd, 4th, 11th, 12th, 13th, 21st, 23rd … (round 79, O-B10). */
+const ordinal = (n) => {
+  const k = Math.round(Number(n));
+  const t = k % 100;
+  return `${k}${t >= 11 && t <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][k % 10] || 'th'}`;
+};
 
 // --- Folding cards: every card starts folded to its title; the ones you open are remembered ---
 const FOLD_KEY = 'open-cards';

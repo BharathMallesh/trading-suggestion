@@ -39,6 +39,7 @@ import { candles } from '../market-data.mjs';
 import { orderCharges, DEFAULT_COSTS } from './costs.mjs';
 import { loadIndexList } from './ranking.mjs';
 import { mapLimit, writeJsonAtomic } from '../util.mjs';
+import { dropHolidayBars } from './market-calendar.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SAVED = () => process.env.ATH_SWING_PATH || join(HERE, 'data', 'ath-swing.json');
@@ -505,7 +506,8 @@ export async function loadDaily(loadCandles, symbols, from = '2005-01-01', now =
   const p1 = Math.floor(Date.parse(from) / 1000);
   return (await mapLimit(symbols, 6, async (s) => {
     try {
-      const rows = completedOnly((await loadCandles(s, { period1: p1, interval: '1d' })).filter((x) => x.close > 0 && x.high > 0 && x.low > 0 && x.open > 0), now);
+      // no bars on listed NSE holidays (round 79, S-B11)
+      const rows = completedOnly(dropHolidayBars((await loadCandles(s, { period1: p1, interval: '1d' })).filter((x) => x.close > 0 && x.high > 0 && x.low > 0 && x.open > 0)), now);
       return rows.length > 300 ? { s, rows } : null;
     } catch {
       return null;
@@ -751,6 +753,16 @@ export async function athPaperUpdate({ loadCandles = candles, now = new Date() }
   };
 }
 
+/**
+ * Trailing-stop alerts for the open swing paper positions of the version the Home → Swing trade plan shows
+ * ("wide"), so the alerts and the plan's stops agree (round 79, M4 — owner decision 25 Nov 2026).
+ */
+export const SWING_ALERT_VERSION = 'wide';
+export function swingAlertList(paper, ver = SWING_ALERT_VERSION) {
+  return (paper?.trades || []).filter((x) => x.open && x.version === ver && x.trail > 0)
+    .map((x) => ({ symbol: x.symbol, op: 'below', price: x.trail, note: `Swing paper (${ver} rules, as the Swing trade plan): trailing stop (bought ${x.entryDate})` }));
+}
+
 // CLI
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   if (process.argv.includes('--paper')) {
@@ -758,11 +770,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       .then(async (r) => {
         console.log(`Strong-stock swing paper: since ${r.startedAt} · ${r.trades} trades (${r.open} open)`);
         if (!process.argv.includes('--alerts')) return;
-        const ver = activeRules() !== RULES ? 'improved' : 'original';
         // price alerts at the trailing stops of open paper positions (My trades → Price alerts)
         const { syncSourceAlerts } = await import('./journal.mjs');
-        const open = loadAthPaper()?.trades.filter((x) => x.open && x.version === ver && x.trail > 0) || [];
-        const n = await syncSourceAlerts('swing-paper', open.map((x) => ({ symbol: x.symbol, op: 'below', price: x.trail, note: `Swing paper: trailing stop (bought ${x.entryDate})` })));
+        const n = await syncSourceAlerts('swing-paper', swingAlertList(loadAthPaper()));
         console.log(`Trailing-stop alerts for open swing paper positions: ${n}`);
       })
       .catch((err) => {

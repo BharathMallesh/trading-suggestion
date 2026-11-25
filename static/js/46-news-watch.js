@@ -2,7 +2,7 @@
 // NSE announcements and headlines (times + links), event type, AI summary, the UP / DOWN / NO CALL call with its
 // confidence, the tested history of that kind of news and any ⚠ don't-buy-now warning. Add / remove your own stocks.
 // Phone width: blocks wrap (no wide tables); long titles and links break.
-// On top: "Today's news pick" (08:40 job, /api/news-pick) — picks, the random control and the picks-vs-control scorecard.
+// On top: "Today's news pick" (08:15 job, /api/news-pick) — picks, the random control and the picks-vs-control scorecard.
 // Classic script (not a module): loaded in order by index.html.
 const nwPct = (x, d = 0) => (x == null ? '–' : `${(x * 100).toFixed(d)}%`);
 const nwSigned = (x, d = 2) => (x == null ? '–' : `${x > 0 ? '+' : ''}${x.toFixed(d)}%`);
@@ -80,14 +80,15 @@ function nwRender(d) {
       `<div style="font-size:12px;padding:3px 0;border-top:1px solid var(--line);overflow-wrap:anywhere">${esc(c.date)} · <b>${esc(c.symbol)}</b> · ${c.horizon === 1 ? 'next session' : '5 sessions'} · <b style="color:${NW_COLOR[c.call]}">${esc(c.call)}</b>${c.confidence != null ? ` ${Math.round(c.confidence * 100)}%` : ''} · ${esc(c.source)} · ${esc(NW_TYPES[c.eventType] || c.eventType || '')}${c.price ? ` · ₹${c.price.toFixed(2)}` : ''}
        — ${c.scored ? `${c.hit ? '<span style="color:var(--up)">hit</span>' : '<span style="color:var(--down)">miss</span>'} (stock ${nwSigned(c.stockPct)}, NIFTY ${nwSigned(c.niftyPct)}, P&amp;L ${nwSigned(c.pnlPct)})` : `waiting for ${esc(c.target || 'the close')}`}</div>`).join('')}</details>`;
   }
-  html += '<div class="note" style="margin-top:8px">Calls are research, logged to be scored; they change no strategy. Not advice.</div>';
+  html += '<div class="note" style="margin-top:8px">Calls are research, logged to be scored; they change no strategy. Since 25 Nov 2026 a stock\'s own NSE filing sets its event over headlines when both exist. Not advice.</div>';
   $('nwOut').innerHTML = html;
   const msg = (t, bad) => { $('nwMsg').textContent = t; $('nwMsg').style.color = bad ? 'var(--down)' : ''; };
+  if (window.NW_FLASH) { msg(window.NW_FLASH); window.NW_FLASH = null; } // a confirmation survives the reload it triggers (round 79, INV-5)
   const post = async (path, body) => api(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   $('nwAdd').addEventListener('click', async () => {
     const s = $('nwSym').value.trim();
     if (!s) return msg('Type a symbol first.', true);
-    try { const r = await post('/api/news-watch/add', { symbol: s }); msg(r.added ? `Added — the evening job reads it, or press Check now.` : 'Already in your list.'); nwLoad(); } catch (e) { msg(e.message, true); }
+    try { const r = await post('/api/news-watch/add', { symbol: s }); window.NW_FLASH = r.added ? `Added ${r.symbols?.at(-1) || s.toUpperCase()} — the evening job reads it, or press Check now.` : 'Already in your list.'; msg(window.NW_FLASH); nwLoad(); } catch (e) { msg(e.message, true); }
   });
   $('nwCheck').addEventListener('click', async () => {
     const s = $('nwSym').value.trim();
@@ -99,7 +100,7 @@ function nwRender(d) {
     try { await post('/api/news-watch/remove', { symbol: b.dataset.sym }); nwLoad(); } catch (e) { msg(e.message, true); }
   });
 }
-// ---- Today's news pick (08:40 job) — box at the top of the card ----
+// ---- Today's news pick (08:15 job) — box at the top of the card ----
 function npStock(p, kind) {
   const conf = p.confidence != null ? ` · ${Math.round(p.confidence * 100)}%` : '';
   const items = (p.items || []).slice(0, 4).map((x) => `<li style="margin:2px 0;overflow-wrap:anywhere"><span class="note" style="display:inline">${esc(nwTime(x.time))} · ${esc(x.source)}</span> ${x.link ? `<a href="${esc(x.link)}" target="_blank" rel="noopener noreferrer">${esc(x.title)}</a>` : esc(x.title)}</li>`).join('');
@@ -118,8 +119,8 @@ function npSide(label, x) {
 function npRender(d) {
   const L = d.latest;
   let html = `<div style="padding:10px 12px;border:1px solid var(--line);border-radius:12px;min-width:0">
-    <div style="overflow-wrap:anywhere"><b>Today's news pick</b> <span class="note" style="display:inline">· made before the open at 08:40 · bought at the OPEN · UNPROVEN</span></div>`;
-  if (!L) html += '<div class="note">No morning run yet — the 08:40 job (weekdays) makes the first pick.</div>';
+    <div style="overflow-wrap:anywhere"><b>Today's news pick</b> <span class="note" style="display:inline">· made before the open at 08:15 · bought at the OPEN · UNPROVEN · event rule: own NSE filing first (since 25 Nov 2026)</span></div>`;
+  if (!L) html += '<div class="note">No morning run yet — the 08:15 job (weekdays) makes the first pick.</div>';
   else {
     html += `<div style="font-size:12.5px;margin-top:4px">${esc(L.date)} · news since ${esc(nwTime(L.since))} IST · ${L.pool?.candidates ?? 0} candidates${L.test ? ` · <b style="color:var(--warn)">TEST RUN — ${esc(L.testReason || 'not scored')}</b>` : ''}</div>`;
     if (L.ai === 'missing') html += `<div style="color:var(--warn);font-size:12.5px;margin-top:4px">${esc(L.aiNote)}</div>`;

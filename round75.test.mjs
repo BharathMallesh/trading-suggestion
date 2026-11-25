@@ -100,7 +100,7 @@ test('warnings only on expiry day and the day before; the session moves at the 1
   assert.equal(lv('2026-12-05', '10:00'), 'eve', 'Saturday → next session Mon 7 Dec, the day before Tue 8 Dec');
   const s = ex.expiryStatus(ist('2026-12-01', '10:00'));
   assert.match(s.title, /Today is NIFTY expiry day/);
-  assert.match(s.advice, /Don't buy options today; if you must trade, use limit orders and defined risk/);
+  assert.match(s.advice, /Don't buy NIFTY options today \(SENSEX and stock options are not expiring\); if you must trade, use limit orders and defined risk/); // round 79 (O-B8): names the index
   assert.ok(s.lines.some((l) => /59–70%/.test(l) && /75–80%/.test(l)));
   assert.ok(s.lines.some((l) => /98%/.test(l)));
   assert.ok(s.lines.some((l) => /Jane Street/.test(l) && /21 Oct 2026/.test(l)));

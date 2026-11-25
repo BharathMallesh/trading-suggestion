@@ -24,18 +24,21 @@ function aaRender(r) {
   else if (r.caveat) html += `<div class="note" style="margin-top:10px;border-left:3px solid var(--warn);padding-left:8px">${esc(r.caveat)}</div>`;
   $('aaOut').innerHTML = html + '<div class="note">Research / education only — not investment advice.</div>';
 }
+let aaSeq = 0; // only the latest question's answer is shown (round 79, M7: a slower earlier answer no longer replaces a later one)
 async function aaAsk(question) {
   const q = (question ?? $('aaQ').value).trim();
   if (!q) return;
+  const my = ++aaSeq;
   $('aaQ').value = q;
   $('aaOut').textContent = 'Looking it up with the app\'s tools…';
   $('aaBtn').disabled = true;
   try {
-    aaRender(await api('/api/assistant', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: q }) }));
+    const r = await api('/api/assistant', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: q }) });
+    if (my === aaSeq) aaRender(r);
   } catch (e) {
-    $('aaOut').innerHTML = `<div class="err">${esc(e.message)}</div>`;
+    if (my === aaSeq) $('aaOut').innerHTML = `<div class="err">${esc(e.message)}</div>`;
   } finally {
-    $('aaBtn').disabled = false;
+    if (my === aaSeq) $('aaBtn').disabled = false;
   }
 }
 $('aaBtn').addEventListener('click', () => aaAsk());
@@ -60,13 +63,14 @@ $('plBtn').addEventListener('click', async () => {
     $('plOut').innerHTML = `<div style="font-size:15px"><b>${p.side === 'long' ? 'Buy' : 'Short'} ${p.qty} shares of ${esc(p.symbol.replace('.NS', ''))}</b> at ₹${p.entry} · stop ₹${p.stop} · target ₹${(+p.target).toFixed(2)}</div>
       <table style="font-size:13px"><tbody>
         <tr><td>Position size</td><td>${rsj(p.positionValue)}${p.product === 'intraday' ? ` · margin at 5× ≈ ${rsj(p.marginNeeded)}` : ''}${p.cappedByCash ? ' · <span style="color:var(--warn)">limited by your capital</span>' : ''}</td></tr>
-        <tr><td>If the stop hits</td><td style="color:var(--down)"><b>−${rsj(p.lossAtStop)}</b> after charges (${p.stopPct.toFixed(2)}% away)</td></tr>
-        <tr><td>If the target hits</td><td style="color:var(--up)"><b>+${rsj(p.gainAtTarget)}</b> after charges · ${p.rrAfterCosts != null ? p.rrAfterCosts.toFixed(2) + '× the risk' : '–'}</td></tr>
+        <tr><td>If the stop hits</td><td style="color:var(--down)"><b>−${rsj(p.lossAtStop)}</b> after charges (${p.stopPct.toFixed(2)}% away)${p.stopPct < 0.1 ? ' · <span style="color:var(--warn)">stop under 0.1% from the entry: normal noise will hit it</span>' : ''}</td></tr>
+        <tr><td>If the target hits</td><td style="color:${p.gainAtTarget > 0 ? 'var(--up)' : 'var(--down)'}"><b>${p.gainAtTarget > 0 ? '+' : ''}${rsj(p.gainAtTarget)}</b> after charges · ${p.rrAfterCosts != null ? p.rrAfterCosts.toFixed(2) + '× the risk' : '–'}</td></tr>
         <tr><td>Today's risk</td><td>${p.risk ? `a normal day moves about ±${(p.risk.dailyMovePct ?? 0).toFixed(1)}% · chance today moves ${p.stopPct.toFixed(2)}% against you: <b>${pc(p.risk.chanceStopDistanceToday)}</b>` : 'odds unavailable'}</td></tr>
       </tbody></table>
       <div style="margin-top:6px;font-size:13px"><b>Rules check</b></div>
       <ul style="margin:4px 0 0 18px;font-size:13px">${p.checks.map((c) => `<li style="color:${c.ok ? 'var(--up)' : 'var(--down)'}">${c.ok ? '✓' : '✗'} ${esc(c.rule)} <span class="note" style="display:inline">${esc(c.detail)}</span></li>`).join('')}</ul>
-      <div style="margin:8px 0;padding:8px 10px;border-radius:8px;background:var(--soft);font-size:13px">${p.allOk ? '<b style="color:var(--up)">All rules kept.</b>' : `<b style="color:var(--down)">${p.checks.filter((c) => !c.ok).length} rule(s) broken.</b> You can still record it, but it will count as a rule-break in your scorecard.`} This checks discipline, not whether the trade will work.</div>
+      ${p.warning ? `<div class="err" style="margin-top:6px">⚠ ${esc(p.warning)}</div>` : ''}
+      <div style="margin:8px 0;padding:8px 10px;border-radius:8px;background:var(--soft);font-size:13px">${p.allOk ? `<b style="color:var(--up)">All rules kept${p.warning ? ' (one could not be checked)' : ''}.</b>` : `<b style="color:var(--down)">${p.checks.filter((c) => !c.ok).length} rule(s) broken.</b> You can still record it, but it will count as a rule-break in your scorecard.`} This checks discipline, not whether the trade will work.</div>
       <div class="row" style="gap:8px;align-items:flex-end">
         <div><label>Shares actually bought (blank = ${p.qty})</label><input id="plQty" type="number" min="1" step="1" /></div>
         <div style="flex:2"><label>Why this trade? (optional)</label><input id="plNote" placeholder="e.g. pullback to 20 MA in an uptrend" /></div>
@@ -75,8 +79,8 @@ $('plBtn').addEventListener('click', async () => {
       <button id="plSave" type="button">I placed this trade: save to journal</button> <span id="plSaved" class="note" style="display:inline"></span>`;
     $('plSave').addEventListener('click', async () => {
       try {
-        await post('/api/journal/add', { ...planInput(), qty: $('plQty').value, note: $('plNote').value, withAlerts: $('plAlerts').checked });
-        $('plSaved').textContent = 'Saved. It is in your journal below; close it there when you exit.';
+        const t = await post('/api/journal/add', { ...planInput(), qty: $('plQty').value, note: $('plNote').value, withAlerts: $('plAlerts').checked });
+        $('plSaved').textContent = 'Saved. It is in your journal below; close it there when you exit.' + (t && t.rulesOk === false ? ` Counted as a rule-break (${t.qty} shares): ${t.brokenRules.join('; ')}.` : '');
         jnLoad();
       } catch (e) {
         $('plSaved').innerHTML = `<span class="err">${esc(e.message)}</span>`;
@@ -108,7 +112,7 @@ async function jnLoad() {
         <td><input type="number" step="0.05" data-exit="${esc(x.id)}" style="width:90px" /></td><td><button type="button" data-close="${esc(x.id)}" style="margin:0;padding:3px 10px">Close</button> <button type="button" data-del="${esc(x.id)}" title="Delete (entered by mistake)" style="margin:0;padding:3px 8px;background:var(--soft);color:var(--ink);border:1px solid var(--line)">✕</button></td></tr>`).join('')}</tbody></table>`;
     if (st.all.trades) {
       const a = st.all;
-      html += `<div style="font-size:14px;margin-top:10px"><b>Your scorecard</b> · ${a.trades} closed trades</div>
+      html += `<div style="font-size:14px;margin-top:10px"><b>Your scorecard</b> · ${a.trades} closed trade${a.trades === 1 ? '' : 's'}</div>
         <table style="font-size:13px"><tbody>
           <tr><td>Total after charges</td><td style="color:${a.totalRs >= 0 ? 'var(--up)' : 'var(--down)'}"><b>${rsj(a.totalRs)}</b> (charges paid ${rsj(a.chargesRs)})</td></tr>
           <tr><td>Win rate</td><td>${pc(a.winRate)} · average win ${rsj(a.avgWinRs)} · average loss ${rsj(a.avgLossRs)}</td></tr>
@@ -165,8 +169,8 @@ function alRender(alerts) {
   const act = alerts.filter((a) => !a.triggeredAt);
   const done = alerts.filter((a) => a.triggeredAt && a.triggeredAt !== 'closed').slice(0, 15);
   $('alOut').innerHTML = (act.length ? `<div style="font-size:14px"><b>Active (${act.length})</b></div><table style="font-size:12px"><tbody>${act.map((a) =>
-    `<tr><td style="text-align:left"><b>${esc(a.symbol.replace('.NS', ''))}</b> ${a.op === 'above' ? 'rises above' : 'falls below'} ₹${a.price}</td><td class="note" style="text-align:left">${esc(a.note || '')}</td><td><button type="button" data-al="${esc(a.id)}" style="margin:0;padding:2px 8px;background:var(--soft);color:var(--ink);border:1px solid var(--line)">Remove</button></td></tr>`).join('')}</tbody></table>` : '<div class="note">No active alerts.</div>') +
-    (done.length ? `<details style="margin-top:6px"><summary style="cursor:pointer;font-size:13px">Triggered (${done.length})</summary><ul style="margin:4px 0 0 18px;font-size:12px">${done.map((a) => `<li>${esc(a.symbol.replace('.NS', ''))} ${a.op === 'above' ? 'rose above' : 'fell below'} ₹${a.price} at ${esc(new Date(new Date(a.triggeredAt).getTime() + 19800000).toISOString().slice(0, 16).replace('T', ' '))} IST${a.note ? ` — ${esc(a.note)}` : ''}</li>`).join('')}</ul></details>` : '');
+    `<tr><td style="text-align:left"><b>${esc(a.symbol.replace('.NS', ''))}</b> ${a.op === 'above' ? 'rises above' : 'falls below'} ${/^\^/.test(a.symbol) ? '' : '₹'}${Number(a.price).toLocaleString('en-IN')}</td><td class="note" style="text-align:left">${esc(a.note || '')}</td><td><button type="button" data-al="${esc(a.id)}" style="margin:0;padding:2px 8px;background:var(--soft);color:var(--ink);border:1px solid var(--line)">Remove</button></td></tr>`).join('')}</tbody></table>` : '<div class="note">No active alerts.</div>') +
+    (done.length ? `<details style="margin-top:6px"><summary style="cursor:pointer;font-size:13px">Triggered (${done.length})</summary><ul style="margin:4px 0 0 18px;font-size:12px">${done.map((a) => `<li>${esc(a.symbol.replace('.NS', ''))} ${a.op === 'above' ? 'rose above' : 'fell below'} ${/^\^/.test(a.symbol) ? '' : '₹'}${Number(a.price).toLocaleString('en-IN')} at ${esc(new Date(new Date(a.triggeredAt).getTime() + 19800000).toISOString().slice(0, 16).replace('T', ' '))} IST${a.note ? ` — ${esc(a.note)}` : ''}</li>`).join('')}</ul></details>` : '');
 }
 $('alOut').addEventListener('click', async (e) => {
   const a = e.target?.dataset?.al;
@@ -189,3 +193,6 @@ $('alBtn').addEventListener('click', async () => {
   }
 });
 lazy('Trade journal', jnLoad);
+// the alerts list and the Setup dropdown are filled by jnLoad too: load it when either card opens (round 79, M3)
+lazy('Price alerts', jnLoad);
+lazy('Plan a trade', jnLoad);

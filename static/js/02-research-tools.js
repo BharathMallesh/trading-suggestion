@@ -188,6 +188,8 @@ $('optBtn').addEventListener('click', async () => {
     }
     const d = await api('/api/option?' + p.toString());
     const g = d.greeks;
+    // ₹ with Indian grouping for numbers; text values ("unlimited") as they are (round 79, O-B12)
+    const ocRs = (v) => (typeof v === 'number' && Number.isFinite(v) ? `₹${v.toLocaleString('en-IN', { maximumFractionDigits: 2 })}` : esc(String(v ?? '–')));
     let html = `<div class="kv">
       <div>Theoretical price</div><div>${g.price.toFixed(2)}</div>
       <div>Delta</div><div>${g.delta.toFixed(4)}</div>
@@ -200,11 +202,11 @@ $('optBtn').addEventListener('click', async () => {
       html += `<div class="kv" style="margin-top:14px">
         <div>Position</div><div>${esc(po.position)} @ ${d.premiumUsed.toFixed(2)}</div>
         <div>Breakeven</div><div>${po.breakeven}</div>
-        <div>Max loss / lot</div><div>${po.perLot.maxLoss}</div>
-        <div>Max profit / lot</div><div>${po.perLot.maxProfit}</div>
+        <div>Max loss / lot</div><div>${ocRs(po.perLot.maxLoss)}</div>
+        <div>Max profit / lot</div><div>${ocRs(po.perLot.maxProfit)}</div>
       </div>`;
       html += '<div class="note">Mechanics of the position you described — not a suggestion to take it.</div>';
-    }
+    } else html += '<div class="note">Model prices and greeks only. Not advice.</div>';
     out.innerHTML = html;
   } catch (e) {
     out.className = 'out err';

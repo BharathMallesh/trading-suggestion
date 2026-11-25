@@ -7,7 +7,7 @@ const tpCol = (x) => (x > 0 ? 'var(--up)' : x < 0 ? 'var(--down)' : 'var(--muted
 function tpRender(p) {
   const c = p.counts;
   let html = `<div style="padding:10px 12px;border-radius:10px;border:1px solid ${c.buy || c.sell ? 'var(--up)' : 'var(--line)'};font-size:14px">
-    <b>For the next open${p.asOf ? ` (after the ${esc(p.asOf)} close)` : ''}: buy ${c.buy} · sell ${c.sell} · hold ${c.hold}</b> <span class="note" style="display:inline">${c.freeSlots} of ${p.rules.maxOpen} slots free</span>
+    <b>For the next open${p.asOf ? ` (after the ${esc(p.asOf)} close)` : ''}: buy ${c.buy} · sell ${c.sell} · hold ${c.hold}</b> <span class="note" style="display:inline">${c.freeSlots} of ${p.rules.maxOpen} slots free${p.invested != null ? ` · ${tpRs(p.invested)} invested of ${tpRs(p.capital)}` : ''}</span>
     <ol style="margin:6px 0 0 18px;padding:0;font-size:13px;line-height:1.6">${p.steps.map((s) => `<li>${esc(s)}</li>`).join('')}</ol></div>`;
   const buys = p.buy.filter((b) => b.action === 'buy');
   html += `<div style="font-size:14px;margin-top:12px"><b>BUY at the open</b></div>`;
@@ -16,13 +16,16 @@ function tpRender(p) {
     : '<div class="note">No new breakout at the latest close — nothing to buy.</div>';
   const skipped = p.buy.filter((b) => b.action === 'skip');
   if (skipped.length) html += `<div class="note">Not bought: ${skipped.map((b) => `${esc(b.symbol)} (${esc(b.why)})`).join(' · ')}</div>`;
-  const sells = p.hold.filter((h) => h.action === 'sell');
+  const sells = p.hold.filter((h) => h.action === 'sell' && h.inPlan !== false);
   if (sells.length) html += `<div style="font-size:14px;margin-top:12px;color:var(--down)"><b>SELL at the open</b> (closed below the trailing stop): ${sells.map((h) => `<b>${esc(h.symbol)}</b> ${h.shares} shares (stop ${tpP(h.stop)}, last ${tpP(h.last)})`).join(' · ')}</div>`;
-  const holds = p.hold.filter((h) => h.action === 'hold');
+  const holds = p.hold.filter((h) => h.action === 'hold' && h.inPlan !== false);
+  const paperOnly = p.hold.filter((h) => h.inPlan === false);
   html += `<div style="font-size:14px;margin-top:12px"><b>HOLD — set these stops</b></div>`;
   html += holds.length
     ? `<div style="overflow-x:auto"><table style="font-size:12px"><thead><tr><th style="text-align:left">Stock</th><th>Bought</th><th>Entry</th><th>Last</th><th>Stop for tomorrow</th><th>Room to stop</th><th>Shares</th><th>Result</th></tr></thead><tbody>${holds.map((h) => `<tr><td style="text-align:left"><b>${esc(h.symbol)}</b></td><td>${esc(h.entryDate)}</td><td>${tpP(h.entry)}</td><td>${tpP(h.last)}</td><td><b>${tpP(h.stop)}</b>${h.stopRaised ? ' <span class="note" style="display:inline">raised</span>' : ''}</td><td style="color:${h.gapToStopPct < 2 ? 'var(--down)' : 'var(--ink)'}">${h.gapToStopPct?.toFixed(1) ?? '–'}%</td><td>${h.shares}</td><td style="color:${tpCol(h.pnl)}"><b>${h.pnl >= 0 ? '+' : '−'}${tpRs(Math.abs(h.pnl))}</b> (${h.r >= 0 ? '+' : ''}${h.r.toFixed(2)} R)</td></tr>`).join('')}</tbody></table></div>`
     : '<div class="note">No open positions.</div>';
+  html += '<div class="note">The paper record tracks every signal (it can hold more positions than any one account); this plan shows what fits your capital. Rules: wide trail — the swing price alerts (My trades) use these same stops.</div>';
+  if (paperOnly.length) html += `<div class="note">Paper only (not in your plan — the paper record keeps every signal, your amount fits ${p.rules.maxOpen} positions at most): ${paperOnly.map((h) => `${esc(h.symbol)} (${h.action === 'sell' ? 'sold at the next open' : `stop ${tpP(h.stop)}`})`).join(' · ')}</div>`;
   if (p.sold.length) html += `<div class="note">Sold today: ${p.sold.map((s) => `${esc(s.symbol)} ${s.r >= 0 ? '+' : ''}${s.r.toFixed(2)} R (${esc(s.reason)})`).join(' · ')}</div>`;
   const rec = p.record;
   html += `<div class="note" style="margin-top:8px">Paper record (wide trail) since ${esc(rec.since || '–')}: ${rec.trades ? `${rec.trades} closed · won ${Math.round(rec.winRate * 100)}% · ${rec.avgR.toFixed(2)} R a trade` : 'no closed trades yet'} · ${rec.open} open. ${esc(p.note)}</div>`;

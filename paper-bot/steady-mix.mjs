@@ -16,7 +16,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { candles } from '../market-data.mjs';
-import { writeJsonAtomic } from '../util.mjs';
+import { writeJsonAtomic, curveDate } from '../util.mjs';
 import { RULES as MOM, simulate, loadAll, monthEnds } from './momentum.mjs';
 import { rankBy, buffered, loadMomentum10Paper } from './momentum10.mjs';
 import { trendGate } from './new-ideas.mjs';
@@ -232,8 +232,10 @@ export async function steadyMixPaperUpdate({ loadCandles = candles, now = new Da
   }
   const cur = st.rebalances.at(-1);
   if (cur) {
-    const { v, marks } = await valueOf(cur, { date: today, price: async (s) => (await closeOn(s))?.px ?? null });
-    st.curve = [...st.curve.filter((c) => c.date !== today), { date: today, value: v }];
+    const seen = [];
+    const { v, marks } = await valueOf(cur, { date: today, price: async (s) => { const p = await closeOn(s); if (p) seen.push(p.date); return p?.px ?? null; } });
+    const at = curveDate(seen, today); // the closes' trading date, not the run date
+    st.curve = [...st.curve.filter((c) => c.date !== at), { date: at, value: v }].sort((a, b) => a.date.localeCompare(b.date));
     st.marks = marks;
   }
   st.filter = { monthEnd: completed, inMarket: completed ? filterAt(nifty, completed) : null, today: filterAt(nifty, nifty.at(-1).date) };

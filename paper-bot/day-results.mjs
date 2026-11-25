@@ -12,6 +12,11 @@ import { badRequest } from '../util.mjs';
 import { loadFoStranglePaper } from './fo-strangle.mjs';
 import { loadNiftyDipPaper, ofVersion, VERSION_LABELS } from './nifty-dip.mjs';
 
+/** YYYY-MM-DD that exists on the calendar (round-trips through Date). */
+export const isRealDate = (d) => {
+  const t = Date.parse(`${d}T00:00:00Z`);
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(d)) && Number.isFinite(t) && new Date(t).toISOString().slice(0, 10) === d;
+};
 const istDate = (iso) => (iso ? new Date(new Date(iso).getTime() + 19800_000).toISOString().slice(0, 10) : null);
 const sum = (a, f) => a.reduce((x, t) => x + f(t), 0);
 const LABELS = { video: 'Video rules', improved: 'Improved (daily trend + 3×ATR stop)', scanner: 'Morning scanner (20 stocks)' };
@@ -24,6 +29,8 @@ const trade = (t) => ({ symbol: t.symbol, side: t.side, time: t.time || null, en
 export function dayResults(date = null, { vwap = loadPaper(), breakfast = loadBreakfastPaper(), swing = loadAthPaper(), dip = loadNiftyDipPaper(), fo = loadFoStranglePaper(), scan = null, swingVersion = 'original', now = new Date() } = {}) {
   const d = date || lastSessionDate(now);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) throw badRequest('Date must be YYYY-MM-DD.');
+  // a real calendar date only: "2026-02-30" no longer reads as a trading day (round 79, P1)
+  if (!isRealDate(d)) throw badRequest(`${d} is not a real date.`);
   const vt = vwap?.trades || [];
   const bt = breakfast?.trades || [];
   const st = (swing?.trades || []).filter((t) => (t.version || 'original') === swingVersion);
@@ -37,7 +44,9 @@ export function dayResults(date = null, { vwap = loadPaper(), breakfast = loadBr
   const signals = scan && scan.date === d ? scan.triggered || [] : [];
 
   const dates = [...new Set([...vt.map((t) => t.date), ...bt.map((t) => t.date), ...st.flatMap((t) => [t.entryDate, t.exitDate]), ...(dip?.trades || []).flatMap((t) => [t.entryDate, t.exitDate])].filter(Boolean))].sort().reverse();
-  const updated = [vwap?.updatedAt, breakfast?.updatedAt, swing?.updatedAt, dip?.updatedAt].map(istDate).filter(Boolean).sort().pop() || null;
+  const updatedRun = [vwap?.updatedAt, breakfast?.updatedAt, swing?.updatedAt, dip?.updatedAt].map(istDate).filter(Boolean).sort().pop() || null;
+  // the records hold sessions, not run dates: a run on a weekend / NSE holiday covers the session before it (round 79, L8)
+  const updated = updatedRun && !isTradingDay(updatedRun) ? lastSessionDate(new Date(`${updatedRun}T12:00:00+05:30`)) : updatedRun;
   const todayIst = istDate(now.toISOString());
   const pending = isTradingDay(d) && (!updated || updated < d);
 
@@ -49,7 +58,7 @@ export function dayResults(date = null, { vwap = loadPaper(), breakfast = loadBr
     note: !isTradingDay(d)
       ? 'NSE was closed on this day (weekend or holiday): no trades.'
       : pending
-        ? (d === todayIst ? 'Today\'s results are filled in after the market closes, by the 4:05 PM run. Until then, see Trading strategies for the live view.' : 'The paper records were not updated for this day (the Mac may have been off at 4:05 PM).')
+        ? (d === todayIst ? 'Today\'s results are filled in after the market closes, by the 4:05 PM run. Until then, see Trading strategies for the live view.' : d > todayIst ? 'That date is in the future: no results yet.' : 'The paper records were not updated for this day (the Mac may have been off at 4:05 PM).')
         : null,
     dates: dates.slice(0, 40),
     vwap: { variants, dayNet: sum(variants, (v) => v.dayNet) },

@@ -20,6 +20,7 @@ import { fileURLToPath } from 'node:url';
 import { candles } from '../market-data.mjs';
 import { orderCharges, DEFAULT_COSTS } from './costs.mjs';
 import { bigMove } from './big-move.mjs';
+import { nseSymbols } from './bhav-history.mjs';
 import { badRequest, readJsonSafe, writeJsonAtomic, withFileLock, SYMBOL_RE } from '../util.mjs';
 
 const PATH = () => process.env.JOURNAL_PATH || join(dirname(fileURLToPath(import.meta.url)), 'data', 'journal.json');
@@ -39,6 +40,12 @@ const num = (v, name, { min = 0, allowNull = false } = {}) => {
   if (!Number.isFinite(n) || n <= min) throw badRequest(`${name} must be a number above ${min}.`);
   return n;
 };
+/** A ".NS" symbol that is not in NSE's recent daily files (a typo such as XYZZYQ); false when the files aren't stored. */
+export function unknownNse(sym) {
+  if (!/\.NS$/.test(sym)) return false;
+  const known = nseSymbols();
+  return !!known && !known.has(sym.slice(0, -3));
+}
 export function normSymbol(s) {
   let x = String(s || '').trim().toUpperCase();
   if (!x) throw badRequest('Enter a stock symbol, e.g. TCS or RELIANCE.');
@@ -64,6 +71,10 @@ export function saveSettings(input) {
     if (input.maxTradesPerDay != null) s.maxTradesPerDay = Math.round(num(input.maxTradesPerDay, 'Max trades a day'));
     if (s.riskPct > 5) throw badRequest('Risk per trade above 5% of capital is not allowed here.');
     if (s.dailyLossPct > 10) throw badRequest('Daily loss limit above 10% of capital is not allowed here.');
+    // round 79 (L5): no silent 0 trades a day, no absurd capital, a daily limit that allows at least one stop-out
+    if (!(Number.isInteger(s.maxTradesPerDay) && s.maxTradesPerDay >= 1 && s.maxTradesPerDay <= 50)) throw badRequest('Max trades a day must be a whole number from 1 to 50.');
+    if (s.capital > 1e10) throw badRequest('Capital above ₹1,000 crore is not allowed here.');
+    if (s.dailyLossPct < s.riskPct) throw badRequest(`The daily loss limit (${s.dailyLossPct}%) must be at least the risk per trade (${s.riskPct}%), or one stop-out breaks it.`);
     st.settings = s;
     save(st);
     return s;
@@ -134,7 +145,8 @@ export async function planTrade(input, { st = loadJournal(), now = new Date(), l
   const byCash = Math.floor((s.capital * leverage) / entry);
   const qty = Math.max(0, Math.min(byRisk, byCash));
   const lossAtStop = qty ? perShare * qty + roundTrip({ side, entry, exit: stop, qty, product }) : 0;
-  const gainAtTarget = qty ? Math.abs(target - entry) * qty - roundTrip({ side, entry, exit: target, qty, product }) : 0;
+  // signed: a target on the wrong side of the entry is a loss, not a gain (round 79, M1)
+  const gainAtTarget = qty ? (side === 'long' ? target - entry : entry - target) * qty - roundTrip({ side, entry, exit: target, qty, product }) : 0;
   const rrAfterCosts = lossAtStop > 0 ? gainAtTarget / lossAtStop : null;
   const stopPct = (perShare / entry) * 100;
   let risk = null;
@@ -145,11 +157,13 @@ export async function planTrade(input, { st = loadJournal(), now = new Date(), l
     /* odds unavailable (symbol / data): plan still works */
   }
   const today = todayStatus(st, now);
+  // round 79 (L6): say so when the symbol has no price data, instead of a silent "All rules kept"
+  const warning = unknownNse(symbol) ? `Unknown NSE symbol "${symbol.replace('.NS', '')}" — check it; no price data, so the noise check could not run.` : !risk ? 'No price data for this symbol right now: the noise check could not run.' : null;
   const wrongSide = side === 'long' ? !(stop < entry && target > entry) : !(stop > entry && target < entry);
   const checks = [
     { rule: 'Stop and target on the right sides of the entry', ok: !wrongSide, detail: wrongSide ? `For a ${side === 'long' ? 'buy' : 'short'}, the stop must be ${side === 'long' ? 'below' : 'above'} the entry and the target ${side === 'long' ? 'above' : 'below'} it.` : 'OK' },
     { rule: `Risk at most ${s.riskPct}% of capital`, ok: qty > 0 && lossAtStop <= riskRs * 1.15, detail: qty ? `Loss at stop ₹${Math.round(lossAtStop).toLocaleString('en-IN')} incl. charges (limit ₹${Math.round(riskRs).toLocaleString('en-IN')} + charges)` : 'The stop is too far for even one share at this risk.' },
-    { rule: `Reward at least ${s.minRR}× the risk after charges`, ok: rrAfterCosts != null && rrAfterCosts >= s.minRR, detail: rrAfterCosts != null ? `${rrAfterCosts.toFixed(2)}× after charges` : '–' },
+    { rule: `Reward at least ${s.minRR}× the risk after charges`, ok: rrAfterCosts != null && rrAfterCosts > 0 && rrAfterCosts >= s.minRR, detail: rrAfterCosts != null ? `${rrAfterCosts.toFixed(2)}× after charges` : '–' },
     { rule: `No more than ${s.maxTradesPerDay} trades today`, ok: today.trades < s.maxTradesPerDay, detail: `${today.trades} taken today` },
     { rule: `Daily loss limit (−${s.dailyLossPct}%) not reached`, ok: !today.limitHit && lossAtStop <= today.roomLeftRs + 1e-9, detail: today.limitHit ? `Limit hit: today ₹${Math.round(today.realisedRs).toLocaleString('en-IN')}. Stop trading for today.` : `Room left today ₹${Math.round(today.roomLeftRs).toLocaleString('en-IN')}` },
     { rule: 'Stop not inside normal noise', ok: risk?.chanceStopDistanceToday == null || risk.chanceStopDistanceToday < 0.45, detail: risk?.chanceStopDistanceToday != null ? `Chance today moves ${stopPct.toFixed(2)}% against you: ${Math.round(risk.chanceStopDistanceToday * 100)}%` : 'odds unavailable' },
@@ -157,9 +171,26 @@ export async function planTrade(input, { st = loadJournal(), now = new Date(), l
   return {
     symbol, side, product, entry, stop, target, qty, perShareRisk: perShare, stopPct, riskRs,
     positionValue: qty * entry, marginNeeded: (qty * entry) / leverage, cappedByCash: byCash < byRisk,
-    lossAtStop, gainAtTarget, rrAfterCosts, risk, checks, allOk: checks.every((c) => c.ok), setup: SETUPS.includes(input.setup) ? input.setup : 'Other',
+    lossAtStop, gainAtTarget, rrAfterCosts, risk, checks, allOk: checks.every((c) => c.ok), ...(warning ? { warning } : {}), setup: SETUPS.includes(input.setup) ? input.setup : 'Other',
     today,
   };
+}
+
+/**
+ * The plan's checks re-run for a quantity other than the planned one (round 79, H2): the risk limit,
+ * the daily loss room and the cash / margin all depend on the number of shares actually taken.
+ */
+export function checksForQty(p, qty, lossAtStop, settings) {
+  const rs = (v) => `₹${Math.round(v).toLocaleString('en-IN')}`;
+  const leverage = p.product === 'intraday' ? 5 : 1;
+  const need = (qty * p.entry) / leverage;
+  const out = p.checks.map((c) => {
+    if (c.rule.startsWith('Risk at most')) return { ...c, ok: qty > 0 && lossAtStop <= p.riskRs * 1.15, detail: `Loss at stop ${rs(lossAtStop)} incl. charges for ${qty} shares (limit ${rs(p.riskRs)} + charges)` };
+    if (c.rule.startsWith('Daily loss limit')) return { ...c, ok: !p.today?.limitHit && lossAtStop <= (p.today?.roomLeftRs ?? Infinity) + 1e-9, detail: p.today?.limitHit ? c.detail : `Room left today ${rs(p.today?.roomLeftRs ?? 0)}; loss at stop for ${qty} shares ${rs(lossAtStop)}` };
+    return c;
+  });
+  out.push({ rule: 'Position fits the capital', ok: need <= settings.capital + 1e-9, detail: `${qty} shares need ${rs(need)}${leverage > 1 ? ` margin at ${leverage}×` : ''} of ${rs(settings.capital)}` });
+  return out;
 }
 
 /** Save a planned trade as open (optionally with stop / target price alerts). */
@@ -170,12 +201,14 @@ export async function addTrade(input, { now = new Date(), withAlerts = false, pl
   return locked(() => {
     const st = loadJournal();
     const { date, time } = istNow(now);
+    const lossAtStop = qty === p.qty ? p.lossAtStop : p.perShareRisk * qty + roundTrip({ side: p.side, entry: p.entry, exit: p.stop, qty, product: p.product });
+    const checks = qty === p.qty ? p.checks : checksForQty(p, qty, lossAtStop, st.settings);
     const t = {
       id: id(), date, time, createdAt: now.toISOString(), status: 'open',
       symbol: p.symbol, side: p.side, product: p.product, setup: p.setup, qty,
       entry: p.entry, stop: p.stop, target: p.target, riskRs: p.perShareRisk * qty,
-      lossAtStop: qty === p.qty ? p.lossAtStop : p.perShareRisk * qty + roundTrip({ side: p.side, entry: p.entry, exit: p.stop, qty, product: p.product }),
-      rulesOk: p.allOk, brokenRules: p.checks.filter((c) => !c.ok).map((c) => c.rule),
+      lossAtStop,
+      rulesOk: checks.every((c) => c.ok), brokenRules: checks.filter((c) => !c.ok).map((c) => c.rule),
       note: String(input.note || '').slice(0, 300),
     };
     st.trades.push(t);
@@ -276,6 +309,7 @@ export function journalStats(st = loadJournal()) {
 
 export async function addAlert({ symbol, op, price, note = '' }, { now = new Date() } = {}) {
   const sym = normSymbol(symbol);
+  if (unknownNse(sym)) throw badRequest(`Unknown NSE symbol "${sym.replace('.NS', '')}" — it is not in NSE's daily files of the last two months.`);
   const p = num(price, 'Alert price');
   if (op !== 'above' && op !== 'below') throw badRequest('Choose "rises above" or "falls below".');
   return locked(() => {
@@ -295,7 +329,10 @@ export function syncSourceAlerts(source, list, { now = new Date() } = {}) {
   return locked(() => {
     const st = loadJournal();
     st.alerts = st.alerts.filter((a) => a.source !== source || a.triggeredAt);
+    // an alert that already fired at this symbol / side / price is not re-created (round 79, L7: one stop, one alert)
+    const fired = new Set(st.alerts.filter((a) => a.source === source && a.triggeredAt).map((a) => `${a.symbol}|${a.op}|${a.price}`));
     for (const x of list.slice(0, 50)) {
+      if (fired.has(`${normSymbol(x.symbol)}|${x.op}|${+(+x.price).toFixed(2)}`)) continue;
       st.alerts.push({ id: id(), source, symbol: normSymbol(x.symbol), op: x.op, price: +(+x.price).toFixed(2), note: String(x.note || '').slice(0, 120), createdAt: now.toISOString(), lastChecked: now.toISOString(), triggeredAt: null });
     }
     save(st);

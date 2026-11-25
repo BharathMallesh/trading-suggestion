@@ -18,6 +18,8 @@
 // corporate-announcements API), only the point-in-time 300 most-traded (bhav store, previous month's median traded
 // value), not on the "don't buy now" list and not routine-only filings; plus the News watch watchlist. Capped at 25
 // (requests 0.8 s apart). Per candidate: headlines (news.mjs), event type and tested history (news-watch.mjs).
+// Change 25 Nov 2026 (round 79): the event type prefers the company's own non-routine NSE filing over headlines
+// when both exist (news-watch.mjs mainEvent); 0 picks had been scored before it.
 //
 //   node paper-bot/news-pick.mjs --run [--notify]     # the 08:40 job (quiet exit on holidays / after 09:15)
 //   node paper-bot/news-pick.mjs --run --force        # a TEST run for today at any time (shown, never scored)

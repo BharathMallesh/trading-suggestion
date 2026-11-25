@@ -162,7 +162,8 @@ function calDays() {
       sumS += sv[0];
       cntS += sv[1];
     }
-    const label = hol.has(d) ? '<div class="note" style="margin:0">holiday</div>' : nv == null ? '<div class="note" style="margin:0">–</div>' : '';
+    const upcoming = det.upcomingHolidays?.[d]; // NSE holidays after the data ends (round 79, S-B3)
+    const label = hol.has(d) ? '<div class="note" style="margin:0">holiday</div>' : upcoming ? `<div class="note" style="margin:0" title="${esc(upcoming)}">holiday</div>` : nv == null ? '<div class="note" style="margin:0">–</div>' : '';
     return `<td style="vertical-align:top;${isNifty ? calBg(nv, 1.5) : calBg(sv?.[0], cur.unit === '₹' ? 3000 : cur.unit === 'R' ? 2 : 2)}"><div style="font-weight:600">${Number(d.slice(8))}</div>${label}${nv != null ? `<div style="color:${calCol(nv)}">NIFTY ${calFmt(nv, 'day %')}</div>` : ''}${sv ? `<div style="color:${calCol(sv[0])}"><b>${calFmt(sv[0], cur.unit)}</b> <span class="note" style="display:inline">(${sv[1]})</span></div>` : ''}</td>`;
   };
   const body = weeks.map((w) => `<tr>${w.map(cell).join('')}</tr>`).join('');
@@ -170,7 +171,7 @@ function calDays() {
     <div class="row" style="gap:8px;align-items:flex-end;margin:4px 0"><div style="flex:0 0 110px"><label>Year</label><select id="calYear">${years.map((y) => `<option${y === CAL_SEL.year ? ' selected' : ''}>${y}</option>`).join('')}</select></div>
       <div style="flex:0 0 110px"><label>Month</label><select id="calMonth">${CAL_MONTHS.map((m, i) => `<option value="${String(i + 1).padStart(2, '0')}"${String(i + 1).padStart(2, '0') === CAL_SEL.month ? ' selected' : ''}>${m}</option>`).join('')}</select></div></div>
     <div style="overflow-x:auto"><table style="font-size:12px;table-layout:fixed;min-width:520px"><thead><tr>${['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].map((w) => `<th>${w}</th>`).join('')}</tr></thead><tbody>${body}</tbody></table></div>
-    <div class="note">${CAL_MONTHS[Number(CAL_SEL.month) - 1]} ${CAL_SEL.year}: NIFTY ${calFmt((sumN - 1) * 100, '%')} for the month${isNifty ? '' : ` · ${esc(cur.name.split(' (')[0])}: ${cntS ? `${calFmt(sumS, cur.unit)} from ${cntS} trade${cntS === 1 ? '' : 's'}` : 'no trades'}`}. Each day: NIFTY's close-to-close move${isNifty ? '' : ' and the strategy\'s result for trades started that day (count in brackets)'}.</div>`;
+    <div class="note">${CAL_MONTHS[Number(CAL_SEL.month) - 1]} ${CAL_SEL.year}: NIFTY ${calFmt(det.niftyMonth?.[ym] ?? (sumN - 1) * 100, '%')} for the month${isNifty ? '' : ` · ${esc(cur.name.split(' (')[0])}: ${cntS ? `${calFmt(sumS, cur.unit)} from ${cntS} trade${cntS === 1 ? '' : 's'}` : 'no trades'}`}. Each day: NIFTY's close-to-close move${isNifty ? '' : ' and the strategy\'s result for trades started that day (count in brackets)'}.</div>`;
   $('calYear').addEventListener('change', (e) => {
     CAL_SEL.year = e.target.value;
     calDays();
@@ -181,5 +182,5 @@ function calDays() {
   });
 }
 lazy('Calendar', async () => {
-  try { calRender(await api('/api/day-patterns')); } catch (e) { $('calOut').innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`; }
+  try { calRender(await dayPatternsOnce()); } catch (e) { $('calOut').innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`; }
 });

@@ -106,6 +106,13 @@ export function chargesFor(side, value, etf = false) {
   return { charges: c.total, chargesPct: value > 0 ? (c.total / value) * 100 : null, brokerage: c.breakdown.brokerage, withFlatPct: value > 0 ? (flat / value) * 100 : null, small: value < ALGO.smallLeg };
 }
 
+/** A stock's latest marked close from the Momentum 10 or India mix paper marks (null when neither has one). */
+export function latestCloseOf(symbol, m10, india) {
+  const k = sym(symbol);
+  const m = [...(m10?.marks || []), ...(india?.marks || [])].find((x) => x.symbol && sym(x.symbol) === k && x.last > 0);
+  return m ? m.last : null;
+}
+
 /**
  * Whole-share sizing of each Momentum 10 stock at this India mix money: the paper account works in exact rupees
  * (a ⅓ stock part split into 10 equal slots); a real order is whole shares. Flags a stock whose one share costs more
@@ -384,7 +391,8 @@ export function algoPlan({
       { kind: 'avoid', text: why.avoid },
     ],
     settings: { capital: cap, ipoBuffer: buffer, ipoSlots: Math.floor(buffer / ALGO.ipoTypical) },
-    sizing: india_?.sizing || stockSizing((m10?.list || []).map((x) => ({ symbol: sym(x.symbol), close: x.close })), cap * INDIA_PARTS.stocks, cap),
+    // latest closes (the paper marks), not the month-end ranking closes; the list's close only when no mark exists (round 79, INV-3)
+    sizing: india_?.sizing || stockSizing((m10?.list || []).map((x) => ({ symbol: sym(x.symbol), close: latestCloseOf(x.symbol, m10, india) || x.close })), cap * INDIA_PARTS.stocks, cap),
     noBroker: 'No broker connection: the app never places orders (not through Groww or any API). It only shows the plan — you place the orders yourself.',
     assumes: `Quantities assume your India mix is in the same proportions as the ₹1 lakh paper portfolio (same ⅓ parts and equal Momentum 10 slots), scaled to ${rs(cap)} and rounded to whole shares (the paper account uses exact rupees); prices are the latest closes, so the open will differ a little. Charges use the app's cost settings (₹0 delivery brokerage, DP ₹15.93 a sell, STT, stamp, exchange, GST). Starting fresh? Buy ⅓ each — see Do this month.`,
     note: 'The rules that passed out-of-sample testing, as one daily list. Past tests do not promise future returns. Not advice.',

@@ -117,6 +117,28 @@ function readMonth(ym) {
     return {};
   }
 }
+let symCache = null;
+/**
+ * NSE equity symbols traded in the last two stored months (NSE's own daily files) plus NSE's ETF list, or null
+ * when no files are stored (callers then accept the symbol). Used to reject typos like "ZZQQXX" (round 79, INV-6 / L6).
+ */
+export function nseSymbols() {
+  const dir = DIR();
+  if (!existsSync(dir)) return null;
+  const files = readdirSync(dir).filter((f) => /^\d{4}-\d{2}\.json\.gz$/.test(f)).sort().slice(-2);
+  if (!files.length) return null;
+  const key = `${dir}|${files.join(',')}`;
+  if (symCache?.key === key) return symCache.set;
+  const set = new Set();
+  for (const f of files) for (const rows of Object.values(readMonth(f.slice(0, 7)))) for (const r of rows) set.add(r[0]);
+  try {
+    for (const x of JSON.parse(readFileSync(join(dir, '..', 'nse-etfs.json'), 'utf8')).symbols || []) set.add(x);
+  } catch {
+    /* no ETF list */
+  }
+  symCache = { key, set: set.size ? set : null };
+  return symCache.set;
+}
 function writeMonth(ym, data) {
   mkdirSync(DIR(), { recursive: true });
   const tmp = `${monthFile(ym)}.tmp`;

@@ -143,6 +143,16 @@ th:first-child, td:first-child { text-align: left; }
 .xpBox.info { border: 1px solid var(--line); background: var(--soft); color: var(--muted); font-size: 12px; padding: 6px 10px; }
 .xpBox ul { margin: 4px 0 0 18px; padding: 0; }
 .xpCard { margin: -4px 0 10px; }
+/* phones: the expiry banner as one line + details, the in-card boxes as a chip (round 79) */
+.xpMini { border-radius: 10px; font-size: 13px; padding: 6px 10px; }
+.xpMini > summary { cursor: pointer; font-weight: 600; overflow-wrap: anywhere; }
+.xpMini[open] > summary { margin-bottom: 6px; }
+.xpMini.expiry { border: 2px solid var(--down); }
+.xpMini.eve { border: 2px solid var(--warn); }
+.xpMini.info { border: 1px solid var(--line); background: var(--soft); color: var(--muted); }
+.xpChip { display: inline-block; max-width: 100%; font-size: 12px; padding: 3px 8px; border-radius: 999px; border: 1px solid var(--line); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.xpChip.expiry { border-color: var(--down); }
+.xpChip.eve { border-color: var(--warn); }
 .apAct { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; margin-top: 6px; font-size: 13px; overflow-wrap: anywhere; }
 .apAct input[type=checkbox] { width: 20px; height: 20px; min-height: 20px; margin: 2px 0 0; flex: 0 0 auto; }
 .apAct.done { opacity: 0.6; }

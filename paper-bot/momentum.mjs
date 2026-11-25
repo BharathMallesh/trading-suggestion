@@ -28,7 +28,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { candles } from '../market-data.mjs';
-import { writeJsonAtomic } from '../util.mjs';
+import { writeJsonAtomic, curveDate } from '../util.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SAVED = () => process.env.MOMENTUM_PATH || join(HERE, 'data', 'momentum.json');
@@ -486,11 +486,13 @@ export async function momentumPaperUpdate({ loadCandles = candles, now = new Dat
   if (cur) {
     let v = 0;
     const marks = [];
+    const seen = [];
     for (const h of cur.holdings) {
       let px = null;
       try {
         const rows = (await loadCandles(`${h.symbol}.NS`, { range: '5d', interval: '1d' })).filter((r) => r.close > 0);
         px = rows.length ? rows[rows.length - 1].close : null;
+        if (rows.length) seen.push(rows[rows.length - 1].date);
       } catch {
         px = null;
       }
@@ -499,7 +501,8 @@ export async function momentumPaperUpdate({ loadCandles = candles, now = new Dat
       v += h.weight * (1 + ret);
     }
     const value = cur.value * v;
-    st.curve = [...st.curve.filter((c) => c.date !== today), { date: today, value }];
+    const at = curveDate(seen, today); // the closes' trading date, not the run date
+    st.curve = [...st.curve.filter((c) => c.date !== at), { date: at, value }].sort((a, b) => a.date.localeCompare(b.date));
     st.marks = marks;
   }
   st.list = live.list;

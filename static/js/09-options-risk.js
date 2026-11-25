@@ -27,7 +27,7 @@ $('bmBtn').addEventListener('click', async () => {
     const tbl = (x, title) => `<div style="font-size:13px;margin-top:6px"><b>${title}</b> · typical move ±${x.sigmaPct.toFixed(2)}% (1σ)${x.validated ? ' · <span style="color:var(--up)">validated by replay</span>' : ''}</div>
       <table><thead><tr><th>Move bigger than</th><th>Chance (up or down)</th><th>…up</th><th>…down</th><th>Past year</th><th>Normal curve</th></tr></thead><tbody>${x.odds.map((o) =>
         `<tr><td>±${o.movePct}%</td><td style="font-weight:700">${bmPct(o.prob)}</td><td>${bmPct(o.probUp)}</td><td>${bmPct(o.probDown)}</td><td style="color:var(--muted)">${bmPct(o.pastYear)}</td><td style="color:var(--muted)">${bmPct(o.normal)}</td></tr>`).join('')}</tbody></table>`;
-    $('bmOut').innerHTML = `<div class="note">${esc(r.symbol)} · last ${r.last.toFixed(2)} · data to ${esc(r.asOf)}${r.eventPending ? ' · <span style="color:var(--warn)">results due — odds widened</span>' : ''}</div>` +
+    $('bmOut').innerHTML = `<div class="note">${esc(r.symbol)} · last ${r.last.toFixed(2)} · data to ${esc(r.asOf)}${r.partialDropped ? " (today's unfinished bar left out)" : ''}${r.eventPending ? ' · <span style="color:var(--warn)">results due — odds widened</span>' : ''}</div>` +
       tbl(r.horizons['1d'], 'Next session') + tbl(r.horizons['5d'], 'Next 5 sessions') + `<div class="note">${esc(r.note)} Up and down chances are the tail shares, not a direction forecast.</div>`;
   } catch (e) {
     $('bmOut').innerHTML = `<div class="err">Error: ${esc(e.message)}</div>`;
@@ -49,7 +49,7 @@ function opHtml(r) {
   const l = r.latest;
   let html = `<div style="font-size:14px;margin-bottom:6px"><b>${esc(r.verdict)}</b></div>
     <div class="note">${r.days} sessions · ${esc(r.from)} → ${esc(r.to)}${r.blocked ? ` · partial: ${esc(r.blocked)}` : ''}</div>
-    <div class="kv" style="margin:6px 0"><div>Latest (${esc(l.date)})</div><div>PCR (OI) ${l.pcrOi?.toFixed(2)} (${l.percentiles.pcrOi?.toFixed(0)}th percentile) · PCR (volume) ${l.pcrVol?.toFixed(2)} · put skew ${l.skew?.toFixed(1)} vol pts (${l.percentiles.skew?.toFixed(0)}th) · ATM IV ${l.atmIv?.toFixed(1)}%</div></div>`;
+    <div class="kv" style="margin:6px 0"><div>Latest (${esc(l.date)})</div><div>PCR (OI) ${l.pcrOi?.toFixed(2)} (${l.percentiles.pcrOi != null ? ordinal(l.percentiles.pcrOi) : "–"} percentile) · PCR (volume) ${l.pcrVol?.toFixed(2)} · put skew ${l.skew?.toFixed(1)} vol pts (${l.percentiles.skew != null ? ordinal(l.percentiles.skew) : "–"}) · ATM IV ${l.atmIv?.toFixed(1)}%</div></div>`;
   for (const [h, x] of Object.entries(r.horizons)) {
     html += `<div style="font-size:13px;margin-top:8px"><b>Next ${h === '1d' ? 'session' : '5 sessions'}</b> · ${x.periods} periods · NIFTY up ${(x.baseUpRate * 100).toFixed(0)}% of the time</div>
       <table><thead><tr><th style="text-align:left">Signal</th><th>IC</th><th>t</th><th>1st / 2nd half</th><th>Up % when high / low</th><th style="text-align:left">Evidence</th></tr></thead><tbody>${Object.entries(x.features).map(([f, v]) =>
@@ -218,7 +218,7 @@ $('ooBtn').addEventListener('click', async () => {
           <div style="font-size:30px;font-weight:700;color:var(--muted)">${pct(o.probProfit.impliedNormal)}</div></div>
       </div>
       <div class="kv">
-        <div>Option</div><div>${esc(o.symbol)} ${esc(o.type)} ${o.strike} · ${o.days} days · spot ${o.spot.toFixed(2)}</div>
+        <div>Option</div><div>${esc(o.symbol)} ${esc(o.type)} ${o.strike} · ${o.days} days · spot ${o.spot.toFixed(2)}${o.asOf ? ` · data to ${esc(o.asOf)}${o.partialDropped ? " (today's unfinished bar left out)" : ''}` : ''}</div>
         <div>Premium</div><div>${o.premium.toFixed(2)} (${esc(o.premiumSource)})</div>
         <div>Breakeven</div><div>${o.breakeven.toFixed(2)} — needs a ${o.breakevenMovePct >= 0 ? '+' : ''}${o.breakevenMovePct.toFixed(2)}% move</div>
         <div>Volatility</div><div>forecast ${o.forecastVolPct.toFixed(1)}% (${esc(o.volModel)})${o.impliedVolPct != null ? ` · implied ${o.impliedVolPct.toFixed(1)}%` : ''}${o.eventPending ? ' · <span style="color:var(--warn)">results due — widened</span>' : ''}</div>
@@ -256,7 +256,7 @@ $('vcBtn').addEventListener('click', async () => {
     const d = await api('/api/vol-check?' + q.toString());
     const f = d.forecastsAnnualPct;
     out.innerHTML = `<div class="kv">
-      <div>Symbol</div><div>${esc(d.symbol)} · ${esc(d.asOf)} · last ${Number(d.last).toFixed(2)}</div>
+      <div>Symbol</div><div>${esc(d.symbol)} · data to ${esc(d.asOf)}${d.partialDropped ? " (today's unfinished bar left out)" : ''} · last ${Number(d.last).toFixed(2)}</div>
       <div>Forecast vol (annual)</div><div><b>${d.forecastPct?.toFixed(1)}%</b> (model: ${esc(d.model)}, the replay winner)${d.eventAddOnPct ? ` <span style="color:var(--warn)">incl. +${d.eventAddOnPct.toFixed(1)} pts for results due</span>` : ''} · EWMA ${f.ewma?.toFixed(1)}% · GARCH ${f.garch?.toFixed(1) ?? '–'}% · HAR ${f.har?.toFixed(1) ?? '–'}%</div>
       ${d.typicalRatio ? `<div>Usual VIX premium</div><div>×${d.typicalRatio.toFixed(2)} (India VIX vs realised, 5-year replay)</div>` : ''}
       <div>Implied vol</div><div>${d.impliedPct != null ? `<b>${d.impliedPct.toFixed(1)}%</b> (${esc(d.impliedSource)}) · ratio ${d.ratio.toFixed(2)}` : '–'}</div>

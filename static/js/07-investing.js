@@ -1,18 +1,21 @@
 // 07-investing.js — Goal planner, index-fund picker, what to expect, my portfolio, market tilts, trend filter, direction research.
 // Classic script (not a module): loaded in order by index.html after 01-core.js; top-level names are shared across these files.
+// ₹ with the sign in front: "−₹5,000", not "₹-5,000" (round 79, L10)
+const hdSignedRs = (v) => `${v < 0 ? '−' : ''}₹${Math.abs(Math.round(v || 0)).toLocaleString('en-IN')}`;
 // --- Goal planner ---
 $('glBtn').addEventListener('click', async () => {
   const out = $('glOut');
   out.textContent = 'Checking every past start month…';
   try {
     const q = new URLSearchParams({ target: $('glTarget').value, years: $('glYears').value, lump: $('glLump').value || 0, index: $('glIdx').value });
-    if ($('glSip').value) q.set('sip', $('glSip').value);
+    if (Number($('glSip').value) > 0) q.set('sip', $('glSip').value); // 0 = no SIP of your own (round 79, INV-8)
     const g = await api('/api/goal?' + q);
     const rs = (v) => '₹' + Math.round(v).toLocaleString('en-IN');
     const lk = (v) => '₹' + (v >= 1e7 ? (v / 1e7).toFixed(2) + ' Cr' : (v / 1e5).toFixed(1) + ' L');
     let html = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px">${[['Worked half the time', g.sipNeeded.p50], ['Worked 3 times in 4', g.sipNeeded.p75], ['Worked 9 times in 10', g.sipNeeded.p90], ['Worked every time (worst start)', g.sipNeeded.p100]].map(([t, v], i) =>
       `<div style="background:var(--soft);border:1px solid ${i === 2 ? 'var(--accent)' : 'var(--line)'};border-radius:10px;padding:10px;text-align:center"><div style="font-size:12px;color:var(--muted)">${t}</div><div style="font-size:20px;font-weight:700">${rs(v)}<span style="font-size:12px;color:var(--muted)">/mo</span></div></div>`).join('')}</div>
       <div style="font-size:13px;margin-top:8px">To reach <b>${lk(g.target)}</b> in <b>${g.years} years</b>${g.lumpSum ? ` (with ${lk(g.lumpSum)} invested now)` : ''}: a SIP of about <b>${rs(g.sipNeeded.p90)}/month</b> would have been enough in 90% of the ${g.windows} past start months (you'd invest ${lk(g.invested90)} in total).</div>`;
+    if (g.lumpSum && !(g.sipNeeded.p90 > 0)) html += `<div style="font-size:13px;margin-top:6px"><b>Your ${lk(g.lumpSum)} lump sum alone reached the target</b> in at least 90% of past start months — no SIP was needed there${g.sipNeeded.p100 > 0 ? `; only the worst starts needed about ${rs(g.sipNeeded.p100)}/month` : ''}.</div>`;
     if (g.withSip) {
       const w = g.withSip;
       html += `<div style="font-size:13px;margin-top:6px">With your <b>${rs(w.sip)}/month</b> (${lk(w.invested)} invested): reached the target in <b>${Math.round(w.successRate * 100)}%</b> of past windows · ending value worst ${lk(w.worst)}, typical ${lk(w.median)}, best ${lk(w.best)}.</div>`;
@@ -60,11 +63,11 @@ function exRender() {
   if (!exData) return;
   const x = exData.indices[Number($('exIdx').value) || 0];
   const sipAmt = Math.max(0, Number($('exSip').value) || 0);
-  const p1 = (v) => (v >= 0 ? '+' : '') + v.toFixed(1) + '%';
+  const p1 = (v) => fixedNz(v, 1, true) + '%';
   const lakh = (v) => '₹' + (v >= 1e7 ? (v / 1e7).toFixed(2) + ' Cr' : (v / 1e5).toFixed(1) + ' L');
   let html = `<div class="note">${esc(x.index)} · ${esc(x.from)} → ${esc(x.to)}</div>
     <table><thead><tr><th>Held for</th><th>Lump sum: worst / typical / best (per year)</th><th>Lost money</th><th>Below FD (6.5%)</th><th>Fall you'd sit through (typical / worst)</th>
-    <th>SIP ${sipAmt ? `₹${sipAmt.toLocaleString('en-IN')}/mo` : ''}: worst / typical / best ending value</th></tr></thead><tbody>`;
+    <th>${sipAmt ? `SIP ₹${sipAmt.toLocaleString('en-IN')}/mo: worst / typical / best ending value` : 'SIP: worst / typical / best (per year)'}</th></tr></thead><tbody>`;
   for (const h of x.horizons) {
     const l = h.lumpSum;
     const s = h.sip;
@@ -80,7 +83,7 @@ function exRender() {
   }
   html += '</tbody></table>';
   const ten = x.horizons.find((h) => h.years === 10);
-  if (ten) html += `<div style="font-size:13px;margin-top:6px">In this history, every 10-year hold made money (worst ${p1(ten.lumpSum.worstPct)} a year), but along the way the typical investor sat through a fall of about ${ten.lumpSum.medianDeepestFallPct.toFixed(0)}%. Short holds (3 years) lost money ${x.horizons[0].lumpSum.pctWindowsLosing.toFixed(0)}% of the time.</div>`;
+  if (ten) html += `<div style="font-size:13px;margin-top:6px">In this history, ${ten.lumpSum.worstPct >= 0 ? 'every 10-year hold made money' : 'even some 10-year holds lost money'} (worst ${p1(ten.lumpSum.worstPct)} a year), but along the way the typical investor sat through a fall of about ${ten.lumpSum.medianDeepestFallPct.toFixed(0)}%. Short holds (3 years) lost money ${x.horizons[0].lumpSum.pctWindowsLosing.toFixed(0)}% of the time.</div>`;
   $('exOut').innerHTML = html + `<div class="note">${esc(exData.note)} Not investment advice.</div>`;
 }
 lazy('What to expect', async () => {
@@ -178,7 +181,7 @@ async function viLoad() {
     const r = await api('/api/holdings/vs-index');
     if (r.empty) return ($('viOut').innerHTML = `<div class="note">${esc(r.note)}</div>`);
     const rs = (v) => (v < 0 ? '−₹' : '₹') + Math.abs(Math.round(v)).toLocaleString('en-IN');
-    const pc = (x) => (x == null ? '–' : (x * 100).toFixed(1) + '%');
+    const pc = (x) => (x == null ? '–' : fixedNz(x * 100, 1) + '%');
     $('viOut').innerHTML = `<div style="font-size:15px;color:${r.beat ? 'var(--up)' : 'var(--down)'}"><b>${esc(r.verdict)}</b></div>
       <table style="font-size:13px"><tbody>
         <tr><td>Period</td><td>${esc(r.from)} → ${esc(r.to)} · ${r.trades} trades</td></tr>
@@ -204,7 +207,7 @@ lazy('Market tilts', async () => {
   try {
     const r = await api('/api/factor-lab');
     if (!r.rows?.length) return ($('flOut').innerHTML = `<div class="note">${esc(r.note)}</div>`);
-    const pc = (x, d = 1) => (x == null ? '–' : (x * 100).toFixed(d) + '%');
+    const pc = (x, d = 1) => (x == null ? '–' : fixedNz(x * 100, d) + '%');
     const col = (v) => (v > 0 ? 'var(--up)' : v < 0 ? 'var(--down)' : 'var(--ink)');
     const rows = r.rows.filter((x) => x.enough).sort((a, b) => b.excess - a.excess);
     $('flOut').innerHTML = `<div style="overflow-x:auto"><table style="font-size:12px"><thead><tr><th style="text-align:left">Index</th><th>Since</th><th>Per year</th><th>NIFTY same period</th><th>Extra per year</th><th>₹1 lakh became</th><th>Worst fall (NIFTY)</th><th>Beat NIFTY in 5-yr windows</th><th>Longest behind NIFTY</th><th style="text-align:left">Verdict</th></tr></thead><tbody>${rows.map((x) =>
@@ -224,7 +227,7 @@ $('hdImportBtn').addEventListener('click', async () => {
   $('hdImportOut').textContent = 'Importing…';
   try {
     const r = await hdPost('/api/holdings/import', { csv: await f.text(), mode: $('hdMode').value });
-    $('hdImportOut').innerHTML = `Imported ${r.trades} trades (${r.buys} buys, ${r.sells} sells) → ${r.lots} lots in ${r.holdings} stocks. Booked this year: short-term ₹${Math.round(r.realized.stcg).toLocaleString('en-IN')}, long-term ₹${Math.round(r.realized.ltcg).toLocaleString('en-IN')}.` +
+    $('hdImportOut').innerHTML = `Imported ${r.trades} trades (${r.buys} buys, ${r.sells} sells) → ${r.lots} lots in ${r.holdings} stocks. Booked this year: short-term ${hdSignedRs(r.realized.stcg)}, long-term ${hdSignedRs(r.realized.ltcg)}${r.duplicates ? ` · ${r.duplicates} trade${r.duplicates === 1 ? '' : 's'} already imported were skipped` : ''}.` +
       (r.warnings.length ? `<br><span style="color:var(--warn)">${r.warnings.map(esc).join('<br>')}</span>` : '') +
       (r.skipped.length ? `<br>Skipped: ${r.skipped.map(esc).join(', ')}` : '') + `<br>${esc(r.note)}`;
     hdLoad();
@@ -279,7 +282,7 @@ lazy('Direction over months', async () => {
     const r = await api('/api/direction-long');
     if (!r.valuation) return ($('dlOut').innerHTML = `<div class="note">${esc(r.note || 'Not run yet.')}</div>`);
     const v = r.valuation;
-    const pc = (x) => (x == null ? '–' : (x * 100).toFixed(1) + '%');
+    const pc = (x) => (x == null ? '–' : fixedNz(x * 100, 1) + '%');
     const NAMES = { earningsYield: 'Earnings yield (1/P/E)*', bookYield: 'Book yield (1/P/B)*', dividendYield: 'Dividend yield' };
     let html = `<div style="font-size:14px;margin-bottom:6px"><b>${esc(r.verdict)}</b></div>
       <div class="note">NIFTY 50 valuation ${esc(v.from)} → ${esc(v.to)} · today P/E ${v.latest?.pe}, P/B ${v.latest?.pb}, dividend yield ${v.latest?.dy}%</div>`;

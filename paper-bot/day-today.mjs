@@ -39,7 +39,7 @@ export async function openingGap({ loadCandles = candles, date } = {}) {
 }
 
 // how each logic's paper record looked over the last few trading days
-function recentFor(key, papers, days = 5) {
+export function recentFor(key, papers, days = 5) {
   const pick = (list, dateOf, valueOf) => {
     const byDate = new Map();
     for (const t of list) byDate.set(dateOf(t), [...(byDate.get(dateOf(t)) || []), t]);
@@ -57,8 +57,9 @@ function recentFor(key, papers, days = 5) {
     const open = mine.filter((t) => t.open).map((t) => `${t.symbol.replace('.NS', '')} ${t.r >= 0 ? '+' : ''}${t.r.toFixed(2)}R`);
     return open.length ? [...closed, { date: 'open now', trades: open.length, result: null, detail: open.join(', ') }] : closed;
   }
-  if (key === 'nifty-dip') return pick(ofVersion(papers.dip?.trades, 'standard').filter((t) => !t.open), (t) => t.exitDate, (t) => t.net);
-  if (key === 'fo-strangle') return pick((papers.fo?.trades || []).filter((t) => !t.open), (t) => t.expiry, (t) => t.rupees);
+  // same units as the logic's own numbers (% for the dip-buy, % of margin for the strangle), not ₹ (round 79, S-B2)
+  if (key === 'nifty-dip') return pick(ofVersion(papers.dip?.trades, 'standard').filter((t) => !t.open), (t) => t.exitDate, (t) => t.retPct);
+  if (key === 'fo-strangle') return pick((papers.fo?.trades || []).filter((t) => !t.open), (t) => t.expiry, (t) => t.retOnMargin * 100);
   return [];
 }
 

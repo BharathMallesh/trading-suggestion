@@ -25,7 +25,7 @@ import { runAgents } from './agents/coordinator.mjs';
 import { researchAgent } from './agents/research-agent.mjs';
 import { signalAgent } from './agents/signal-agent.mjs';
 import { candlePredict } from './paper-bot/candle-predict.mjs';
-import { growwProbability } from './paper-bot/groww-predict.mjs';
+import { growwProbability, resolveYahooSymbol } from './paper-bot/groww-predict.mjs';
 import { evaluatePending, computeStats, getHistory, liveScorecard } from './paper-bot/prediction-log.mjs';
 import { runBacktest } from './paper-bot/backtest.mjs';
 import { evaluateModels, saveReport } from './paper-bot/evaluate.mjs';
@@ -77,7 +77,7 @@ import { loadMatrixCalendar } from './paper-bot/matrix-calendar.mjs';
 import { tradePlan } from './paper-bot/trade-plan.mjs';
 import { loadSwingOrb } from './paper-bot/swing-orb.mjs';
 import { riskCheckLive, stockSymbols, stockLots, affordable } from './paper-bot/fo-riskcheck.mjs';
-import { loadSpreadPaper } from './paper-bot/spread-paper.mjs';
+import { loadSpreadPaper, RULES as SPREAD_RULES } from './paper-bot/spread-paper.mjs';
 import { tradeToday } from './paper-bot/trade-today.mjs';
 import { loadE2Paper } from './paper-bot/e2-swing.mjs';
 import { loadLbbPaper } from './paper-bot/lbb-swing.mjs';
@@ -95,6 +95,28 @@ import { loadIntraday5y } from './paper-bot/intraday-5y.mjs';
 import { foPlan } from './paper-bot/fo-plan.mjs';
 import { expiryStatus } from './paper-bot/expiry.mjs';
 import { algoPlan, trackRecord, setTick, saveSettings as saveAlgoSettings, savedCapital, foSizes, ALGO } from './paper-bot/algo-plan.mjs';
+/**
+ * A typed ticker for the single-stock tools: NIFTY → ^NSEI; a bare ticker is the NSE listing when Yahoo has one
+ * (INFY → INFY.NS, not the US ADR at ₹12); anything with a suffix / ^ stays as typed (round 79, O-B6).
+ */
+/** A ₹ query value: blank → the default; otherwise a number within [lo, hi], else a 400 that names the range (round 79, L4). */
+function rangedParam(raw, dflt, lo, hi, name) {
+  if (raw == null || String(raw).trim() === '') return dflt;
+  const v = Number(raw);
+  if (!(Number.isFinite(v) && v >= lo && v <= hi)) throw badRequest(`${name} must be between ₹${lo.toLocaleString('en-IN')} and ₹${hi.toLocaleString('en-IN')}.`);
+  return v;
+}
+async function nseFirst(raw) {
+  const x = String(raw || '').trim();
+  if (/^(NIFTY|NIFTY50|NIFTY 50)$/i.test(x)) return '^NSEI';
+  if (!/^[A-Za-z0-9&]{1,20}$/.test(x)) return x; // suffixed / index / invalid: the tool validates it as before
+  try {
+    return await resolveYahooSymbol(x);
+  } catch {
+    return `${x.toUpperCase()}.NS`; // Yahoo unreachable: NSE is still the right guess (the tool reports the fetch error)
+  }
+}
+
 const affordableCache = new Map();
 import { outlookFor, loadUpdownLive, loadUpdownTable, features as udFeatures } from './paper-bot/updown-outlook.mjs';
 import { whatWorksToday } from './paper-bot/day-today.mjs';
@@ -731,7 +753,8 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === 'GET' && url.pathname === '/api/this-month') {
       // Home → Do this month: the monthly action list, scaled to ?amount= (₹10,000 – ₹10 crore)
-      const amount = Math.min(1e9, Math.max(10000, Number(url.searchParams.get('amount')) || 100000));
+      // an amount outside the range is an error with the range, not silently swapped (round 79, L4)
+      const amount = rangedParam(url.searchParams.get('amount'), 100000, 10000, 1e9, 'Amount');
       return json(res, 200, thisMonth({ amount }));
     }
     if (req.method === 'GET' && url.pathname === '/api/fo-plan') return json(res, 200, await foPlan()); // Options & risk → My F&O plan
@@ -739,7 +762,9 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/api/expiry') {
       let fo = null;
       try {
-        fo = foSizes(savedCapital()).text; // one NIFTY / stock-option lot next to the user's money (shown on the F&O tabs)
+        // one NIFTY / stock-option lot next to the F&O practice money (the ₹10,000 of My F&O plan / the spread
+        // tracker), not the India mix amount — this line shows only on the F&O tabs (round 79, O-B7; Home unchanged)
+        fo = foSizes(loadSpreadPaper()?.rules?.capital || SPREAD_RULES.capital).text;
       } catch {
         fo = null;
       }
@@ -782,8 +807,15 @@ const server = http.createServer(async (req, res) => {
       };
       try {
         if (q.has('symbols')) return json(res, 200, { symbols: ['NIFTY', ...stockSymbols()] });
-        const symbol = String(q.get('symbol') || 'NIFTY').toUpperCase();
+        // "SBIN.NS" is accepted (the .NS is dropped); indices other than NIFTY and non-F&O stocks get a plain answer
+        // before any price download (round 79, O-B11)
+        const symbol = String(q.get('symbol') || 'NIFTY').toUpperCase().trim().replace(/\.NS$/, '');
         if (!/^[A-Z0-9&-]{1,20}$/.test(symbol)) return json(res, 400, { error: 'Type an NSE F&O symbol, e.g. RELIANCE.' });
+        if (symbol !== 'NIFTY') {
+          const fo = stockSymbols();
+          if (/^(BANKNIFTY|FINNIFTY|MIDCPNIFTY|NIFTYNXT50|SENSEX|BANKEX|NIFTY50)$/.test(symbol)) return json(res, 400, { error: `Only NIFTY and NSE stock options are covered here — not ${symbol}.` });
+          if (fo.length && !fo.includes(symbol)) return json(res, 400, { error: `${symbol} has no NSE stock options (not in the F&O list). Only NIFTY and NSE stock options are covered here.` });
+        }
         return json(res, 200, await riskCheckLive({ symbol, strategy: q.get('strategy') || 'strangle', account: num('account', 10000, 1000, 1e9), lots: Math.round(num('lots', 1, 1, 50)), distancePct: num('distance', 2, 0, 8), wing: Math.round(num('wing', 500, 100, 2000) / 50) * 50, wingPct: num('wingPct', 4, 0.5, 20), maxLossPct: num('maxLoss', 2, 0.5, 50) }));
       } catch (e) {
         return json(res, 400, { error: e.message });
@@ -818,7 +850,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/api/swing-orb') return json(res, 200, loadSwingOrb() || {});
     if (req.method === 'GET' && url.pathname === '/api/trade-plan') {
       // Home → Swing trade plan: tomorrow's buys / sells / stops, shares for ?capital= (₹50,000 – ₹10 crore)
-      const capital = Math.min(1e9, Math.max(50000, Number(url.searchParams.get('capital')) || 500000));
+      const capital = rangedParam(url.searchParams.get('capital'), 500000, 50000, 1e9, 'Capital');
       return json(res, 200, tradePlan({ capital }));
     }
     if (req.method === 'GET' && url.pathname === '/api/matrix-calendar') return json(res, 200, loadMatrixCalendar() || {});
@@ -997,7 +1029,7 @@ const server = http.createServer(async (req, res) => {
 
     // --- Big-move odds (size, not direction) ---
     if (req.method === 'GET' && url.pathname === '/api/big-move') {
-      const symbol = (url.searchParams.get('symbol') || '^NSEI').trim();
+      const symbol = await nseFirst(url.searchParams.get('symbol') || '^NSEI');
       let eventPending = false;
       if (/\.(NS|BO)$/i.test(symbol)) {
         try {
@@ -1063,7 +1095,7 @@ const server = http.createServer(async (req, res) => {
     // --- Call / Put payoff odds (volatility-based) ---
     if (req.method === 'GET' && url.pathname === '/api/option-odds') {
       const p = url.searchParams;
-      const symbol = p.get('symbol') || '^NSEI';
+      const symbol = await nseFirst(p.get('symbol') || '^NSEI');
       let eventPending = false;
       if (/\.(NS|BO)$/i.test(symbol)) {
         try {
@@ -1135,7 +1167,7 @@ const server = http.createServer(async (req, res) => {
     // --- Volatility: implied vs forecast ---
     if (req.method === 'GET' && url.pathname === '/api/vol-check') {
       const p = url.searchParams;
-      const symbol = p.get('symbol') || '^NSEI';
+      const symbol = await nseFirst(p.get('symbol') || '^NSEI');
       // Results due for a stock? (headline-based, no AI call) → event add-on.
       let eventPending = false;
       if (/\.(NS|BO)$/i.test(symbol)) {

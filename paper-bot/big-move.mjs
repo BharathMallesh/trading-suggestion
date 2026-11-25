@@ -28,6 +28,7 @@ import { normCdf } from '../blackscholes.mjs';
 import { EVAL_UNIVERSE } from './config.mjs';
 import { HOLDOUT_UNIVERSE } from './evaluate.mjs';
 import { badRequest, mapLimit } from '../util.mjs';
+import { completedDaily } from './market-calendar.mjs';
 
 const SAVED = () => process.env.BIG_MOVE_PATH || join(dirname(fileURLToPath(import.meta.url)), 'data', 'big-move-eval.json');
 export const THRESHOLDS = { 1: [1, 2, 3], 5: [2, 4, 6] }; // % moves per horizon (sessions)
@@ -113,10 +114,11 @@ export function loadBigMoveEval() {
 }
 
 /** Big-move odds now for one symbol. */
-export async function bigMove({ symbol, eventPending = false, loadCandles = candles } = {}) {
+export async function bigMove({ symbol, eventPending = false, loadCandles = candles, now = new Date() } = {}) {
   const sym = String(symbol || '').trim();
   if (!sym) throw badRequest('symbol is required, e.g. ^NSEI or TCS.NS');
-  const rows = (await loadCandles(sym, { range: '5y', interval: '1d' })).filter((x) => x.close > 0);
+  const cd = completedDaily((await loadCandles(sym, { range: '5y', interval: '1d' })).filter((x) => x.close > 0), now);
+  const rows = cd.rows;
   if (rows.length < 400) throw badRequest(`Not enough daily history for ${sym} (need ~2 years).`);
   const closes = rows.map((x) => x.close);
   const r = logReturns(closes);
@@ -142,6 +144,7 @@ export async function bigMove({ symbol, eventPending = false, loadCandles = cand
   return {
     symbol: sym,
     asOf: rows[rows.length - 1].date,
+    partialDropped: cd.dropped, // today's unfinished bar left out (round 79, O-B19)
     last: closes[closes.length - 1],
     eventPending,
     horizons,

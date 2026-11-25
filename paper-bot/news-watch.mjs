@@ -26,6 +26,7 @@ import { promisify } from 'node:util';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { nseSymbols } from './bhav-history.mjs';
 import { writeJsonAtomic, badRequest } from '../util.mjs';
 import { tradingDaysBetween, lastSessionDate, nseOpenNow } from './market-calendar.mjs';
 import { extractJson, normalizeConfidence } from './llm-json.mjs';
@@ -107,9 +108,14 @@ export function classifyEvent(text) {
 export const historyFor = (ev) => (ev ? HISTORY[ev.sub] || HISTORY[ev.type] || null : null);
 
 /** The stock's main event from its classified items (non-routine, by priority). */
+// Since 25 Nov 2026 (round 79, INV-2 — owner decision): the company's own non-routine NSE filing wins over
+// headlines when both exist (a generic or other-company headline no longer sets the event).
+export const MAIN_EVENT_RULE_SINCE = '2026-11-25';
 export function mainEvent(items) {
-  const real = items.filter((x) => x.event && !x.event.routine);
-  if (!real.length) return null;
+  const all = items.filter((x) => x.event && !x.event.routine);
+  if (!all.length) return null;
+  const nse = all.filter((x) => x.source === 'NSE');
+  const real = nse.length ? nse : all;
   real.sort((a, b) => PRIORITY.indexOf(a.event.type) - PRIORITY.indexOf(b.event.type));
   const top = real[0].event;
   // an avoid sub-type anywhere wins inside the same type
@@ -174,6 +180,8 @@ function saveUserList(symbols) {
 export function addWatchSymbol(symbol) {
   const s = cleanSymbol(symbol);
   if (!SYM_RE.test(s)) throw badRequest('Give an NSE symbol such as TCS or HDFCBANK (letters, digits, & or -).');
+  const known = nseSymbols();
+  if (known && !known.has(s)) throw badRequest(`Unknown NSE symbol "${s}" — it is not in NSE's daily files of the last two months.`);
   const list = loadUserList();
   if (list.includes(s)) return { symbols: list, added: false };
   if (list.length >= NW.maxUser) throw badRequest(`At most ${NW.maxUser} added stocks — remove one first.`);

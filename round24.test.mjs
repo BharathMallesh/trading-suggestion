@@ -86,7 +86,7 @@ test('strategy comparison: three rows, only a passed test is marked reliable', a
     dip: null,
     dp: null,
   });
-  assert.deepEqual(r.rows.map((x) => x.key), ['ath', 'vwap', 'breakfast']);
+  assert.deepEqual(r.rows.slice(0, 3).map((x) => x.key), ['ath', 'vwap', 'breakfast']); // round 79 (S-B4): every strategy sub-tab now has a row after these
   assert.equal(r.rows[0].reliable, true);
   assert.match(r.rows[0].money, /10\.8%\/yr vs NIFTY 10\.4% · after tax 8\.7% vs 9\.7%/);
   assert.equal(r.rows[1].reliable, false);

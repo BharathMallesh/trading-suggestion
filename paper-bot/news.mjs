@@ -123,12 +123,15 @@ export const ALIASES = {
   DRREDDY: "Dr Reddy's", APOLLOHOSP: 'Apollo Hospitals', BAJAJFINSV: 'Bajaj Finserv', INDUSINDBK: 'IndusInd',
 };
 // Headline patterns for aliased names (whole phrase; a few need variants).
-const ALIAS_MATCH = {
+export const ALIAS_MATCH = {
   SBIN: /\bSBI\b|State Bank of India/i,
   KOTAKBANK: /Kotak (Mahindra )?Bank/i,
   BEL: /Bharat Electronics|\bBEL\b(?! Fuse)/i,
   HINDUNILVR: /\bHUL\b|Hindustan Unilever/i,
   'M&M': /\bM&M\b|Mahindra & Mahindra|Mahindra and Mahindra/i,
+  // one-word names shared with foreign companies (round 79, INV-2: Raymond James, Titan SA, Titan Machinery)
+  RAYMOND: /\bRaymond\b(?!\s+(James|Chess|Weil))/i,
+  TITAN: /Titan Company|Titan Co\b|Titan Ltd|Tanishq/i,
 };
 const phrase = (t) => new RegExp(`\\b${t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i');
 // Quote pages / weekly "outlook" listings aren't news.
@@ -259,7 +262,7 @@ export async function newsBrief(symbol, { useLlm = true, refresh = false } = {})
     }
   }
   // Aliased names match on their full phrase (e.g. "Kotak Mahindra Bank", not any "Kotak").
-  const match = alias ? ALIAS_MATCH[ticker.toUpperCase()] || phrase(alias) : null;
+  const match = ALIAS_MATCH[ticker.toUpperCase()] || (alias ? phrase(alias) : null);
   const headlines = relevantHeadlines(items, tokens, { ticker, match }).slice(0, 8).map((n) => ({
     title: n.title,
     publisher: n.publisher,

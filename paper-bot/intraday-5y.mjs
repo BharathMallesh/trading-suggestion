@@ -44,7 +44,12 @@ export function periods(trades, value = (t) => t.net) {
   };
 }
 
-export async function intraday5y({ loadCandles = candles, read = readHist, breakfast = true } = {}) {
+/**
+ * The trades of the intraday strategies on the Groww 5-minute history: the three YouTube VWAP paper versions
+ * and the Breakfast strategy. Shared by intraday5y() and the Breakdown build (breakdown.mjs --build), so both
+ * read the same candle set with the same code (round 79, S-B1).
+ */
+export async function intradayTrades({ loadCandles = candles, read = readHist, breakfast = true } = {}) {
   const vp = await import('./vwap-pullback.mjs');
   const bf = await import('./breakfast.mjs');
   const { loadIndexList } = await import('./ranking.mjs');
@@ -56,7 +61,7 @@ export async function intraday5y({ loadCandles = candles, read = readHist, break
       return new Map();
     }
   };
-  const out = { at: new Date().toISOString(), split: SPLIT, vwap: {}, breakfast: null };
+  const out = { vwap: {}, breakfast: null };
 
   // YouTube intraday: the three paper versions
   for (const [key, v] of Object.entries(vp.PAPER_VARIANTS)) {
@@ -67,7 +72,7 @@ export async function intraday5y({ loadCandles = candles, read = readHist, break
       if (rows.length) data.push({ s, rows, daily: await daily(s) });
     }
     const trades = vp.accountTrades(data.flatMap(({ s, rows, daily: d }) => vp.backtestStock(s, rows, v.rules, { daily: d })), v.rules.maxPerDay);
-    out.vwap[key] = { label: v.label.replace(/ \(unproven\)$/, ''), stocks: data.length, sessions: new Set(data.flatMap((x) => x.rows.map((r) => r.date.slice(0, 10)))).size, ...periods(trades), beforeCosts: rupeeStats(trades.map((t) => t.gross ?? t.net)) };
+    out.vwap[key] = { v, stocks: data.length, sessions: new Set(data.flatMap((x) => x.rows.map((r) => r.date.slice(0, 10)))).size, trades };
   }
 
   // Breakfast: NIFTY 200 by sector, NIFTY's first five minutes
@@ -91,7 +96,21 @@ export async function intraday5y({ loadCandles = candles, read = readHist, break
         if (t) trades.push(t);
       }
     }
-    out.breakfast = { label: 'Breakfast strategy', stocks: stocks.length, sessions: nifty.size, ...periods(trades), flatOpen: periods(trades.filter((t) => bf.isFlatOpen(t))), beforeCosts: rupeeStats(trades.map((t) => t.gross ?? t.net)) };
+    out.breakfast = { stocks: stocks.length, sessions: nifty.size, trades };
+  }
+  return out;
+}
+
+export async function intraday5y({ loadCandles = candles, read = readHist, breakfast = true } = {}) {
+  const bf = await import('./breakfast.mjs');
+  const got = await intradayTrades({ loadCandles, read, breakfast });
+  const out = { at: new Date().toISOString(), split: SPLIT, vwap: {}, breakfast: null };
+  for (const [key, { v, stocks, sessions, trades }] of Object.entries(got.vwap)) {
+    out.vwap[key] = { label: v.label.replace(/ \(unproven\)$/, ''), stocks, sessions, ...periods(trades), beforeCosts: rupeeStats(trades.map((t) => t.gross ?? t.net)) };
+  }
+  if (got.breakfast) {
+    const { stocks, sessions, trades } = got.breakfast;
+    out.breakfast = { label: 'Breakfast strategy', stocks, sessions, ...periods(trades), flatOpen: periods(trades.filter((t) => bf.isFlatOpen(t))), beforeCosts: rupeeStats(trades.map((t) => t.gross ?? t.net)) };
   }
   writeJsonAtomic(SAVED(), out);
   return out;

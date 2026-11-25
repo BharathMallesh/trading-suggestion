@@ -138,8 +138,33 @@ function topProbLabel(entry) {
  * - Session horizon: close of the first COMPLETED daily session after the
  *   prediction's date.
  */
-async function settlementPrice(entry, now) {
-  const sym = String(entry.symbol); // stored already resolved to a Yahoo symbol
+/**
+ * The Yahoo symbol a logged entry settles on. Entries are stored as Yahoo symbols, except Groww-path
+ * runs before round 79, which stored the bare NSE symbol (INFY) — on Yahoo that is the US listing.
+ * Every symbol this log records is NSE / an index, so a bare one is the NSE stock (round 79, O-B2).
+ */
+export const yahooSymbolFor = (s) => {
+  const x = String(s || '').trim().toUpperCase();
+  return !x || /[.^=]/.test(x) ? x : `${x}.NS`;
+};
+
+/** Settlement move this large (±50% in a day or an hour) is a wrong price series, not a move: not scored. */
+export const IMPLAUSIBLE_MOVE_PCT = 50;
+/** A pending entry this old that still can't be settled is set aside as unscorable (its bars are past Yahoo's 1-month window). */
+export const UNSCORABLE_AFTER_DAYS = 25;
+
+async function settlementPrice(entry, now, cache = null, loadCandles = yahooCandles) {
+  const sym = yahooSymbolFor(entry.symbol);
+  const load = async (opts) => {
+    const k = `${sym}|${opts.interval}`;
+    if (cache?.has(k)) return cache.get(k);
+    const p = loadCandles(sym, opts);
+    if (cache) {
+      cache.set(k, p);
+      cache.fetches = (cache.fetches || 0) + 1;
+    }
+    return p;
+  };
   const predMs = new Date(entry.ts).getTime();
   const horizon = entry.horizonMinutes !== undefined ? entry.horizonMinutes : horizonFor(entry.mode, entry.intervalMinutes);
   if (horizon != null) {
@@ -148,17 +173,28 @@ async function settlementPrice(entry, now) {
     const barMs = (interval === '5m' ? 5 : interval === '15m' ? 15 : 60) * 60000;
     const target = predMs + horizon * 60000;
     if (now < target) return null;
-    const rows = await yahooCandles(sym, { range: '1mo', interval });
+    const rows = await load({ range: '1mo', interval });
     const bar = rows.find((r) => r.ts * 1000 >= target && r.ts * 1000 + barMs <= now);
     return bar ? { price: Number(bar.open), at: bar.date } : null;
   }
-  const rows = await yahooCandles(sym, { range: '1mo', interval: '1d' });
-  if (!rows.length) return null;
   // Exchange-local dates: candles() already labels daily bars in local time.
   const predDate = String(entry.asOf || '').slice(0, 10) || istParts(new Date(predMs)).date;
+  if (!sessionComplete(nextSessionAfter(predDate), now)) return null; // not due: no fetch
+  const rows = await load({ range: '1mo', interval: '1d' });
+  if (!rows.length) return null;
   // First session after the prediction's bar whose close is final (not in progress).
   const bar = rows.find((r) => r.date > predDate && sessionComplete(r.date, now));
   return bar ? { price: Number(bar.close), at: bar.date } : null;
+}
+
+/** First NSE trading day after `date` (YYYY-MM-DD). */
+function nextSessionAfter(date) {
+  let d = date;
+  for (let i = 0; i < 15; i++) {
+    d = new Date(Date.parse(`${d}T00:00:00Z`) + 86400000).toISOString().slice(0, 10);
+    if (isTradingDay(d)) return d;
+  }
+  return d;
 }
 
 /** Average true range (simple 14-bar mean) of daily rows ending before `date` (the session the call was made from). */
@@ -184,7 +220,7 @@ export async function rescoreSessionEntries({ loadCandles = yahooCandles, thresh
     for (const e of todo) {
       if (!bySym.has(e.symbol)) {
         try {
-          bySym.set(e.symbol, (await loadCandles(e.symbol, { range: '2y', interval: '1d' })).filter((r) => r.close > 0 && r.high > 0));
+          bySym.set(e.symbol, (await loadCandles(yahooSymbolFor(e.symbol), { range: '2y', interval: '1d' })).filter((r) => r.close > 0 && r.high > 0));
         } catch {
           bySym.set(e.symbol, null);
         }
@@ -231,22 +267,33 @@ async function evaluatePendingUnlocked(opts = {}) {
   const limit = Number.isFinite(opts.limit) && opts.limit > 0 ? opts.limit : 30;
   const log = loadLog();
   const patches = []; // applied to a fresh read at the end: logPrediction may have appended while we awaited prices
-  const now = Date.now();
+  const now = Number.isFinite(opts.now) ? opts.now : Date.now();
   let checked = 0;
   let updated = 0;
 
+  // `limit` caps price downloads per run (round 79, O-B1): entries that aren't due cost nothing, entries
+  // of a symbol already downloaded this run reuse it, and entries too old to settle are set aside, so
+  // old unsettleable rows can no longer use up the budget and block newer ones.
+  const cache = new Map();
   for (const entry of log.entries) {
-    if (entry.evaluated) continue;
-    if (checked >= limit) break;
+    if (entry.evaluated || entry.unscorable) continue;
+    if ((cache.fetches || 0) >= limit) break;
     const ageMin = (now - new Date(entry.ts).getTime()) / 60000;
     if (ageMin < minAgeMinutes) continue;
     checked++;
 
     try {
-      const settled = await settlementPrice(entry, now);
-      if (!settled || !settled.price || !entry.lastClose) continue; // not due yet
+      const settled = await settlementPrice(entry, now, cache, opts.loadCandles || yahooCandles);
+      if (!settled || !settled.price || !entry.lastClose) {
+        if (ageMin > UNSCORABLE_AFTER_DAYS * 1440) patches.push({ id: entry.id, fields: { unscorable: true, unscorableWhy: 'no settlement price within Yahoo\'s 1-month window' } });
+        continue; // not due yet
+      }
 
       const retPct = ((settled.price - entry.lastClose) / entry.lastClose) * 100;
+      if (Math.abs(retPct) > IMPLAUSIBLE_MOVE_PCT) {
+        patches.push({ id: entry.id, fields: { unscorable: true, unscorableWhy: `settlement price ${settled.price} vs ${entry.lastClose} (${retPct.toFixed(1)}%): wrong price series` } });
+        continue;
+      }
       // Scale threshold a bit with ATR if present
       let thr = thresholdPct;
       if (entry.atr && entry.lastClose) {
@@ -281,7 +328,7 @@ async function evaluatePendingUnlocked(opts = {}) {
     if (e) Object.assign(e, fields);
   }
   saveLog(fresh);
-  return { checked, updated, stats: computeStats(fresh.entries) };
+  return { checked, updated, fetches: cache.fetches || 0, unscorable: patches.filter((x) => x.fields.unscorable).length, stats: computeStats(fresh.entries) };
 }
 
 /**
@@ -306,7 +353,7 @@ export function computeStats(entries) {
   const all = entries || loadLog().entries;
   const evaluatedRaw = all.filter((e) => e.evaluated);
   const evaluated = dedupeDaily(evaluatedRaw);
-  const pending = all.filter((e) => !e.evaluated);
+  const pending = all.filter((e) => !e.evaluated && !e.unscorable);
   const hitBias = evaluated.filter((e) => e.hitBias).length;
   const hitTop = evaluated.filter((e) => e.hitTopProb).length;
 
@@ -339,6 +386,7 @@ export function computeStats(entries) {
     totalLogged: all.length,
     evaluatedRaw: evaluatedRaw.length, // before one-per-stock-per-day de-duplication
     pending: pending.length,
+    unscorable: all.filter((e) => !e.evaluated && e.unscorable).length, // set aside: wrong price series or too old to settle
     evaluated: evaluated.length,
     hitRateBias: evaluated.length ? hitBias / evaluated.length : null,
     hitRateTopProb: evaluated.length ? hitTop / evaluated.length : null,
@@ -495,7 +543,7 @@ export function liveScorecard(entries = null, { mode = 'all' } = {}) {
   const out = {
     mode,
     scored: n,
-    pending: entries.filter((e) => !e.evaluated && (mode === 'all' || (mode === '15m' ? e.mode === '15m' : e.mode !== '15m'))).length,
+    pending: entries.filter((e) => !e.evaluated && !e.unscorable && (mode === 'all' || (mode === '15m' ? e.mode === '15m' : e.mode !== '15m'))).length,
     topCallRight: topHit,
     alwaysMostCommonRight: n ? freq[most] / n : null,
     mostCommon: name[most],

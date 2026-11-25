@@ -326,7 +326,7 @@ test('wiring: card after Global mix, route, evening line, research summary; pape
   assert.match(html, /<li><b>Finalist 2<\/b>[^<]*lost both never-seen periods/);
   const views = readFileSync('static/js/06-home-views.js', 'utf8');
   assert.match(views, /key: 'invest', match: \/\^\([^)]*\|Global mix\|Finalist 2\|/);
-  assert.match(views, /'India mix', 'Global mix', 'Finalist 2', 'Steady mix'/);
+  assert.match(views, /'Global mix', 'Finalist 2', 'Steady mix'/); // round 79: Investing reordered (owner decision); Finalist 2 still right after Global mix
   assert.match('/static/js/49-finalist-two.js', /^\/static\/(app\.css|js\/\d\d-[a-z-]+\.js)$/); // the server only serves NN-letters.js
   const js = readFileSync('static/js/49-finalist-two.js', 'utf8');
   assert.match(js, /avoidMark\(/);

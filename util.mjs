@@ -96,3 +96,14 @@ export function withFileLock(path, fn) {
   tail.then(() => { if (_locks.get(path) === tail) _locks.delete(path); });
   return run;
 }
+
+/**
+ * Date a paper curve point is keyed by: the latest price date its marks used (a trading date), never the
+ * run date — a run on a Sunday or an NSE holiday re-marks the last session instead of adding a point
+ * dated on a non-trading day (round 79, INV-1 / L8). Falls back to `fallback` when no price had a date.
+ */
+export function curveDate(dates, fallback) {
+  const ds = dates.filter((d) => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}/.test(d)).map((d) => d.slice(0, 10)).sort();
+  const d = ds.at(-1);
+  return d && (!fallback || d <= fallback) ? d : fallback;
+}
