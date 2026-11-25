@@ -598,6 +598,14 @@
         <div id="atOut" style="margin-top:10px">Loading…</div>
       </section>
 
+      <!-- Call / Put tournament: frozen contestants call NIFTY before the open, scored forward only; paper only (51-cp-tournament.js) -->
+      <section class="card span2" id="cpTournamentCard">
+        <h2>Call / Put tournament <span style="font-size:12px;color:var(--warn);font-weight:500">NIFTY · CALLS BEFORE THE 09:15 OPEN · SCORED FORWARD ONLY · NOTHING PROVEN YET · PAPER ONLY · NO BROKER ORDERS</span></h2>
+        <p class="hint">Which predictor says CALL or PUT best? Instead of searching more backtests (which kept finding luck), every contestant — simple baselines, the app's own models and two ensembles — is frozen code that makes a call each morning before the open,
+          and is scored only on days nobody has seen. A leader counts as proven only after 100+ scored calls with statistical support that survives a multiple-testing correction. Most likely none will. Not advice.</p>
+        <div id="cptOut" style="margin-top:10px">Loading…</div>
+      </section>
+
       <!-- F&O risk check: before a trade, how bad can one week get for this account? -->
       <section class="card span2" id="foRiskCard">
         <h2>F&amp;O risk check <span style="font-size:12px;color:var(--warn);font-weight:500">BEFORE YOU TRADE · TODAY'S NSE PRICES · EVERY NIFTY MOVE SINCE 2010 · BLOCKS OVERSIZED TRADES</span></h2>
@@ -1266,6 +1274,7 @@
     <script src="/static/js/48-expiry.js"></script>
     <script src="/static/js/49-finalist-two.js"></script>
     <script src="/static/js/50-afternoon-trend.js"></script>
+    <script src="/static/js/51-cp-tournament.js"></script>
     <script src="/static/js/19-my-plan.js"></script>
     <script src="/static/js/20-rsi-swing.js"></script>
   </body>

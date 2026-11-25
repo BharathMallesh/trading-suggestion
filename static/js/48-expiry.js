@@ -5,7 +5,7 @@
 let XP = null;
 let XP_AT = 0;
 let XP_VIEW = null;
-const XP_CARDS = ['foRiskCard', 'foBudgetCard', 'spreadPaperCard', 'afternoonCard', 'strikeCard', 'foPlanCard'];
+const XP_CARDS = ['foRiskCard', 'foBudgetCard', 'spreadPaperCard', 'afternoonCard', 'cpTournamentCard', 'strikeCard', 'foPlanCard'];
 const xpDay = (d) => new Date(`${d}T00:00:00Z`).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
 
 function xpNext(s) {

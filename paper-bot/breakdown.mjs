@@ -32,6 +32,7 @@ import { summarise as athSummarise } from './ath-swing.mjs';
 import { summarise as rsiSummarise } from './rsi-swing.mjs';
 import { paperView as dipPaperView, versionOf as dipVersionOf } from './nifty-dip.mjs';
 import { summarise as atSummarise } from './afternoon-trend.mjs';
+import { contestantStats, versions as cpVersions, CONTESTANTS as CP_CONTESTANTS } from './cp-tournament.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const DATA_DIR = () => process.env.BREAKDOWN_DATA_DIR || join(HERE, 'data');
@@ -42,7 +43,7 @@ export const STRATEGIES = {
   'fo-spread': 'F&O spreads (₹10,000 practice)', 'rsi-swing': 'RSI swing', ath: 'Strong-stock swing', 'imbalance-swing': 'Imbalance swing',
   'e2-swing': 'Momentum breakout', 'lbb-swing': 'Leader box breakout', 'bonus-runup': 'Bonus/split run-up', 'ipo-apply': 'IPO apply',
   'nifty-dip': 'NIFTY dip-buy', 'ml-picks': 'ML stock picks', 'india-mix': 'India mix', 'steady-mix': 'Steady mix', momentum10: 'Momentum 10',
-  momentum: 'Momentum 20', 'global-mix': 'Global mix', finalist2: 'Finalist 2', 'afternoon-trend': 'Afternoon trend (option buying)',
+  momentum: 'Momentum 20', 'global-mix': 'Global mix', finalist2: 'Finalist 2', 'afternoon-trend': 'Afternoon trend (option buying)', 'cp-tournament': 'Call / Put tournament',
 };
 export const GROUPS = ['weekday', 'weekOfMonth', 'month', 'quarter', 'fyQuarter', 'year'];
 export const MIN_TRADES = 20; // fewer trades in a bucket: "too few to judge"
@@ -234,6 +235,24 @@ export const PAPER_ADAPTERS = {
     collector(out, f)({ strategy: 'afternoon-trend', version: 'paper', source: 'paper' }, trades, (t) => ({ symbol: 'NIFTY', side: 'long', entryDate: t.date, exitDate: t.date, pnl: t.pnl, gross: t.gross, charges: t.charges, retPct: num(t.ret) != null ? t.ret * 100 : null }));
     const s = atSummarise(st.days);
     report(out, { strategy: 'afternoon-trend', version: 'paper', source: 'paper', unit: '₹', trades: s.n, net: s.totalRs, by: 'afternoon-trend.mjs summarise() (the card)' });
+  },
+  // Call / Put tournament (forward test): one series per contestant (version = its id), the scored TODAY (open → close) calls
+  // with a paper P&L, current frozen versions only — TEST entries, NO TRADE days and expiry days (no P&L) are left out
+  'cp-tournament.json': (st, out, f) => {
+    if (!Array.isArray(st.days)) throw new Error('no days array');
+    const vers = cpVersions();
+    for (const c of CP_CONTESTANTS) {
+      const trades = [];
+      for (const d of st.days) {
+        const p = d && !d.test ? d.preds?.[c.id] : null;
+        if (!p || p.version !== vers[c.id] || p.score?.day?.hit == null || p.score.day.pnl == null) continue;
+        trades.push({ date: d.date, call: p.day.call, pnl: p.score.day.pnl, ret: p.score.day.ret });
+      }
+      if (!trades.length) continue;
+      collector(out, f)({ strategy: 'cp-tournament', version: c.id, source: 'paper' }, trades, (t) => ({ symbol: 'NIFTY', side: t.call === 'PUT' ? 'short' : 'long', entryDate: t.date, exitDate: t.date, pnl: t.pnl, retPct: num(t.ret) != null ? (t.call === 'PUT' ? -t.ret : t.ret) * 100 : null }));
+      const s = contestantStats(st, 'day', c.id, vers);
+      report(out, { strategy: 'cp-tournament', version: c.id, source: 'paper', unit: '₹', trades: s.pnlDays, net: s.pnl, by: 'cp-tournament.mjs contestantStats() (the card)' });
+    }
   },
 };
 function foPaper(st, out, f, version) {

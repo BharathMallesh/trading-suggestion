@@ -309,7 +309,9 @@ test('wiring: box above News watch, route, morning mode, evening scoring line, p
     assert.match(p, /morning\.log/);
     assert.equal((p.match(/<key>Hour<\/key><integer>8<\/integer><key>Minute<\/key><integer>40<\/integer>/g) || []).length, 5, 'Mon–Fri 08:40');
   }
-  for (const f of readdirSync('paper-bot').filter((x) => x.endsWith('.mjs') && x !== 'news-pick.mjs')) {
+  // the one exception: the Call / Put tournament (round 78) SCORES the pick's tilt as one forward-tested contestant — read
+  // only, it feeds no strategy (its own file is the only thing it writes; checked in round78.test.mjs)
+  for (const f of readdirSync('paper-bot').filter((x) => x.endsWith('.mjs') && x !== 'news-pick.mjs' && x !== 'cp-tournament.mjs')) {
     assert.ok(!readFileSync(join('paper-bot', f), 'utf8').includes('news-pick'), `${f} must not read the news picks`);
   }
   const src = readFileSync('paper-bot/news-pick.mjs', 'utf8');

@@ -5,7 +5,7 @@
 #   scripts/run.sh monitor    – investor monitor (+ macOS notifications)
 #   scripts/run.sh refit      – weekly model refit
 #   scripts/run.sh backup     – daily backup of the evidence (~/trading-research-backups + iCloud copy)
-#   scripts/run.sh morning    – 08:40 news pick (picks + random control, scored from the open; feeds no strategy)
+#   scripts/run.sh morning    – 08:40 news pick (picks + random control, scored from the open; feeds no strategy) + Call / Put tournament calls
 # Secrets come from the macOS Keychain (encrypted), never from files:
 #   security add-generic-password -U -a "$USER" -s trading-research-openrouter -w   # prompts for the key
 #   security add-generic-password -U -a "$USER" -s trading-research-groww-key -w     # Groww API key (optional)
@@ -40,6 +40,8 @@ do_collect() {
   node paper-bot/fo-strangle.mjs --paper   # F&O: NSE files arrive in the evening, so this records up to yesterday
   # Afternoon trend (loop-23 option-buying near-miss): replays today's 5-minute bars (saved above) at the rule times; option prices from Groww. PAPER ONLY
   GROWW_API_KEY="$(key trading-research-groww-key)" GROWW_API_SECRET="$(key trading-research-groww-secret)" node paper-bot/afternoon-trend.mjs --paper || true
+  # Call / Put tournament: score the morning calls (day, 5 sessions) + the T1 same-day contestant (needs the afternoon-trend record above); option prices from Groww. PAPER ONLY
+  GROWW_API_KEY="$(key trading-research-groww-key)" GROWW_API_SECRET="$(key trading-research-groww-secret)" node paper-bot/cp-tournament.mjs --score || true
   node --max-old-space-size=4000 paper-bot/spread-paper.mjs   # ₹10,000 practice account: Fits-my-budget spreads (settles / marks; opens only if today's NSE file is out)
   node paper-bot/core-satellite.mjs --update   # the 80/20 index fund + swing paper account
   node --max-old-space-size=8000 paper-bot/rsi-swing.mjs --paper   # RSI swing (Rathod): live scan + paper record
@@ -223,6 +225,8 @@ case "${1:-}" in
     caffeinate -i -w $$ & # keep the Mac awake until this job finishes
     echo "$(date '+%F %T') morning"; wait_online
     OPENROUTER_API_KEY="$(key trading-research-openrouter)" node paper-bot/news-pick.mjs --run --notify || true   # AI key for this command only (empty: candidates + events, no picks)
+    # Call / Put tournament: every frozen contestant calls NIFTY before the 09:15 open (after the news pick, which one contestant reads). PAPER ONLY
+    OPENROUTER_API_KEY="$(key trading-research-openrouter)" node paper-bot/cp-tournament.mjs --predict || true
     ;;
   *)
     echo "usage: scripts/run.sh server|collect|monitor|refit|backup|morning"; exit 2 ;;
