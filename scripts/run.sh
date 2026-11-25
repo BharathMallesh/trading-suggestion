@@ -220,7 +220,7 @@ case "${1:-}" in
     catchup
     node paper-bot/watchdog.mjs --notify ;;
   morning)
-    # 08:40 on weekdays: today's news pick before the open (quiet exit on NSE holidays and after 09:15); the
+    # 08:15 on weekdays: today's news pick before the open (quiet exit on NSE holidays and after 09:15); the
     # notification's first line is today's algo plan (news-pick.mjs algoPlanLine, which also logs it)
     caffeinate -i -w $$ & # keep the Mac awake until this job finishes
     echo "$(date '+%F %T') morning"; wait_online

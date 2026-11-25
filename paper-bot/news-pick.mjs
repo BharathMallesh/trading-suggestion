@@ -413,9 +413,16 @@ export async function runNewsPick({
   if (wl.error) errors.push(wl.error);
   const { candidates, excluded } = buildPool({ ann, liquid: liq.set, avoid, watch: wl.rows, since, until, valueOf: liq.valueOf });
 
-  // headlines per candidate (polite: one at a time, 0.8 s apart)
+  // headlines per candidate (polite: one at a time, 0.8 s apart). Stop fetching at 08:55 IST so the pick — and the
+  // Call / Put tournament that runs after it — finish before the 09:15 open (on 25 Nov 2026 this loop ran until 09:34).
+  // budget measured from this run's own clock (t.mins), so tests with a fixed 'now' behave like a real 08:15 run
+  const cutoff = force ? Infinity : Date.now() + Math.max(0, 8 * 60 + 55 - t.mins) * 60000;
   for (let i = 0; i < candidates.length; i++) {
     const c = candidates[i];
+    if (Date.now() > cutoff) {
+      c.errors = ['headlines skipped: past the 08:55 IST fetch cutoff'];
+      continue;
+    }
     if (i && pacingMs) await sleep(pacingMs);
     try {
       const news = await newsFn(c.symbol);

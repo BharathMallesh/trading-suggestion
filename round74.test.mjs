@@ -307,7 +307,7 @@ test('wiring: box above News watch, route, morning mode, evening scoring line, p
     const p = readFileSync(plist, 'utf8');
     assert.match(p, /<string>morning<\/string>/);
     assert.match(p, /morning\.log/);
-    assert.equal((p.match(/<key>Hour<\/key><integer>8<\/integer><key>Minute<\/key><integer>40<\/integer>/g) || []).length, 5, 'Mon–Fri 08:40');
+    assert.equal((p.match(/<key>Hour<\/key>\s*<integer>8<\/integer>\s*<key>Minute<\/key>\s*<integer>15<\/integer>/g) || []).length, 5, 'Mon–Fri 08:15');
   }
   // the one exception: the Call / Put tournament (round 78) SCORES the pick's tilt as one forward-tested contestant — read
   // only, it feeds no strategy (its own file is the only thing it writes; checked in round78.test.mjs)

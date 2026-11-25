@@ -1,7 +1,7 @@
 #!/bin/bash
 # Install macOS LaunchAgents so the app runs on its own:
 #   server  – starts at login, restarted automatically if it stops
-#   morning – weekdays 08:40 (news pick before the open; skips NSE holidays)
+#   morning – weekdays 08:15 (news pick before the open; skips NSE holidays)
 #   collect – weekdays 16:05 (after the close)
 #   monitor – weekdays 10:00, 13:00, 15:00 (macOS notifications for alerts)
 #   refit   – Saturdays 10:00
@@ -36,7 +36,7 @@ cal() { # weekday(1-6) hour minute → one StartCalendarInterval dict
 
 plist server server "  <key>RunAtLoad</key><true/><key>KeepAlive</key><true/><key>ThrottleInterval</key><integer>10</integer>"
 C=""; M=""; MO=""
-for d in 1 2 3 4 5; do MO="$MO$(cal $d 8 40)"; C="$C$(cal $d 16 5)"; for h in 10 13 15; do M="$M$(cal $d $h 0)"; done; done
+for d in 1 2 3 4 5; do MO="$MO$(cal $d 8 15)"; C="$C$(cal $d 16 5)"; for h in 10 13 15; do M="$M$(cal $d $h 0)"; done; done
 plist morning morning "  <key>StartCalendarInterval</key><array>$MO</array>"
 plist collect collect "  <key>StartCalendarInterval</key><array>$C</array>"
 plist monitor monitor "  <key>StartCalendarInterval</key><array>$M</array>"
