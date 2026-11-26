@@ -5,7 +5,7 @@
 #   scripts/run.sh monitor    – investor monitor (+ macOS notifications)
 #   scripts/run.sh refit      – weekly model refit
 #   scripts/run.sh backup     – daily backup of the evidence (~/trading-research-backups + iCloud copy)
-#   scripts/run.sh morning    – 08:40 news pick (picks + random control, scored from the open; feeds no strategy) + Call / Put tournament calls
+#   scripts/run.sh morning    – 08:40 news pick (picks + random control, scored from the open; feeds no strategy) + Call / Put tournament calls (NIFTY, then stocks)
 # Secrets come from the macOS Keychain (encrypted), never from files:
 #   security add-generic-password -U -a "$USER" -s trading-research-openrouter -w   # prompts for the key
 #   security add-generic-password -U -a "$USER" -s trading-research-groww-key -w     # Groww API key (optional)
@@ -75,6 +75,8 @@ do_collect() {
   OPENROUTER_API_KEY="$(key trading-research-openrouter)" node paper-bot/news-watch.mjs --run || true   # AI key for this command only (empty: news + events, rule calls)
   # Morning news pick: score the outstanding picks and their random controls (entry at the pick day's open)
   node paper-bot/news-pick.mjs --score || true
+  # Call / Put tournament — stocks: score the morning stock calls (needs today's NSE file saved above), then cache the next session's universe + inputs. PAPER ONLY
+  node paper-bot/cp-stocks.mjs --score --prepare || true
   # NSE delivery files (needed by the ML picks), then the ML stock picks paper portfolio (re-ranks once a month)
   node paper-bot/delivery.mjs 2026-01 || true
   node --max-old-space-size=12000 paper-bot/ml-picks.mjs --paper
@@ -218,6 +220,8 @@ case "${1:-}" in
       node -e "import('./paper-bot/market-calendar.mjs').then((m) => { const d = m.lastSessionDate(); process.exit(require('node:fs').existsSync('paper-bot/data/fo-stocks/' + d + '.json') ? 0 : 1); })" && break
       sleep 900
     done
+    # stock league: re-cache the next session's inputs with the F&O file that arrived above (the morning run checks the files match)
+    node paper-bot/cp-stocks.mjs --prepare || true
     # catch up a failed evening run / weekly refit, then the watchdog with the fresh backup
     catchup
     node paper-bot/watchdog.mjs --notify ;;
@@ -229,6 +233,8 @@ case "${1:-}" in
     OPENROUTER_API_KEY="$(key trading-research-openrouter)" node paper-bot/news-pick.mjs --run --notify || true   # AI key for this command only (empty: candidates + events, no picks)
     # Call / Put tournament: every frozen contestant calls NIFTY before the 09:15 open (after the news pick, which one contestant reads). PAPER ONLY
     OPENROUTER_API_KEY="$(key trading-research-openrouter)" node paper-bot/cp-tournament.mjs --predict || true
+    # Call / Put tournament — stocks: the same contestants call the 20 most liquid F&O stocks (after the NIFTY calls, which one contestant reads; stops at 09:05). PAPER ONLY
+    node paper-bot/cp-stocks.mjs --predict || true
     ;;
   *)
     echo "usage: scripts/run.sh server|collect|monitor|refit|backup|morning"; exit 2 ;;

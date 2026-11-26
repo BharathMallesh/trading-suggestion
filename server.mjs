@@ -91,6 +91,7 @@ import { loadGlobalMixPaper, RESEARCH as GLOBAL_RESEARCH } from './paper-bot/glo
 import { finalist2View } from './paper-bot/finalist2.mjs';
 import { afternoonView } from './paper-bot/afternoon-trend.mjs';
 import { tournamentView } from './paper-bot/cp-tournament.mjs';
+import { stocksView as cpStocksView } from './paper-bot/cp-stocks.mjs';
 import { loadIntraday5y } from './paper-bot/intraday-5y.mjs';
 import { foPlan } from './paper-bot/fo-plan.mjs';
 import { expiryStatus } from './paper-bot/expiry.mjs';
@@ -884,6 +885,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/api/finalist2') return json(res, 200, finalist2View()); // Investing → Finalist 2 (paper only)
     if (req.method === 'GET' && url.pathname === '/api/afternoon-trend') return json(res, 200, afternoonView()); // Options & risk → Afternoon trend (loop-23 option-buying near-miss, paper only)
     if (req.method === 'GET' && url.pathname === '/api/cp-tournament') return json(res, 200, tournamentView()); // Options & risk → Call / Put tournament (forward test, paper only)
+    if (req.method === 'GET' && url.pathname === '/api/cp-stocks') return json(res, 200, cpStocksView()); // Options & risk → Call / Put tournament → Stocks toggle (forward test, paper only)
     if (req.method === 'GET' && url.pathname === '/api/global-mix') return json(res, 200, { paper: loadGlobalMixPaper(), research: GLOBAL_RESEARCH }); // Investing → Global mix (paper)
     if (req.method === 'GET' && url.pathname === '/api/ml-picks') return json(res, 200, loadMlPaper() || {}); // Investing → ML stock picks (paper)
     if (req.method === 'GET' && url.pathname === '/api/india-mix') return json(res, 200, { backtest: loadIndiaMix(), paper: loadIndiaMixPaper() });

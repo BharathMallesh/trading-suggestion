@@ -33,6 +33,7 @@ import { summarise as rsiSummarise } from './rsi-swing.mjs';
 import { paperView as dipPaperView, versionOf as dipVersionOf } from './nifty-dip.mjs';
 import { summarise as atSummarise } from './afternoon-trend.mjs';
 import { contestantStats, versions as cpVersions, CONTESTANTS as CP_CONTESTANTS } from './cp-tournament.mjs';
+import { callRows as cpsCallRows, statsOf as cpsStatsOf, versions as cpsVersions, CONTESTANTS as CPS_CONTESTANTS } from './cp-stocks.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const DATA_DIR = () => process.env.BREAKDOWN_DATA_DIR || join(HERE, 'data');
@@ -44,6 +45,7 @@ export const STRATEGIES = {
   'e2-swing': 'Momentum breakout', 'lbb-swing': 'Leader box breakout', 'bonus-runup': 'Bonus/split run-up', 'ipo-apply': 'IPO apply',
   'nifty-dip': 'NIFTY dip-buy', 'ml-picks': 'ML stock picks', 'india-mix': 'India mix', 'steady-mix': 'Steady mix', momentum10: 'Momentum 10',
   momentum: 'Momentum 20', 'global-mix': 'Global mix', finalist2: 'Finalist 2', 'afternoon-trend': 'Afternoon trend (option buying)', 'cp-tournament': 'Call / Put tournament',
+  'cp-stocks': 'Call / Put tournament — stocks',
 };
 export const GROUPS = ['weekday', 'weekOfMonth', 'month', 'quarter', 'fyQuarter', 'year'];
 export const MIN_TRADES = 20; // fewer trades in a bucket: "too few to judge"
@@ -252,6 +254,20 @@ export const PAPER_ADAPTERS = {
       collector(out, f)({ strategy: 'cp-tournament', version: c.id, source: 'paper' }, trades, (t) => ({ symbol: 'NIFTY', side: t.call === 'PUT' ? 'short' : 'long', entryDate: t.date, exitDate: t.date, pnl: t.pnl, retPct: num(t.ret) != null ? (t.call === 'PUT' ? -t.ret : t.ret) * 100 : null }));
       const s = contestantStats(st, 'day', c.id, vers);
       report(out, { strategy: 'cp-tournament', version: c.id, source: 'paper', unit: '₹', trades: s.pnlDays, net: s.pnl, by: 'cp-tournament.mjs contestantStats() (the card)' });
+    }
+  },
+  // Call / Put tournament — stocks (forward test): one series per contestant (version = its id), one row per scored TODAY
+  // (open → close) stock call with a P&L proxy, current frozen versions only — TEST entries, NO TRADE calls and
+  // stock-option expiry days (no P&L) are left out
+  'cp-stocks.json': (st, out, f) => {
+    if (!Array.isArray(st.days)) throw new Error('no days array');
+    const vers = cpsVersions();
+    for (const c of CPS_CONTESTANTS) {
+      const trades = cpsCallRows(st, 'day', c.id, vers).filter((r) => r.hit != null && num(r.pnl) != null);
+      if (!trades.length) continue;
+      collector(out, f)({ strategy: 'cp-stocks', version: c.id, source: 'paper' }, trades, (t) => ({ symbol: t.symbol, side: t.call === 'PUT' ? 'short' : 'long', entryDate: t.date, exitDate: t.date, pnl: t.pnl, retPct: num(t.ret) != null ? (t.call === 'PUT' ? -t.ret : t.ret) * 100 : null }));
+      const s = cpsStatsOf(cpsCallRows(st, 'day', c.id, vers));
+      report(out, { strategy: 'cp-stocks', version: c.id, source: 'paper', unit: '₹', trades: s.pnlCalls, net: s.pnl, by: 'cp-stocks.mjs statsOf() (the card)' });
     }
   },
 };

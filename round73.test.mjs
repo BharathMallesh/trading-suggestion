@@ -311,7 +311,9 @@ test('wiring: card, view tab, script, routes, evening job; nothing else reads th
   const a = sh.indexOf('node paper-bot/avoid-list.mjs --paper');
   const n = sh.indexOf('node paper-bot/news-watch.mjs --run || true');
   assert.ok(a > 0 && n > a, 'evening job: news watch after the NSE files');
-  for (const f of readdirSync('paper-bot').filter((x) => x.endsWith('.mjs') && x !== 'news-watch.mjs' && x !== 'news-pick.mjs')) { // news-pick imports the helpers, not the calls (round74 checks)
+  // news-pick imports the helpers, not the calls (round74 checks); the stock Call / Put league (round 80) SCORES the News watch
+  // call as one forward-tested contestant — read only, it feeds no strategy (round80.test.mjs checks it writes only its own files)
+  for (const f of readdirSync('paper-bot').filter((x) => x.endsWith('.mjs') && x !== 'news-watch.mjs' && x !== 'news-pick.mjs' && x !== 'cp-stocks.mjs')) {
     assert.ok(!readFileSync(join('paper-bot', f), 'utf8').includes('news-watch'), `${f} must not read News watch calls`);
   }
   assert.ok(!existsSync(join(dir, 'nothing')));

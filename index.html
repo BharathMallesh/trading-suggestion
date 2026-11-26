@@ -606,7 +606,13 @@
         <h2>Call / Put tournament <span style="font-size:12px;color:var(--warn);font-weight:500">NIFTY · CALLS BEFORE THE 09:15 OPEN · SCORED FORWARD ONLY · NOTHING PROVEN YET · PAPER ONLY · NO BROKER ORDERS</span></h2>
         <p class="hint">Which predictor says CALL or PUT best? Instead of searching more backtests (which kept finding luck), every contestant — simple baselines, the app's own models and two ensembles — is frozen code that makes a call each morning before the open,
           and is scored only on days nobody has seen. A leader counts as proven only after 100+ scored calls with statistical support that survives a multiple-testing correction. Most likely none will. Not advice.</p>
+        <!-- NIFTY | Stocks toggle: the stock league (20 most liquid F&O stocks, same rules; paper-bot/cp-stocks.mjs, 52-cp-stocks.js) -->
+        <div class="row" id="cpLeagueToggle" role="tablist" style="gap:6px;margin-top:4px">
+          <button type="button" id="cpShowNifty" role="tab" aria-selected="true" style="flex:0 0 auto;min-width:0;margin-top:0">NIFTY</button>
+          <button type="button" id="cpShowStocks" role="tab" aria-selected="false" style="flex:0 0 auto;min-width:0;margin-top:0;background:var(--soft);color:var(--ink)">Stocks</button>
+        </div>
         <div id="cptOut" style="margin-top:10px">Loading…</div>
+        <div id="cpsOut" style="margin-top:10px;display:none">Loading…</div>
       </section>
 
       <!-- F&O risk check: before a trade, how bad can one week get for this account? -->
@@ -1282,6 +1288,7 @@
     <script src="/static/js/49-finalist-two.js"></script>
     <script src="/static/js/50-afternoon-trend.js"></script>
     <script src="/static/js/51-cp-tournament.js"></script>
+    <script src="/static/js/52-cp-stocks.js"></script>
     <script src="/static/js/19-my-plan.js"></script>
     <script src="/static/js/20-rsi-swing.js"></script>
   </body>
